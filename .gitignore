@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+
+# Package manager caches and metadata
+.npm/
+.pnpm-store/
+.yarn/
+!.yarn/releases/
+!.yarn/plugins/
+!.yarn/sdks/
+!.yarn/versions/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Build outputs
+dist/
+build/
+out/
+public/build/
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Framework caches
+.next/
+.nuxt/
+.svelte-kit/
+.astro/
+.vite/
+.parcel-cache/
+
+# TypeScript and tooling caches
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+
+# Misc caches
+.cache/
+.tmp/
+tmp/
+temp/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
