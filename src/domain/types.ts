@@ -63,3 +63,12 @@ export interface BossDefinition {
   eliteIds: string[];
   rewardTags: SkillTag[];
 }
+
+export interface ProgressState {
+  level: number;
+  experience: number;
+}
+
+export interface ExperienceGainResult extends ProgressState {
+  levelsGained: number[];
+}
