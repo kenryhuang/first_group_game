@@ -142,3 +142,11 @@ export interface BossDefeatReward {
   stagePollution: number;
   experience: number;
 }
+
+export interface BossPressureState {
+  activeHunterId: BossId | null;
+  pendingBossIds: BossId[];
+  killedBossIds: BossId[];
+  triggeredMilestones: number[];
+  resolvedMilestones: number[];
+}
