@@ -72,3 +72,25 @@ export interface ProgressState {
 export interface ExperienceGainResult extends ProgressState {
   levelsGained: number[];
 }
+
+export interface PollutionState {
+  passiveLoad: number;
+  temporaryPollution: number;
+  stagePollution: number;
+}
+
+export interface PollutionTotals extends PollutionState {
+  total: number;
+  overSafeLoad: boolean;
+}
+
+export interface PollutionBand {
+  label: "calm" | "charged" | "unstable" | "dangerous" | "overrun";
+  damageMultiplier: number;
+  cooldownMultiplier: number;
+  monsterSenseMultiplier: number;
+  hordeDensityMultiplier: number;
+  eventDanger: boolean;
+  fakeResourcePoints: boolean;
+  bossEmpowered: boolean;
+}
