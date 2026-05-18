@@ -94,3 +94,28 @@ export interface PollutionBand {
   fakeResourcePoints: boolean;
   bossEmpowered: boolean;
 }
+
+export interface MapNode {
+  id: string;
+  name: string;
+  kind: "resource" | "event" | "influence";
+  bossId: BossId | null;
+  x: number;
+  y: number;
+  rewards: ExplorationRewards;
+}
+
+export interface ExplorationRewards {
+  experience: number;
+  healing: number;
+  skillIds: string[];
+  passiveFragmentIds: string[];
+  clueBossIds: BossId[];
+  temporaryPollution: number;
+}
+
+export interface ExplorationState {
+  nodes: MapNode[];
+  resolvedNodeIds: string[];
+  discoveredBossClues: BossId[];
+}
