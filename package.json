@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "node scripts/run-e2e.mjs"
   },
   "dependencies": {
     "phaser": "^3.85.2"

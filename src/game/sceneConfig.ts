@@ -6,7 +6,7 @@ export const GAME_HEIGHT = 720;
 
 export function createGameConfig(parent: string): Phaser.Types.Core.GameConfig {
   return {
-    type: Phaser.AUTO,
+    type: Phaser.CANVAS,
     parent,
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
