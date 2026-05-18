@@ -119,3 +119,26 @@ export interface ExplorationState {
   resolvedNodeIds: string[];
   discoveredBossClues: BossId[];
 }
+
+export interface EnemyState {
+  id: string;
+  name: string;
+  health: number;
+  maxHealth: number;
+  damage: number;
+  defeated: boolean;
+}
+
+export interface SkillUseResult {
+  skillId: string;
+  damage: number;
+  temporaryPollution: number;
+  tags: SkillTag[];
+}
+
+export interface BossDefeatReward {
+  bossId: BossId;
+  specialItemId: string;
+  stagePollution: number;
+  experience: number;
+}
