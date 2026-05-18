@@ -67,3 +67,6 @@ Desktop.ini
 .vscode/
 *.swp
 *.swo
+
+# Local git worktrees
+.worktrees/
