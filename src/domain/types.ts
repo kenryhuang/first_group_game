@@ -150,3 +150,21 @@ export interface BossPressureState {
   triggeredMilestones: number[];
   resolvedMilestones: number[];
 }
+
+export interface RunState {
+  level: number;
+  experience: number;
+  health: number;
+  maxHealth: number;
+  baseDamage: number;
+  activeSkillIds: string[];
+  passiveFragmentIds: string[];
+  specialItemIds: string[];
+  killedBossIds: BossId[];
+  passiveLoad: number;
+  temporaryPollution: number;
+  stagePollution: number;
+  exploration: ExplorationState;
+  discoveredBossClues: BossId[];
+  bossPressure: BossPressureState;
+}
