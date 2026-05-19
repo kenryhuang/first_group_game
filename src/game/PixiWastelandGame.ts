@@ -3,7 +3,7 @@ import { Howl } from "howler";
 import { gsap } from "gsap";
 import { BOSS_ORDER } from "../data/prototypeData";
 import type { BossId, MapNode, RunState } from "../domain/types";
-import { createRunState, collectNode, gainRunExperience, killRunBoss, useRunSkill } from "../systems/runState";
+import { collectNode, createRunState, gainRunExperience, killRunBoss, useRunSkill } from "../systems/runState";
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -25,9 +25,11 @@ import {
   type ProjectileKind,
   type ProjectileState,
 } from "../systems/projectiles";
+import { getInitialRoamingBossIds } from "../systems/bossRoaming";
 import type { GameMetrics } from "../app/gameStore";
 
 type AttackMode = "auto" | "manual";
+type BossMode = "roam" | "chase" | "charge";
 
 interface GameCallbacks {
   onMetrics(metrics: GameMetrics): void;
@@ -51,10 +53,23 @@ interface BossActor extends Actor {
   health: number;
   maxHealth: number;
   label: Text;
+  mode: BossMode;
+  roamTarget: { x: number; y: number };
+  skillElapsedMs: number;
+  skillCooldownMs: number;
+  chargeMs: number;
+  chargeAngle: number;
 }
 
 interface BulletActor extends Actor {
   projectile: ProjectileState;
+}
+
+interface HazardActor extends Actor {
+  velocityX: number;
+  velocityY: number;
+  radius: number;
+  lifeMs: number;
 }
 
 interface NodeActor extends Actor {
@@ -72,7 +87,8 @@ export class PixiWastelandGame {
   private nodeMarkers: NodeActor[] = [];
   private enemies: EnemyActor[] = [];
   private bullets: BulletActor[] = [];
-  private boss?: BossActor;
+  private bossHazards: HazardActor[] = [];
+  private bosses: BossActor[] = [];
   private keys = new Set<string>();
   private pointerWorld = { x: PLAYER_START.x + 1, y: PLAYER_START.y };
   private attackMode: AttackMode = "auto";
@@ -99,10 +115,11 @@ export class PixiWastelandGame {
     this.drawWorld();
     this.createPlayer();
     this.createNodeMarkers();
+    this.spawnInitialBosses();
     this.bindInput();
     this.spawnEnemyWave(12);
     this.app.ticker.add(this.update);
-    this.emitState("城市废土已展开。怪物会持续刷新，子弹会被楼房挡住。");
+    this.emitState("10000x10000 城市废土已展开，所有常规 Boss 正在游荡。");
   }
 
   destroy(): void {
@@ -115,8 +132,9 @@ export class PixiWastelandGame {
     const delta = ticker.deltaMS;
     this.movePlayer(delta);
     this.updateEnemies(delta);
-    this.updateBoss(delta);
+    this.updateBosses(delta);
     this.updateProjectiles(delta);
+    this.updateBossHazards(delta);
     this.updateSpawning(delta);
     this.updateAutoAttack(delta);
     this.highlightNearbyNode();
@@ -130,11 +148,11 @@ export class PixiWastelandGame {
     this.world.addChild(background);
 
     const grid = new Graphics();
-    for (let x = 0; x <= MAP_WIDTH; x += 160) {
-      grid.moveTo(x, 0).lineTo(x, MAP_HEIGHT).stroke({ color: 0x2f382b, alpha: 0.22, width: 1 });
+    for (let x = 0; x <= MAP_WIDTH; x += 200) {
+      grid.moveTo(x, 0).lineTo(x, MAP_HEIGHT).stroke({ color: 0x2f382b, alpha: 0.2, width: 1 });
     }
-    for (let y = 0; y <= MAP_HEIGHT; y += 160) {
-      grid.moveTo(0, y).lineTo(MAP_WIDTH, y).stroke({ color: 0x2f382b, alpha: 0.22, width: 1 });
+    for (let y = 0; y <= MAP_HEIGHT; y += 200) {
+      grid.moveTo(0, y).lineTo(MAP_WIDTH, y).stroke({ color: 0x2f382b, alpha: 0.2, width: 1 });
     }
     this.world.addChild(grid);
 
@@ -144,11 +162,11 @@ export class PixiWastelandGame {
 
   private drawDistricts(): void {
     const districts = [
-      { x: 760, y: 780, w: 760, h: 520, color: 0x343127, label: "废弃街区" },
-      { x: 2940, y: 900, w: 720, h: 500, color: 0x2c2835, label: "剧院广场" },
-      { x: 940, y: 3040, w: 820, h: 560, color: 0x29353a, label: "破医院" },
-      { x: 3050, y: 3020, w: 760, h: 620, color: 0x352b25, label: "快递站" },
-      { x: 2050, y: 2040, w: 900, h: 680, color: 0x27342d, label: "幸存者活动区" },
+      { x: 5000, y: 5000, w: 1300, h: 900, color: 0x27342d, label: "幸存者活动区" },
+      { x: 1850, y: 1600, w: 1400, h: 900, color: 0x343127, label: "废弃街区" },
+      { x: 7600, y: 2000, w: 1300, h: 820, color: 0x2c2835, label: "剧院广场" },
+      { x: 2600, y: 7800, w: 1400, h: 980, color: 0x29353a, label: "破医院" },
+      { x: 7600, y: 7600, w: 1400, h: 1000, color: 0x352b25, label: "快递站" },
     ];
     const style = new TextStyle({ fill: "#b9c7a7", fontFamily: "Arial", fontSize: 20 });
 
@@ -167,27 +185,38 @@ export class PixiWastelandGame {
 
   private drawBuildings(): void {
     for (const building of BUILDINGS) {
-      const shape = new Graphics();
-      shape
-        .rect(building.x - building.width / 2, building.y - building.height / 2, building.width, building.height)
-        .fill({ color: 0x121512, alpha: 0.96 })
-        .stroke({ color: 0x68705d, alpha: 0.78, width: 3 });
-      this.world.addChild(shape);
-
-      const roofLine = new Graphics();
-      roofLine
-        .rect(building.x - building.width / 2 + 14, building.y - building.height / 2 + 13, building.width - 28, 7)
-        .fill({ color: 0x9a8c5f, alpha: 0.5 });
-      this.world.addChild(roofLine);
-
-      for (let offset = 42; offset < building.width - 32; offset += 82) {
-        const shaft = new Graphics();
-        shaft
-          .rect(building.x - building.width / 2 + offset - 12, building.y - building.height / 2 + 26, 24, building.height - 52)
-          .fill({ color: 0x262a24, alpha: 0.72 });
-        this.world.addChild(shaft);
-      }
+      this.drawBuilding(building.x, building.y, building.width, building.height);
     }
+
+    const cityBlocks = [
+      [4620, 4580, 420, 260],
+      [5480, 4680, 360, 520],
+      [4940, 5580, 620, 300],
+      [4140, 5320, 300, 460],
+      [6100, 5200, 420, 420],
+      [2100, 1260, 520, 360],
+      [7420, 2320, 580, 320],
+      [2820, 7420, 620, 360],
+      [7280, 8060, 500, 460],
+    ] as const;
+    for (const [x, y, width, height] of cityBlocks) {
+      this.drawBuilding(x, y, width, height);
+    }
+  }
+
+  private drawBuilding(x: number, y: number, width: number, height: number): void {
+    const shape = new Graphics();
+    shape
+      .rect(x - width / 2, y - height / 2, width, height)
+      .fill({ color: 0x121512, alpha: 0.96 })
+      .stroke({ color: 0x68705d, alpha: 0.78, width: 3 });
+    this.world.addChild(shape);
+
+    const roofLine = new Graphics();
+    roofLine
+      .rect(x - width / 2 + 14, y - height / 2 + 13, width - 28, 7)
+      .fill({ color: 0x9a8c5f, alpha: 0.5 });
+    this.world.addChild(roofLine);
   }
 
   private createPlayer(): void {
@@ -245,11 +274,10 @@ export class PixiWastelandGame {
     }
     if (event.key.toLowerCase() === "x") {
       this.state = gainRunExperience(this.state, 120);
-      this.syncBossFromPressure();
-      this.emitState("调试：获得经验并检查 Boss 降临。");
+      this.emitState("调试：获得经验。Boss 已作为游荡威胁常驻地图。");
     }
     if (event.key.toLowerCase() === "b") {
-      this.spawnOrFocusBoss();
+      this.focusNearestBoss();
     }
     const skillIndex = Number(event.key) - 1;
     if (skillIndex >= 0 && skillIndex < 4) {
@@ -298,18 +326,54 @@ export class PixiWastelandGame {
     }
   }
 
-  private updateBoss(deltaMs: number): void {
-    if (!this.player || !this.boss) return;
+  private updateBosses(deltaMs: number): void {
+    if (!this.player) return;
     const seconds = deltaMs / 1000;
-    const angle = Math.atan2(this.player.y - this.boss.y, this.player.x - this.boss.x);
-    const desired = {
-      x: this.boss.x + Math.cos(angle) * 92 * seconds,
-      y: this.boss.y + Math.sin(angle) * 92 * seconds,
-    };
-    const resolved = resolveBlockedMovement(this.boss, desired, 34);
-    this.setActorPosition(this.boss, resolved.x, resolved.y);
-    this.boss.label.position.set(this.boss.x - 54, this.boss.y - 58);
-    this.boss.label.text = `${this.getBossName(this.boss.bossId)} ${Math.ceil(this.boss.health)}/${this.boss.maxHealth}`;
+
+    for (const boss of this.bosses) {
+      boss.skillElapsedMs += deltaMs;
+      const playerDistance = distance(this.player, boss);
+      if (boss.chargeMs <= 0) {
+        boss.mode = playerDistance < 900 ? "chase" : "roam";
+      }
+
+      if (boss.skillElapsedMs >= boss.skillCooldownMs) {
+        this.triggerBossSkill(boss);
+      }
+
+      const movement = this.getBossMovementTarget(boss);
+      const speed = boss.mode === "charge" ? 360 : boss.mode === "chase" ? 112 : 68;
+      const angle = Math.atan2(movement.y - boss.y, movement.x - boss.x);
+      const desired = {
+        x: boss.x + Math.cos(angle) * speed * seconds,
+        y: boss.y + Math.sin(angle) * speed * seconds,
+      };
+      const resolved = resolveBlockedMovement(boss, desired, 34);
+      this.setActorPosition(boss, resolved.x, resolved.y);
+
+      boss.chargeMs = Math.max(0, boss.chargeMs - deltaMs);
+      if (boss.chargeMs === 0 && boss.mode === "charge") {
+        boss.mode = playerDistance < 900 ? "chase" : "roam";
+      }
+      if (distance(boss, boss.roamTarget) < 80) {
+        boss.roamTarget = this.getNextRoamTarget(boss);
+      }
+      boss.label.position.set(boss.x - 64, boss.y - 62);
+      boss.label.text = `${this.getBossName(boss.bossId)} ${Math.ceil(boss.health)}/${boss.maxHealth}`;
+    }
+  }
+
+  private getBossMovementTarget(boss: BossActor): { x: number; y: number } {
+    if (boss.mode === "charge") {
+      return {
+        x: boss.x + Math.cos(boss.chargeAngle) * 320,
+        y: boss.y + Math.sin(boss.chargeAngle) * 320,
+      };
+    }
+    if (boss.mode === "chase" && this.player) {
+      return this.player;
+    }
+    return boss.roamTarget;
   }
 
   private updateProjectiles(deltaMs: number): void {
@@ -332,6 +396,24 @@ export class PixiWastelandGame {
 
       if (this.hitEnemyWithBullet(bullet) || this.hitBossWithBullet(bullet)) {
         this.removeBullet(bullet);
+      }
+    }
+  }
+
+  private updateBossHazards(deltaMs: number): void {
+    const seconds = deltaMs / 1000;
+    for (const hazard of [...this.bossHazards]) {
+      hazard.lifeMs -= deltaMs;
+      this.setActorPosition(hazard, hazard.x + hazard.velocityX * seconds, hazard.y + hazard.velocityY * seconds);
+      if (
+        hazard.lifeMs <= 0 ||
+        hazard.x < 0 ||
+        hazard.y < 0 ||
+        hazard.x > MAP_WIDTH ||
+        hazard.y > MAP_HEIGHT ||
+        circleIntersectsBuildings({ x: hazard.x, y: hazard.y, radius: hazard.radius })
+      ) {
+        this.removeBossHazard(hazard);
       }
     }
   }
@@ -430,7 +512,6 @@ export class PixiWastelandGame {
         820,
       );
     }
-    this.syncBossFromPressure();
     this.emitState(`释放技能槽 ${index + 1}：扇形弹幕。`);
   }
 
@@ -438,7 +519,7 @@ export class PixiWastelandGame {
     for (const enemy of [...this.enemies]) {
       if (!projectileHitsCircle(bullet.projectile, { x: enemy.x, y: enemy.y, radius: 11 })) continue;
       enemy.health -= bullet.projectile.damage;
-      this.flash(enemy.view, 0xd90429, 0x8d99ae);
+      this.flash(enemy.view, 0xd90429, 0x8d99ae, 11);
       if (enemy.health <= 0) {
         this.defeatEnemy(enemy);
       }
@@ -448,21 +529,16 @@ export class PixiWastelandGame {
   }
 
   private hitBossWithBullet(bullet: BulletActor): boolean {
-    if (!this.boss || !projectileHitsCircle(bullet.projectile, { x: this.boss.x, y: this.boss.y, radius: 34 })) {
-      return false;
+    for (const boss of [...this.bosses]) {
+      if (!projectileHitsCircle(bullet.projectile, { x: boss.x, y: boss.y, radius: 34 })) continue;
+      boss.health -= bullet.projectile.damage;
+      gsap.fromTo(boss.view.scale, { x: 1.18, y: 1.18 }, { x: 1, y: 1, duration: 0.12 });
+      if (boss.health <= 0) {
+        this.defeatBoss(boss);
+      }
+      return true;
     }
-    this.boss.health -= bullet.projectile.damage;
-    gsap.fromTo(this.boss.view.scale, { x: 1.18, y: 1.18 }, { x: 1, y: 1, duration: 0.12 });
-    if (this.boss.health <= 0) {
-      const defeatedBoss = this.boss.bossId;
-      this.world.removeChild(this.boss.view, this.boss.label);
-      this.boss.view.destroy();
-      this.boss.label.destroy();
-      this.boss = undefined;
-      this.state = killRunBoss(this.state, defeatedBoss);
-      this.emitState(`击杀 Boss：${this.getBossName(defeatedBoss)}`);
-    }
-    return true;
+    return false;
   }
 
   private defeatEnemy(enemy: EnemyActor): void {
@@ -470,13 +546,27 @@ export class PixiWastelandGame {
     enemy.view.destroy();
     this.enemies = this.enemies.filter((candidate) => candidate !== enemy);
     this.state = gainRunExperience(this.state, 6);
-    this.syncBossFromPressure();
+  }
+
+  private defeatBoss(boss: BossActor): void {
+    this.world.removeChild(boss.view, boss.label);
+    boss.view.destroy();
+    boss.label.destroy();
+    this.bosses = this.bosses.filter((candidate) => candidate !== boss);
+    this.state = killRunBoss(this.state, boss.bossId);
+    this.emitState(`击杀 Boss：${this.getBossName(boss.bossId)}`);
   }
 
   private removeBullet(bullet: BulletActor): void {
     this.world.removeChild(bullet.view);
     bullet.view.destroy();
     this.bullets = this.bullets.filter((candidate) => candidate !== bullet);
+  }
+
+  private removeBossHazard(hazard: HazardActor): void {
+    this.world.removeChild(hazard.view);
+    hazard.view.destroy();
+    this.bossHazards = this.bossHazards.filter((candidate) => candidate !== hazard);
   }
 
   private getNearestTarget(maxDistance: number): { x: number; y: number } | undefined {
@@ -488,37 +578,33 @@ export class PixiWastelandGame {
         nearest = { x: enemy.x, y: enemy.y, distance: distanceToEnemy };
       }
     }
-    if (this.boss) {
-      const distanceToBoss = distance(this.player, this.boss);
+    for (const boss of this.bosses) {
+      const distanceToBoss = distance(this.player, boss);
       if (distanceToBoss <= maxDistance && (!nearest || distanceToBoss < nearest.distance)) {
-        nearest = { x: this.boss.x, y: this.boss.y, distance: distanceToBoss };
+        nearest = { x: boss.x, y: boss.y, distance: distanceToBoss };
       }
     }
     return nearest ? { x: nearest.x, y: nearest.y } : undefined;
   }
 
-  private spawnOrFocusBoss(): void {
-    if (this.boss) {
-      this.emitState(`Boss 已在地图上：${this.getBossName(this.boss.bossId)}`);
+  private focusNearestBoss(): void {
+    const boss = this.getNearestBoss();
+    if (!boss) {
+      this.emitState("当前地图上没有常规 Boss。");
       return;
     }
-    const activeBossId = this.state.bossPressure.activeHunterId;
-    const bossId = activeBossId ?? BOSS_ORDER.find((boss) => !this.state.killedBossIds.includes(boss.id))?.id;
-    if (!bossId) {
-      this.emitState("30 级原型阶段结算：三个 Boss 已清理。");
-      return;
-    }
-    this.spawnBoss(bossId);
-    this.emitState(`${activeBossId ? "等级追猎" : "主动狩猎"}：${this.getBossName(bossId)} 已出现。`);
+    gsap.fromTo(boss.view.scale, { x: 1.45, y: 1.45 }, { x: 1, y: 1, duration: 0.32 });
+    this.emitState(`最近 Boss：${this.getBossName(boss.bossId)}，正在${boss.mode === "roam" ? "游荡" : "追击"}。`);
   }
 
-  private syncBossFromPressure(): void {
-    if (!this.state.bossPressure.activeHunterId || this.boss) return;
-    this.spawnBoss(this.state.bossPressure.activeHunterId);
+  private spawnInitialBosses(): void {
+    for (const bossId of getInitialRoamingBossIds()) {
+      this.spawnBoss(bossId);
+    }
   }
 
   private spawnBoss(bossId: BossId): void {
-    if (!this.player) return;
+    if (!this.player || this.bosses.some((boss) => boss.bossId === bossId)) return;
     const definition = BOSS_ORDER.find((boss) => boss.id === bossId);
     if (!definition) return;
     const position = this.findOpenBossSpawnPosition(bossId);
@@ -535,17 +621,24 @@ export class PixiWastelandGame {
       text: "",
       style: new TextStyle({ fill: "#fff3b0", fontFamily: "Arial", fontSize: 16 }),
     });
-    label.position.set(position.x - 54, position.y - 58);
+    label.position.set(position.x - 64, position.y - 62);
     this.world.addChild(label);
-    this.boss = {
+    const maxHealth = Math.round(definition.maxHealth / 6);
+    this.bosses.push({
       view,
       label,
       bossId,
       x: position.x,
       y: position.y,
-      maxHealth: Math.round(definition.maxHealth / 35),
-      health: Math.round(definition.maxHealth / 35),
-    };
+      maxHealth,
+      health: maxHealth,
+      mode: "roam",
+      roamTarget: this.getNextRoamTarget({ bossId, x: position.x, y: position.y } as BossActor),
+      skillElapsedMs: 0,
+      skillCooldownMs: bossId === "chef" ? 3200 : bossId === "clown" ? 4200 : 3600,
+      chargeMs: 0,
+      chargeAngle: 0,
+    });
   }
 
   private findOpenBossSpawnPosition(bossId: BossId): { x: number; y: number } {
@@ -557,14 +650,79 @@ export class PixiWastelandGame {
     for (let attempt = 0; attempt < 16; attempt += 1) {
       const angle = attempt * 0.72;
       const candidate = {
-        x: clamp(player.x + Math.cos(angle) * (520 + attempt * 28), 48, MAP_WIDTH - 48),
-        y: clamp(player.y + Math.sin(angle) * (520 + attempt * 28), 48, MAP_HEIGHT - 48),
+        x: clamp(player.x + Math.cos(angle) * (900 + attempt * 60), 48, MAP_WIDTH - 48),
+        y: clamp(player.y + Math.sin(angle) * (900 + attempt * 60), 48, MAP_HEIGHT - 48),
       };
       if (!circleIntersectsBuildings({ ...candidate, radius: 34 })) {
         return candidate;
       }
     }
     return base;
+  }
+
+  private getNextRoamTarget(boss: Pick<BossActor, "bossId" | "x" | "y">): { x: number; y: number } {
+    const seed = boss.bossId === "chef" ? 0.2 : boss.bossId === "clown" ? 2.1 : 4.0;
+    const angle = seed + this.spawnSeed * 0.83;
+    const range = boss.bossId === "courier" ? 780 : 560;
+    return {
+      x: clamp(boss.x + Math.cos(angle) * range, 80, MAP_WIDTH - 80),
+      y: clamp(boss.y + Math.sin(angle) * range, 80, MAP_HEIGHT - 80),
+    };
+  }
+
+  private triggerBossSkill(boss: BossActor): void {
+    boss.skillElapsedMs = 0;
+    if (!this.player) return;
+    if (boss.bossId === "chef") {
+      boss.mode = "charge";
+      boss.chargeMs = 520;
+      boss.chargeAngle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+      this.emitState(`${this.getBossName(boss.bossId)} 发起冲锋。`);
+      return;
+    }
+    if (boss.bossId === "clown") {
+      for (let index = 0; index < 10; index += 1) {
+        const angle = (Math.PI * 2 * index) / 10;
+        this.spawnBossHazard(boss.x, boss.y, angle, 210, 0x9d4edd, 1500, 7);
+      }
+      this.emitState(`${this.getBossName(boss.bossId)} 释放环形弹幕。`);
+      return;
+    }
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    boss.mode = "charge";
+    boss.chargeMs = 360;
+    boss.chargeAngle = angle;
+    this.spawnBossHazard(boss.x, boss.y, angle, 160, 0xf77f00, 1900, 12);
+    this.emitState(`${this.getBossName(boss.bossId)} 投出爆炸包。`);
+  }
+
+  private spawnBossHazard(
+    x: number,
+    y: number,
+    angle: number,
+    speed: number,
+    color: number,
+    lifeMs: number,
+    radius: number,
+  ): void {
+    const view = new Graphics();
+    view.circle(0, 0, radius).fill({ color, alpha: 0.85 }).stroke({ color: 0xfff3b0, alpha: 0.7, width: 2 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.bossHazards.push({
+      view,
+      x,
+      y,
+      radius,
+      lifeMs,
+      velocityX: Math.cos(angle) * speed,
+      velocityY: Math.sin(angle) * speed,
+    });
+  }
+
+  private getNearestBoss(): BossActor | undefined {
+    if (!this.player) return this.bosses[0];
+    return [...this.bosses].sort((a, b) => distance(this.player!, a) - distance(this.player!, b))[0];
   }
 
   private highlightNearbyNode(): void {
@@ -615,15 +773,18 @@ export class PixiWastelandGame {
   }
 
   private emitMetrics(): void {
+    const bossNames = this.bosses.map((boss) => this.getBossName(boss.bossId));
+    const nearestBoss = this.getNearestBoss();
     const metrics = {
       enemyCount: this.enemies.length,
-      bossCount: this.boss ? 1 : 0,
+      bossCount: this.bosses.length,
       bulletCount: this.bullets.length,
       buildingCount: BUILDINGS.length,
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT,
       attackMode: this.attackMode,
-      bossName: this.boss ? this.getBossName(this.boss.bossId) : null,
+      bossName: nearestBoss ? this.getBossName(nearestBoss.bossId) : null,
+      bossNames,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;
@@ -639,13 +800,13 @@ export class PixiWastelandGame {
     actor.view.position.set(x, y);
   }
 
-  private flash(view: Graphics, hitColor: number, baseColor: number): void {
+  private flash(view: Graphics, hitColor: number, baseColor: number, radius: number): void {
     view.clear();
-    view.circle(0, 0, 11).fill(hitColor);
+    view.circle(0, 0, radius).fill(hitColor);
     window.setTimeout(() => {
       if (view.destroyed) return;
       view.clear();
-      view.circle(0, 0, 11).fill(baseColor);
+      view.circle(0, 0, radius).fill(baseColor);
     }, 80);
   }
 

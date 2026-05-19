@@ -1,7 +1,7 @@
 import type { BossId } from "../domain/types";
 
-export const MAP_WIDTH = 4096;
-export const MAP_HEIGHT = 4096;
+export const MAP_WIDTH = 10000;
+export const MAP_HEIGHT = 10000;
 export const PLAYER_START = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
 
 const ENEMY_MIN_SPAWN_DISTANCE = 380;
@@ -24,9 +24,9 @@ export function getSpawnPositionAroundPlayer(player: Point, seed: number): Point
 
 export function getBossSpawnPosition(player: Point, bossId: BossId): Point {
   const offsets: Record<BossId, Point> = {
-    chef: { x: 260, y: -90 },
-    clown: { x: -230, y: -180 },
-    courier: { x: 110, y: 250 },
+    chef: { x: 820, y: -520 },
+    clown: { x: -940, y: -760 },
+    courier: { x: 520, y: 960 },
   };
   const offset = offsets[bossId];
   return clampToMap({
