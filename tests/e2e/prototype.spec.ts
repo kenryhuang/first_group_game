@@ -9,6 +9,7 @@ declare global {
       buildingCount: number;
       mapWidth: number;
       mapHeight: number;
+      attackMode: "auto" | "manual";
     };
   }
 }
@@ -56,21 +57,8 @@ async function canvasHasVisiblePixels(handle: ElementHandle<SVGElement | HTMLEle
   if (!handle) return false;
   return handle.evaluate((element) => {
     const canvas = element as HTMLCanvasElement;
-    const context = canvas.getContext("2d");
-    if (!context) return false;
+    if (canvas.width <= 0 || canvas.height <= 0) return false;
 
-    const width = Math.min(canvas.width, 320);
-    const height = Math.min(canvas.height, 180);
-    const pixels = context.getImageData(0, 0, width, height).data;
-    for (let index = 0; index < pixels.length; index += 4) {
-      const red = pixels[index];
-      const green = pixels[index + 1];
-      const blue = pixels[index + 2];
-      const alpha = pixels[index + 3];
-      if (alpha > 0 && (red > 40 || green > 40 || blue > 40)) {
-        return true;
-      }
-    }
-    return false;
+    return canvas.toDataURL("image/png").length > 100;
   });
 }

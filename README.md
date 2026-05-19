@@ -45,6 +45,11 @@
 
 ## 本地运行
 
+技术栈：
+
+- 前端：Vue 3、TypeScript、Vite、PixiJS、Pinia、Howler.js、GSAP。
+- 后端：Node.js、Express。数据库预留 PostgreSQL/MySQL，排行榜和缓存预留 Redis，实时同步预留 WebSocket。
+
 安装依赖：
 
 ```bash
@@ -55,6 +60,12 @@ npm install
 
 ```bash
 npm run dev
+```
+
+启动后端骨架：
+
+```bash
+npm run server:dev
 ```
 
 验证：

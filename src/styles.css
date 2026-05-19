@@ -1,0 +1,66 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #171a16;
+  color: #f2ead3;
+  font-family: Arial, "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+}
+
+.game-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: #171a16;
+}
+
+.game-stage {
+  width: 100%;
+  height: 100%;
+}
+
+.game-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hud-panel {
+  position: fixed;
+  left: 20px;
+  top: 18px;
+  max-width: min(620px, calc(100vw - 40px));
+  padding: 0;
+  color: #f2ead3;
+  line-height: 1.45;
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.72);
+}
+
+.hud-title {
+  margin-bottom: 8px;
+  color: #ffd166;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.hud-line {
+  font-size: 18px;
+  white-space: normal;
+}
+
+.game-message {
+  margin-top: 14px;
+  color: #ffd166;
+  font-size: 18px;
+}
