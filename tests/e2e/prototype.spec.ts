@@ -10,6 +10,7 @@ declare global {
       mapWidth: number;
       mapHeight: number;
       attackMode: "auto" | "manual";
+      bossName: string | null;
     };
   }
 }
@@ -51,6 +52,10 @@ test("prototype loads and responds to keyboard controls", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.bossCount ?? 0))
     .toBe(1);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.bossName ?? ""))
+    .toContain("变异厨师");
+  await expect(page.getByText(/Boss 变异厨师/)).toBeVisible();
 });
 
 async function canvasHasVisiblePixels(handle: ElementHandle<SVGElement | HTMLElement> | null): Promise<boolean> {

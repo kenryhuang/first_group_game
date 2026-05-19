@@ -34,6 +34,17 @@ describe("spawning", () => {
     expect(spawn.y).toBeLessThanOrEqual(MAP_HEIGHT);
   });
 
+  it("keeps Boss spawn positions visible in a compact viewport", () => {
+    const player = { x: 2048, y: 2048 };
+
+    for (const bossId of ["chef", "clown", "courier"] as const) {
+      const spawn = getBossSpawnPosition(player, bossId);
+      const distance = Math.hypot(spawn.x - player.x, spawn.y - player.y);
+
+      expect(distance).toBeLessThanOrEqual(320);
+    }
+  });
+
   it("moves existing compact map nodes into the large world near the start area", () => {
     const position = getNodeWorldPosition({ x: 220, y: 180 });
 

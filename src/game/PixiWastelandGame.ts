@@ -623,6 +623,7 @@ export class PixiWastelandGame {
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT,
       attackMode: this.attackMode,
+      bossName: this.boss ? this.getBossName(this.boss.bossId) : null,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;

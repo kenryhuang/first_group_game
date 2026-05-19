@@ -24,9 +24,9 @@ export function getSpawnPositionAroundPlayer(player: Point, seed: number): Point
 
 export function getBossSpawnPosition(player: Point, bossId: BossId): Point {
   const offsets: Record<BossId, Point> = {
-    chef: { x: 420, y: -120 },
-    clown: { x: -360, y: -300 },
-    courier: { x: 160, y: 430 },
+    chef: { x: 260, y: -90 },
+    clown: { x: -230, y: -180 },
+    courier: { x: 110, y: 250 },
   };
   const offset = offsets[bossId];
   return clampToMap({
