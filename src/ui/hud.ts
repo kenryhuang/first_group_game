@@ -5,8 +5,7 @@ import { getPollutionBand, getPollutionTotals } from "../systems/pollution";
 export function createHudLines(state: RunState): string[] {
   const pollution = getPollutionTotals(state);
   const band = getPollutionBand(pollution.total);
-  const activeHunterName =
-    BOSS_ORDER.find((boss) => boss.id === state.bossPressure.activeHunterId)?.name ?? "无";
+  const activeHunterName = BOSS_ORDER.find((boss) => boss.id === state.bossPressure.activeHunterId)?.name ?? "无";
   const skillNames = state.activeSkillIds
     .map((id) => SKILLS.find((skill) => skill.id === id)?.name)
     .filter((name): name is string => Boolean(name));

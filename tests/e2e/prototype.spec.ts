@@ -5,6 +5,8 @@ declare global {
     __prototypeDebug?: {
       enemyCount: number;
       bossCount: number;
+      bulletCount: number;
+      buildingCount: number;
       mapWidth: number;
       mapHeight: number;
     };
@@ -25,10 +27,18 @@ test("prototype loads and responds to keyboard controls", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.enemyCount ?? 0))
     .toBeGreaterThan(0);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.buildingCount ?? 0))
+    .toBeGreaterThanOrEqual(14);
 
   const beforeInput = await canvas.evaluate((element) =>
     (element as HTMLCanvasElement).toDataURL(),
   );
+  await page.mouse.move(720, 300);
+  await page.keyboard.press("Space");
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.bulletCount ?? 0))
+    .toBeGreaterThan(0);
   await page.keyboard.press("X");
   await page.keyboard.press("Q");
   await page.keyboard.press("B");
