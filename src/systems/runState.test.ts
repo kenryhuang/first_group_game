@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRunState, collectNode, gainRunExperience, killRunBoss, useRunSkill } from "./runState";
+import { applyRunDamage, createRunState, collectNode, gainRunExperience, killRunBoss, useRunSkill } from "./runState";
 
 describe("run state", () => {
   it("starts as an ordinary survivor with no out-of-run growth", () => {
@@ -36,5 +36,13 @@ describe("run state", () => {
   it("skill use adds temporary pollution", () => {
     const state = useRunSkill(createRunState(), "cleaver-dash");
     expect(state.temporaryPollution).toBe(3);
+  });
+
+  it("applies incoming damage to the player without going below zero", () => {
+    const damaged = applyRunDamage(createRunState(), 18);
+    expect(damaged.health).toBe(82);
+
+    const defeated = applyRunDamage(damaged, 200);
+    expect(defeated.health).toBe(0);
   });
 });

@@ -83,6 +83,13 @@ export function useRunSkill(state: RunState, skillId: string): RunState {
   };
 }
 
+export function applyRunDamage(state: RunState, amount: number): RunState {
+  return {
+    ...state,
+    health: Math.max(0, state.health - Math.max(0, Math.round(amount))),
+  };
+}
+
 export function killRunBoss(state: RunState, bossId: BossId): RunState {
   const boss = BOSS_ORDER.find((candidate) => candidate.id === bossId);
   if (!boss || state.killedBossIds.includes(bossId)) {

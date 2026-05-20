@@ -3,7 +3,7 @@ import { Howl } from "howler";
 import { gsap } from "gsap";
 import { BOSS_ORDER } from "../data/prototypeData";
 import type { BossId, MapNode, RunState } from "../domain/types";
-import { collectNode, createRunState, gainRunExperience, killRunBoss, useRunSkill } from "../systems/runState";
+import { applyRunDamage, collectNode, createRunState, gainRunExperience, killRunBoss, useRunSkill } from "../systems/runState";
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -46,6 +46,7 @@ interface Actor {
 interface EnemyActor extends Actor {
   health: number;
   speed: number;
+  contactDamageElapsedMs: number;
 }
 
 interface BossActor extends Actor {
@@ -59,6 +60,7 @@ interface BossActor extends Actor {
   skillCooldownMs: number;
   chargeMs: number;
   chargeAngle: number;
+  contactDamageElapsedMs: number;
 }
 
 interface BulletActor extends Actor {
@@ -74,6 +76,12 @@ interface HazardActor extends Actor {
 
 interface NodeActor extends Actor {
   nodeId: string;
+}
+
+interface DamageNumberActor {
+  view: Text;
+  lifeMs: number;
+  velocityY: number;
 }
 
 interface BuildingVisual {
@@ -99,6 +107,7 @@ export class PixiWastelandGame {
   private bullets: BulletActor[] = [];
   private bossHazards: HazardActor[] = [];
   private bosses: BossActor[] = [];
+  private damageNumbers: DamageNumberActor[] = [];
   private buildingVisuals: BuildingVisual[] = [];
   private interiorVisibilityMask = new Graphics();
   private keys = new Set<string>();
@@ -148,6 +157,7 @@ export class PixiWastelandGame {
     this.updateBosses(delta);
     this.updateProjectiles(delta);
     this.updateBossHazards(delta);
+    this.updateDamageNumbers(delta);
     this.updateSpawning(delta);
     this.updateAutoAttack(delta);
     this.highlightNearbyNode();
@@ -321,6 +331,7 @@ export class PixiWastelandGame {
     const seconds = deltaMs / 1000;
 
     for (const enemy of this.enemies) {
+      enemy.contactDamageElapsedMs += deltaMs;
       const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
       const desired = {
         x: enemy.x + Math.cos(angle) * enemy.speed * seconds,
@@ -328,6 +339,14 @@ export class PixiWastelandGame {
       };
       const resolved = resolveBlockedMovement(enemy, desired, 11);
       this.setActorPosition(enemy, resolved.x, resolved.y);
+      if (
+        enemy.contactDamageElapsedMs >= 700 &&
+        this.isSameVisibilityZone(this.player, enemy) &&
+        distance(this.player, enemy) <= 28
+      ) {
+        enemy.contactDamageElapsedMs = 0;
+        this.applyPlayerDamage(5);
+      }
     }
   }
 
@@ -337,6 +356,7 @@ export class PixiWastelandGame {
 
     for (const boss of this.bosses) {
       boss.skillElapsedMs += deltaMs;
+      boss.contactDamageElapsedMs += deltaMs;
       const sameZoneAsPlayer = this.isSameVisibilityZone(this.player, boss);
       const playerDistance = sameZoneAsPlayer ? distance(this.player, boss) : Number.POSITIVE_INFINITY;
       if (boss.chargeMs <= 0) {
@@ -356,6 +376,10 @@ export class PixiWastelandGame {
       };
       const resolved = resolveBlockedMovement(boss, desired, 34);
       this.setActorPosition(boss, resolved.x, resolved.y);
+      if (sameZoneAsPlayer && boss.contactDamageElapsedMs >= 700 && distance(this.player, boss) <= 54) {
+        boss.contactDamageElapsedMs = 0;
+        this.applyPlayerDamage(boss.mode === "charge" ? 22 : 12);
+      }
 
       boss.chargeMs = Math.max(0, boss.chargeMs - deltaMs);
       if (boss.chargeMs === 0 && boss.mode === "charge") {
@@ -417,6 +441,29 @@ export class PixiWastelandGame {
         hazard.y > MAP_HEIGHT
       ) {
         this.removeBossHazard(hazard);
+        continue;
+      }
+      if (
+        this.player &&
+        this.isSameVisibilityZone(this.player, hazard) &&
+        distance(this.player, hazard) <= hazard.radius + 16
+      ) {
+        this.applyPlayerDamage(hazard.radius >= 12 ? 18 : 9);
+        this.removeBossHazard(hazard);
+      }
+    }
+  }
+
+  private updateDamageNumbers(deltaMs: number): void {
+    const seconds = deltaMs / 1000;
+    for (const damageNumber of [...this.damageNumbers]) {
+      damageNumber.lifeMs -= deltaMs;
+      damageNumber.view.y += damageNumber.velocityY * seconds;
+      damageNumber.view.alpha = Math.max(0, damageNumber.lifeMs / 650);
+      if (damageNumber.lifeMs <= 0) {
+        this.world.removeChild(damageNumber.view);
+        damageNumber.view.destroy();
+        this.damageNumbers = this.damageNumbers.filter((candidate) => candidate !== damageNumber);
       }
     }
   }
@@ -455,6 +502,7 @@ export class PixiWastelandGame {
         y: position.y,
         health: 28,
         speed: 58 + (this.spawnSeed % 4) * 8,
+        contactDamageElapsedMs: 700,
       });
     }
   }
@@ -518,6 +566,7 @@ export class PixiWastelandGame {
       if (!this.isSameVisibilityZone(bullet, enemy)) continue;
       if (!projectileHitsCircle(bullet.projectile, { x: enemy.x, y: enemy.y, radius: 11 })) continue;
       enemy.health -= bullet.projectile.damage;
+      this.showDamageNumber(enemy.x, enemy.y - 20, bullet.projectile.damage, "#ffe066");
       this.flash(enemy.view, 0xd90429, 0x8d99ae, 11);
       if (enemy.health <= 0) {
         this.defeatEnemy(enemy);
@@ -532,6 +581,7 @@ export class PixiWastelandGame {
       if (!this.isSameVisibilityZone(bullet, boss)) continue;
       if (!projectileHitsCircle(bullet.projectile, { x: boss.x, y: boss.y, radius: 34 })) continue;
       boss.health -= bullet.projectile.damage;
+      this.showDamageNumber(boss.x, boss.y - 42, bullet.projectile.damage, "#ff9f1c");
       gsap.fromTo(boss.view.scale, { x: 1.18, y: 1.18 }, { x: 1, y: 1, duration: 0.12 });
       if (boss.health <= 0) {
         this.defeatBoss(boss);
@@ -640,6 +690,7 @@ export class PixiWastelandGame {
       skillCooldownMs: bossId === "chef" ? 3200 : bossId === "clown" ? 4200 : 3600,
       chargeMs: 0,
       chargeAngle: 0,
+      contactDamageElapsedMs: 700,
     });
   }
 
@@ -826,6 +877,7 @@ export class PixiWastelandGame {
       bossNames,
       insideBuilding,
       currentBuildingId,
+      playerHealth: this.state.health,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;
@@ -856,6 +908,41 @@ export class PixiWastelandGame {
 
   private isSameVisibilityZone(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
     return this.getVisibilityZoneId(a) === this.getVisibilityZoneId(b);
+  }
+
+  private applyPlayerDamage(amount: number): void {
+    if (!this.player || this.state.health <= 0) return;
+    const previousHealth = this.state.health;
+    this.state = applyRunDamage(this.state, amount);
+    const damage = previousHealth - this.state.health;
+    if (damage <= 0) return;
+
+    this.showDamageNumber(this.player.x, this.player.y - 34, damage, "#ff4d6d", "-");
+    this.flash(this.player.view, 0xff4d6d, 0x2ec4b6, 16);
+    this.callbacks.onRunState(this.state);
+  }
+
+  private showDamageNumber(
+    x: number,
+    y: number,
+    amount: number,
+    color: string,
+    prefix = "",
+  ): void {
+    const view = new Text({
+      text: `${prefix}${Math.round(amount)}`,
+      style: new TextStyle({
+        fill: color,
+        fontFamily: "Arial",
+        fontSize: 18,
+        fontWeight: "700",
+        stroke: { color: "#1a120f", width: 3 },
+      }),
+    });
+    view.anchor.set(0.5);
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.damageNumbers.push({ view, lifeMs: 650, velocityY: -44 });
   }
 
   private flash(view: Graphics, hitColor: number, baseColor: number, radius: number): void {

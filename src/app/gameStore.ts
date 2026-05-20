@@ -17,6 +17,7 @@ export interface GameMetrics {
   bossNames: string[];
   insideBuilding: boolean;
   currentBuildingId: string | null;
+  playerHealth: number;
 }
 
 interface GameStoreState extends GameMetrics {
@@ -39,6 +40,7 @@ export const useGameStore = defineStore("game", {
     bossNames: [],
     insideBuilding: false,
     currentBuildingId: null,
+    playerHealth: createRunState().health,
   }),
   getters: {
     hudLines: (state): string[] => [
@@ -65,6 +67,7 @@ export const useGameStore = defineStore("game", {
       this.bossNames = metrics.bossNames;
       this.insideBuilding = metrics.insideBuilding;
       this.currentBuildingId = metrics.currentBuildingId;
+      this.playerHealth = metrics.playerHealth;
     },
     setMessage(message: string): void {
       this.message = message;
