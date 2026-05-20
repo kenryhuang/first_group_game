@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUILDINGS,
   circleIntersectsBuildings,
+  getContainingBuildingId,
   pointInsideBuildings,
   resolveBlockedMovement,
 } from "./terrain";
@@ -24,5 +25,12 @@ describe("terrain", () => {
 
     expect(resolveBlockedMovement(from, intoBuilding, 16)).toEqual(intoBuilding);
     expect(pointInsideBuildings(intoBuilding)).toBe(true);
+  });
+
+  it("identifies the containing building for visibility zones", () => {
+    const building = BUILDINGS[0];
+
+    expect(getContainingBuildingId({ x: building.x, y: building.y })).toBe(building.id);
+    expect(getContainingBuildingId({ x: 9990, y: 9990 })).toBeNull();
   });
 });

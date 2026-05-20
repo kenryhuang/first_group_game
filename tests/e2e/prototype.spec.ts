@@ -13,6 +13,7 @@ declare global {
       bossName: string | null;
       bossNames: string[];
       insideBuilding: boolean;
+      currentBuildingId: string | null;
     };
   }
 }
@@ -43,6 +44,9 @@ test("prototype loads and responds to keyboard controls", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => typeof window.__prototypeDebug?.insideBuilding))
     .toBe("boolean");
+  await expect
+    .poll(() => page.evaluate(() => Object.hasOwn(window.__prototypeDebug ?? {}, "currentBuildingId")))
+    .toBe(true);
 
   const beforeInput = await canvas.evaluate((element) =>
     (element as HTMLCanvasElement).toDataURL(),

@@ -56,12 +56,16 @@ export function resolveBlockedMovement(from: Point, to: Point, radius: number, b
 }
 
 export function pointInsideBuildings(point: Point, buildings = BUILDINGS): boolean {
-  return buildings.some((building) => (
+  return getContainingBuildingId(point, buildings) !== null;
+}
+
+export function getContainingBuildingId(point: Point, buildings = BUILDINGS): string | null {
+  return buildings.find((building) => (
     point.x >= building.x - building.width / 2 &&
     point.x <= building.x + building.width / 2 &&
     point.y >= building.y - building.height / 2 &&
     point.y <= building.y + building.height / 2
-  ));
+  ))?.id ?? null;
 }
 
 function circleIntersectsRect(circle: Circle, rect: Rect): boolean {

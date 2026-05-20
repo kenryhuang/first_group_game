@@ -14,6 +14,7 @@ import {
 } from "../systems/spawning";
 import {
   BUILDINGS,
+  getContainingBuildingId,
   pointInsideBuildings,
   resolveBlockedMovement,
 } from "../systems/terrain";
@@ -75,6 +76,16 @@ interface NodeActor extends Actor {
   nodeId: string;
 }
 
+interface BuildingVisual {
+  id: string;
+  shell: Graphics;
+  roof: Graphics;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const BULLET_SOUND =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 
@@ -88,6 +99,8 @@ export class PixiWastelandGame {
   private bullets: BulletActor[] = [];
   private bossHazards: HazardActor[] = [];
   private bosses: BossActor[] = [];
+  private buildingVisuals: BuildingVisual[] = [];
+  private interiorVisibilityMask = new Graphics();
   private keys = new Set<string>();
   private pointerWorld = { x: PLAYER_START.x + 1, y: PLAYER_START.y };
   private attackMode: AttackMode = "auto";
@@ -115,6 +128,7 @@ export class PixiWastelandGame {
     this.createPlayer();
     this.createNodeMarkers();
     this.spawnInitialBosses();
+    this.world.addChild(this.interiorVisibilityMask);
     this.bindInput();
     this.spawnEnemyWave(12);
     this.app.ticker.add(this.update);
@@ -137,6 +151,7 @@ export class PixiWastelandGame {
     this.updateSpawning(delta);
     this.updateAutoAttack(delta);
     this.highlightNearbyNode();
+    this.updateVisibility();
     this.updateCamera();
     this.emitMetrics();
   };
@@ -184,24 +199,29 @@ export class PixiWastelandGame {
 
   private drawBuildings(): void {
     for (const building of BUILDINGS) {
-      this.drawBuilding(building.x, building.y, building.width, building.height);
+      this.drawBuilding(building.id, building.x, building.y, building.width, building.height);
     }
 
   }
 
-  private drawBuilding(x: number, y: number, width: number, height: number): void {
+  private drawBuilding(id: string, x: number, y: number, width: number, height: number): void {
     const shape = new Graphics();
     shape
       .rect(x - width / 2, y - height / 2, width, height)
-      .fill({ color: 0x1f2a24, alpha: 0.38 })
+      .fill({ color: 0x1f2a24, alpha: 0.52 })
       .stroke({ color: 0x9a8c5f, alpha: 0.72, width: 2 });
     this.world.addChild(shape);
 
-    const roofLine = new Graphics();
-    roofLine
+    const roof = new Graphics();
+    roof
+      .rect(x - width / 2, y - height / 2, width, height)
+      .fill({ color: 0x111510, alpha: 0.9 })
+      .stroke({ color: 0xfff3b0, alpha: 0.62, width: 2 });
+    roof
       .rect(x - width / 2 + 14, y - height / 2 + 13, width - 28, 7)
-      .fill({ color: 0xfff3b0, alpha: 0.42 });
-    this.world.addChild(roofLine);
+      .fill({ color: 0xfff3b0, alpha: 0.5 });
+    this.world.addChild(roof);
+    this.buildingVisuals.push({ id, shell: shape, roof, x, y, width, height });
   }
 
   private createPlayer(): void {
@@ -317,12 +337,13 @@ export class PixiWastelandGame {
 
     for (const boss of this.bosses) {
       boss.skillElapsedMs += deltaMs;
-      const playerDistance = distance(this.player, boss);
+      const sameZoneAsPlayer = this.isSameVisibilityZone(this.player, boss);
+      const playerDistance = sameZoneAsPlayer ? distance(this.player, boss) : Number.POSITIVE_INFINITY;
       if (boss.chargeMs <= 0) {
         boss.mode = playerDistance < 900 ? "chase" : "roam";
       }
 
-      if (boss.skillElapsedMs >= boss.skillCooldownMs) {
+      if (sameZoneAsPlayer && playerDistance < 900 && boss.skillElapsedMs >= boss.skillCooldownMs) {
         this.triggerBossSkill(boss);
       }
 
@@ -494,6 +515,7 @@ export class PixiWastelandGame {
 
   private hitEnemyWithBullet(bullet: BulletActor): boolean {
     for (const enemy of [...this.enemies]) {
+      if (!this.isSameVisibilityZone(bullet, enemy)) continue;
       if (!projectileHitsCircle(bullet.projectile, { x: enemy.x, y: enemy.y, radius: 11 })) continue;
       enemy.health -= bullet.projectile.damage;
       this.flash(enemy.view, 0xd90429, 0x8d99ae, 11);
@@ -507,6 +529,7 @@ export class PixiWastelandGame {
 
   private hitBossWithBullet(bullet: BulletActor): boolean {
     for (const boss of [...this.bosses]) {
+      if (!this.isSameVisibilityZone(bullet, boss)) continue;
       if (!projectileHitsCircle(bullet.projectile, { x: boss.x, y: boss.y, radius: 34 })) continue;
       boss.health -= bullet.projectile.damage;
       gsap.fromTo(boss.view.scale, { x: 1.18, y: 1.18 }, { x: 1, y: 1, duration: 0.12 });
@@ -550,12 +573,14 @@ export class PixiWastelandGame {
     if (!this.player) return undefined;
     let nearest: { x: number; y: number; distance: number } | undefined;
     for (const enemy of this.enemies) {
+      if (!this.isSameVisibilityZone(this.player, enemy)) continue;
       const distanceToEnemy = distance(this.player, enemy);
       if (distanceToEnemy <= maxDistance && (!nearest || distanceToEnemy < nearest.distance)) {
         nearest = { x: enemy.x, y: enemy.y, distance: distanceToEnemy };
       }
     }
     for (const boss of this.bosses) {
+      if (!this.isSameVisibilityZone(this.player, boss)) continue;
       const distanceToBoss = distance(this.player, boss);
       if (distanceToBoss <= maxDistance && (!nearest || distanceToBoss < nearest.distance)) {
         nearest = { x: boss.x, y: boss.y, distance: distanceToBoss };
@@ -728,6 +753,56 @@ export class PixiWastelandGame {
     );
   }
 
+  private updateVisibility(): void {
+    const currentBuildingId = this.getCurrentBuildingId();
+    this.updateInteriorVisibilityMask(currentBuildingId);
+
+    for (const building of this.buildingVisuals) {
+      const isCurrentInterior = currentBuildingId === building.id;
+      building.shell.alpha = isCurrentInterior ? 0.72 : 0.44;
+      building.roof.alpha = isCurrentInterior ? 0.08 : 0.94;
+    }
+
+    for (const enemy of this.enemies) {
+      enemy.view.visible = this.isVisibleFromPlayerZone(enemy);
+    }
+    for (const boss of this.bosses) {
+      const visible = this.isVisibleFromPlayerZone(boss);
+      boss.view.visible = visible;
+      boss.label.visible = visible;
+    }
+    for (const bullet of this.bullets) {
+      bullet.view.visible = this.isVisibleFromPlayerZone(bullet);
+    }
+    for (const hazard of this.bossHazards) {
+      hazard.view.visible = this.isVisibleFromPlayerZone(hazard);
+    }
+    for (const marker of this.nodeMarkers) {
+      marker.view.visible = this.isVisibleFromPlayerZone(marker);
+    }
+  }
+
+  private updateInteriorVisibilityMask(currentBuildingId: string | null): void {
+    this.interiorVisibilityMask.clear();
+    this.interiorVisibilityMask.visible = currentBuildingId !== null;
+    if (!currentBuildingId) return;
+
+    const building = this.buildingVisuals.find((visual) => visual.id === currentBuildingId);
+    if (!building) return;
+
+    const left = building.x - building.width / 2;
+    const right = building.x + building.width / 2;
+    const top = building.y - building.height / 2;
+    const bottom = building.y + building.height / 2;
+
+    this.interiorVisibilityMask
+      .rect(0, 0, MAP_WIDTH, top)
+      .rect(0, bottom, MAP_WIDTH, MAP_HEIGHT - bottom)
+      .rect(0, top, left, building.height)
+      .rect(right, top, MAP_WIDTH - right, building.height)
+      .fill({ color: 0x030403, alpha: 0.96 });
+  }
+
   private emitState(message: string): void {
     this.callbacks.onRunState(this.state);
     this.callbacks.onMessage(message);
@@ -737,6 +812,7 @@ export class PixiWastelandGame {
   private emitMetrics(): void {
     const bossNames = this.bosses.map((boss) => this.getBossName(boss.bossId));
     const nearestBoss = this.getNearestBoss();
+    const currentBuildingId = this.getCurrentBuildingId();
     const insideBuilding = this.player ? pointInsideBuildings(this.player) : false;
     const metrics = {
       enemyCount: this.enemies.length,
@@ -749,6 +825,7 @@ export class PixiWastelandGame {
       bossName: nearestBoss ? this.getBossName(nearestBoss.bossId) : null,
       bossNames,
       insideBuilding,
+      currentBuildingId,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;
@@ -762,6 +839,23 @@ export class PixiWastelandGame {
     actor.x = x;
     actor.y = y;
     actor.view.position.set(x, y);
+  }
+
+  private getCurrentBuildingId(): string | null {
+    return this.player ? getContainingBuildingId(this.player) : null;
+  }
+
+  private getVisibilityZoneId(point: { x: number; y: number }): string | null {
+    return getContainingBuildingId(point);
+  }
+
+  private isVisibleFromPlayerZone(actor: { x: number; y: number }): boolean {
+    if (!this.player) return true;
+    return this.getVisibilityZoneId(actor) === this.getCurrentBuildingId();
+  }
+
+  private isSameVisibilityZone(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+    return this.getVisibilityZoneId(a) === this.getVisibilityZoneId(b);
   }
 
   private flash(view: Graphics, hitColor: number, baseColor: number, radius: number): void {
