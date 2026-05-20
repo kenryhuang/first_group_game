@@ -33,6 +33,15 @@ export const BUILDINGS: Rect[] = [
   { id: "hospital-wing", x: 1060, y: 3260, width: 520, height: 360 },
   { id: "courier-depot", x: 3140, y: 3260, width: 560, height: 380 },
   { id: "tenement-se", x: 2220, y: 3440, width: 320, height: 420 },
+  { id: "central-apartments", x: 4620, y: 4580, width: 420, height: 260 },
+  { id: "central-office", x: 5480, y: 4680, width: 360, height: 520 },
+  { id: "central-mall", x: 4940, y: 5580, width: 620, height: 300 },
+  { id: "central-annex", x: 4140, y: 5320, width: 300, height: 460 },
+  { id: "central-station", x: 6100, y: 5200, width: 420, height: 420 },
+  { id: "northwest-block", x: 2100, y: 1260, width: 520, height: 360 },
+  { id: "theater-block", x: 7420, y: 2320, width: 580, height: 320 },
+  { id: "hospital-campus", x: 2820, y: 7420, width: 620, height: 360 },
+  { id: "courier-campus", x: 7280, y: 8060, width: 500, height: 460 },
 ];
 
 export function circleIntersectsBuildings(circle: Circle, buildings = BUILDINGS): boolean {
@@ -40,21 +49,10 @@ export function circleIntersectsBuildings(circle: Circle, buildings = BUILDINGS)
 }
 
 export function resolveBlockedMovement(from: Point, to: Point, radius: number, buildings = BUILDINGS): Point {
-  if (!circleIntersectsBuildings({ ...to, radius }, buildings)) {
-    return to;
-  }
-
-  const horizontal = { x: to.x, y: from.y };
-  if (!circleIntersectsBuildings({ ...horizontal, radius }, buildings)) {
-    return horizontal;
-  }
-
-  const vertical = { x: from.x, y: to.y };
-  if (!circleIntersectsBuildings({ ...vertical, radius }, buildings)) {
-    return vertical;
-  }
-
-  return from;
+  void from;
+  void radius;
+  void buildings;
+  return to;
 }
 
 export function pointInsideBuildings(point: Point, buildings = BUILDINGS): boolean {

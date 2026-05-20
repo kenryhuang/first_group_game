@@ -15,6 +15,7 @@ export interface GameMetrics {
   attackMode: "auto" | "manual";
   bossName: string | null;
   bossNames: string[];
+  insideBuilding: boolean;
 }
 
 interface GameStoreState extends GameMetrics {
@@ -35,11 +36,13 @@ export const useGameStore = defineStore("game", {
     attackMode: "auto",
     bossName: null,
     bossNames: [],
+    insideBuilding: false,
   }),
   getters: {
     hudLines: (state): string[] => [
       ...createHudLines(state.runState),
       `地图 ${state.mapWidth}x${state.mapHeight}  怪物 ${state.enemyCount}  子弹 ${state.bulletCount}  楼房 ${state.buildingCount}  Boss ${state.bossCount}/3`,
+      `位置 ${state.insideBuilding ? "室内" : "室外"}`,
       `游荡 Boss ${state.bossNames.join(" / ") || "无"}`,
       `普攻 ${state.attackMode === "auto" ? "自动" : "手动"}  Space 发射子弹  1-4 技能弹幕`,
     ],
@@ -58,6 +61,7 @@ export const useGameStore = defineStore("game", {
       this.attackMode = metrics.attackMode;
       this.bossName = metrics.bossName;
       this.bossNames = metrics.bossNames;
+      this.insideBuilding = metrics.insideBuilding;
     },
     setMessage(message: string): void {
       this.message = message;

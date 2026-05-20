@@ -14,7 +14,6 @@ import {
 } from "../systems/spawning";
 import {
   BUILDINGS,
-  circleIntersectsBuildings,
   pointInsideBuildings,
   resolveBlockedMovement,
 } from "../systems/terrain";
@@ -188,34 +187,20 @@ export class PixiWastelandGame {
       this.drawBuilding(building.x, building.y, building.width, building.height);
     }
 
-    const cityBlocks = [
-      [4620, 4580, 420, 260],
-      [5480, 4680, 360, 520],
-      [4940, 5580, 620, 300],
-      [4140, 5320, 300, 460],
-      [6100, 5200, 420, 420],
-      [2100, 1260, 520, 360],
-      [7420, 2320, 580, 320],
-      [2820, 7420, 620, 360],
-      [7280, 8060, 500, 460],
-    ] as const;
-    for (const [x, y, width, height] of cityBlocks) {
-      this.drawBuilding(x, y, width, height);
-    }
   }
 
   private drawBuilding(x: number, y: number, width: number, height: number): void {
     const shape = new Graphics();
     shape
       .rect(x - width / 2, y - height / 2, width, height)
-      .fill({ color: 0x121512, alpha: 0.96 })
-      .stroke({ color: 0x68705d, alpha: 0.78, width: 3 });
+      .fill({ color: 0x1f2a24, alpha: 0.38 })
+      .stroke({ color: 0x9a8c5f, alpha: 0.72, width: 2 });
     this.world.addChild(shape);
 
     const roofLine = new Graphics();
     roofLine
       .rect(x - width / 2 + 14, y - height / 2 + 13, width - 28, 7)
-      .fill({ color: 0x9a8c5f, alpha: 0.5 });
+      .fill({ color: 0xfff3b0, alpha: 0.42 });
     this.world.addChild(roofLine);
   }
 
@@ -386,9 +371,7 @@ export class PixiWastelandGame {
         bullet.x < 0 ||
         bullet.y < 0 ||
         bullet.x > MAP_WIDTH ||
-        bullet.y > MAP_HEIGHT ||
-        pointInsideBuildings(bullet.projectile) ||
-        circleIntersectsBuildings(bullet.projectile)
+        bullet.y > MAP_HEIGHT
       ) {
         this.removeBullet(bullet);
         continue;
@@ -410,8 +393,7 @@ export class PixiWastelandGame {
         hazard.x < 0 ||
         hazard.y < 0 ||
         hazard.x > MAP_WIDTH ||
-        hazard.y > MAP_HEIGHT ||
-        circleIntersectsBuildings({ x: hazard.x, y: hazard.y, radius: hazard.radius })
+        hazard.y > MAP_HEIGHT
       ) {
         this.removeBossHazard(hazard);
       }
@@ -458,14 +440,9 @@ export class PixiWastelandGame {
 
   private findOpenEnemySpawnPosition(): { x: number; y: number } {
     const player = this.player ?? PLAYER_START;
-    for (let attempt = 0; attempt < 16; attempt += 1) {
-      const position = getSpawnPositionAroundPlayer(player, this.spawnSeed);
-      this.spawnSeed += 1;
-      if (!circleIntersectsBuildings({ ...position, radius: 11 })) {
-        return position;
-      }
-    }
-    return getSpawnPositionAroundPlayer(player, this.spawnSeed++);
+    const position = getSpawnPositionAroundPlayer(player, this.spawnSeed);
+    this.spawnSeed += 1;
+    return position;
   }
 
   private fireProjectile(
@@ -642,22 +619,7 @@ export class PixiWastelandGame {
   }
 
   private findOpenBossSpawnPosition(bossId: BossId): { x: number; y: number } {
-    const base = getBossSpawnPosition(this.player ?? PLAYER_START, bossId);
-    if (!circleIntersectsBuildings({ ...base, radius: 34 })) {
-      return base;
-    }
-    const player = this.player ?? PLAYER_START;
-    for (let attempt = 0; attempt < 16; attempt += 1) {
-      const angle = attempt * 0.72;
-      const candidate = {
-        x: clamp(player.x + Math.cos(angle) * (900 + attempt * 60), 48, MAP_WIDTH - 48),
-        y: clamp(player.y + Math.sin(angle) * (900 + attempt * 60), 48, MAP_HEIGHT - 48),
-      };
-      if (!circleIntersectsBuildings({ ...candidate, radius: 34 })) {
-        return candidate;
-      }
-    }
-    return base;
+    return getBossSpawnPosition(this.player ?? PLAYER_START, bossId);
   }
 
   private getNextRoamTarget(boss: Pick<BossActor, "bossId" | "x" | "y">): { x: number; y: number } {
@@ -775,6 +737,7 @@ export class PixiWastelandGame {
   private emitMetrics(): void {
     const bossNames = this.bosses.map((boss) => this.getBossName(boss.bossId));
     const nearestBoss = this.getNearestBoss();
+    const insideBuilding = this.player ? pointInsideBuildings(this.player) : false;
     const metrics = {
       enemyCount: this.enemies.length,
       bossCount: this.bosses.length,
@@ -785,6 +748,7 @@ export class PixiWastelandGame {
       attackMode: this.attackMode,
       bossName: nearestBoss ? this.getBossName(nearestBoss.bossId) : null,
       bossNames,
+      insideBuilding,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;

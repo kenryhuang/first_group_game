@@ -12,6 +12,7 @@ declare global {
       attackMode: "auto" | "manual";
       bossName: string | null;
       bossNames: string[];
+      insideBuilding: boolean;
     };
   }
 }
@@ -39,6 +40,9 @@ test("prototype loads and responds to keyboard controls", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.buildingCount ?? 0))
     .toBeGreaterThanOrEqual(14);
+  await expect
+    .poll(() => page.evaluate(() => typeof window.__prototypeDebug?.insideBuilding))
+    .toBe("boolean");
 
   const beforeInput = await canvas.evaluate((element) =>
     (element as HTMLCanvasElement).toDataURL(),
