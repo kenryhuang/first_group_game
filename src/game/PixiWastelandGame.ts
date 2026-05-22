@@ -43,6 +43,7 @@ interface GameCallbacks {
   onMetrics(metrics: GameMetrics): void;
   onMessage(message: string): void;
   onRunState(state: RunState): void;
+  onGameOver(state: RunState): void;
 }
 
 interface Actor {
@@ -146,6 +147,7 @@ export class PixiWastelandGame {
   private autoAttackElapsed = 0;
   private screenShakeMs = 0;
   private screenShakeMagnitude = 0;
+  private gameOver = false;
   private spawnSeed = 1;
   private readonly shotSound = new Howl({ src: [BULLET_SOUND], volume: 0.035 });
 
@@ -182,6 +184,7 @@ export class PixiWastelandGame {
   }
 
   private readonly update = (ticker: Ticker): void => {
+    if (this.gameOver) return;
     const delta = ticker.deltaMS;
     this.movePlayer(delta);
     this.updateEnemies(delta);
@@ -1312,6 +1315,10 @@ export class PixiWastelandGame {
     this.showDamageNumber(this.player.x, this.player.y - 34, damage, "#ff4d6d", "-");
     this.flashPlayerMech();
     this.callbacks.onRunState(this.state);
+    if (this.state.health <= 0) {
+      this.gameOver = true;
+      this.callbacks.onGameOver(this.state);
+    }
   }
 
   private showDamageNumber(

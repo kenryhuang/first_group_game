@@ -22,6 +22,10 @@ declare global {
 test("prototype loads and responds to keyboard controls", async ({ page }) => {
   await page.goto("/");
 
+  await expect(page.getByRole("button", { name: "开始游戏" })).toBeVisible();
+  await expect(page.locator("canvas")).toHaveCount(0);
+  await page.getByRole("button", { name: "开始游戏" }).click();
+
   const canvas = page.locator("canvas").first();
   await expect(canvas).toBeVisible();
   await expect
