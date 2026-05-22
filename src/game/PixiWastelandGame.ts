@@ -8,7 +8,6 @@ import {
   MAP_HEIGHT,
   MAP_WIDTH,
   PLAYER_START,
-  getBossSpawnPosition,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
 } from "../systems/spawning";
@@ -28,11 +27,17 @@ import {
 import { getInitialRoamingBossIds } from "../systems/bossRoaming";
 import { getAimTarget } from "../systems/aiming";
 import { BOSS_VISUAL_THEMES, ZOMBIE_ENEMY_THEME } from "../systems/enemyVisuals";
+import {
+  getBossRoamTargetInTerritory,
+  getBossTerritorySpawnPosition,
+  isPointInBossTerritory,
+} from "../systems/bossTerritories";
 import { BASIC_GUN } from "../systems/weapons";
 import type { GameMetrics } from "../app/gameStore";
 
 type AttackMode = "auto" | "manual";
-type BossMode = "roam" | "chase" | "charge";
+type BossMode = "roam" | "chase" | "charge" | "windup";
+type HazardKind = "bossProjectile" | "chiliOil" | "firePit" | "knife";
 
 interface GameCallbacks {
   onMetrics(metrics: GameMetrics): void;
@@ -63,6 +68,8 @@ interface BossActor extends Actor {
   skillCooldownMs: number;
   chargeMs: number;
   chargeAngle: number;
+  windupMs: number;
+  pendingChargeAngle: number;
   contactDamageElapsedMs: number;
 }
 
@@ -71,10 +78,20 @@ interface BulletActor extends Actor {
 }
 
 interface HazardActor extends Actor {
+  kind: HazardKind;
   velocityX: number;
   velocityY: number;
   radius: number;
   lifeMs: number;
+  damage: number;
+  tickElapsedMs: number;
+  expiresIntoFire: boolean;
+}
+
+interface TelegraphActor {
+  view: Graphics;
+  lifeMs: number;
+  maxLifeMs: number;
 }
 
 interface NodeActor extends Actor {
@@ -116,6 +133,7 @@ export class PixiWastelandGame {
   private enemies: EnemyActor[] = [];
   private bullets: BulletActor[] = [];
   private bossHazards: HazardActor[] = [];
+  private bossTelegraphs: TelegraphActor[] = [];
   private bosses: BossActor[] = [];
   private damageNumbers: DamageNumberActor[] = [];
   private buildingVisuals: BuildingVisual[] = [];
@@ -168,6 +186,7 @@ export class PixiWastelandGame {
     this.movePlayer(delta);
     this.updateEnemies(delta);
     this.updateBosses(delta);
+    this.updateTelegraphs(delta);
     this.updateProjectiles(delta);
     this.updateBossHazards(delta);
     this.updateDamageNumbers(delta);
@@ -422,8 +441,17 @@ export class PixiWastelandGame {
       boss.skillElapsedMs += deltaMs;
       boss.contactDamageElapsedMs += deltaMs;
       const sameZoneAsPlayer = this.isSameVisibilityZone(this.player, boss);
-      const playerDistance = sameZoneAsPlayer ? distance(this.player, boss) : Number.POSITIVE_INFINITY;
-      if (boss.chargeMs <= 0) {
+      const playerInTerritory = isPointInBossTerritory(boss.bossId, this.player);
+      const playerDistance = sameZoneAsPlayer && playerInTerritory ? distance(this.player, boss) : Number.POSITIVE_INFINITY;
+
+      if (boss.mode === "windup") {
+        boss.windupMs = Math.max(0, boss.windupMs - deltaMs);
+        if (boss.windupMs === 0) {
+          boss.mode = "charge";
+          boss.chargeMs = 360;
+          boss.chargeAngle = boss.pendingChargeAngle;
+        }
+      } else if (boss.chargeMs <= 0) {
         boss.mode = playerDistance < 900 ? "chase" : "roam";
       }
 
@@ -432,7 +460,7 @@ export class PixiWastelandGame {
       }
 
       const movement = this.getBossMovementTarget(boss);
-      const speed = boss.mode === "charge" ? 360 : boss.mode === "chase" ? 112 : 68;
+      const speed = boss.mode === "windup" ? 0 : boss.mode === "charge" ? this.getBossChargeSpeed(boss) : boss.mode === "chase" ? 112 : 68;
       const angle = Math.atan2(movement.y - boss.y, movement.x - boss.x);
       const desired = {
         x: boss.x + Math.cos(angle) * speed * seconds,
@@ -461,14 +489,18 @@ export class PixiWastelandGame {
   private getBossMovementTarget(boss: BossActor): { x: number; y: number } {
     if (boss.mode === "charge") {
       return {
-        x: boss.x + Math.cos(boss.chargeAngle) * 320,
-        y: boss.y + Math.sin(boss.chargeAngle) * 320,
+      x: boss.x + Math.cos(boss.chargeAngle) * 320,
+      y: boss.y + Math.sin(boss.chargeAngle) * 320,
       };
     }
-    if (boss.mode === "chase" && this.player) {
+    if (boss.mode === "chase" && this.player && isPointInBossTerritory(boss.bossId, this.player)) {
       return this.player;
     }
     return boss.roamTarget;
+  }
+
+  private getBossChargeSpeed(boss: BossActor): number {
+    return boss.bossId === "courier" ? 1120 : 360;
   }
 
   private updateProjectiles(deltaMs: number): void {
@@ -497,6 +529,10 @@ export class PixiWastelandGame {
     const seconds = deltaMs / 1000;
     for (const hazard of [...this.bossHazards]) {
       hazard.lifeMs -= deltaMs;
+      hazard.tickElapsedMs += deltaMs;
+      if (hazard.kind === "knife") {
+        hazard.view.rotation += seconds * 12;
+      }
       this.setActorPosition(hazard, hazard.x + hazard.velocityX * seconds, hazard.y + hazard.velocityY * seconds);
       if (
         hazard.lifeMs <= 0 ||
@@ -505,6 +541,9 @@ export class PixiWastelandGame {
         hazard.x > MAP_WIDTH ||
         hazard.y > MAP_HEIGHT
       ) {
+        if (hazard.expiresIntoFire) {
+          this.spawnFirePit(hazard.x, hazard.y);
+        }
         this.removeBossHazard(hazard);
         continue;
       }
@@ -513,8 +552,30 @@ export class PixiWastelandGame {
         this.isSameVisibilityZone(this.player, hazard) &&
         distance(this.player, hazard) <= hazard.radius + 16
       ) {
-        this.applyPlayerDamage(hazard.radius >= 12 ? 18 : 9);
-        this.removeBossHazard(hazard);
+        if (hazard.kind === "firePit") {
+          if (hazard.tickElapsedMs >= 450) {
+            hazard.tickElapsedMs = 0;
+            this.applyPlayerDamage(hazard.damage);
+          }
+        } else {
+          this.applyPlayerDamage(hazard.damage);
+          if (hazard.expiresIntoFire) {
+            this.spawnFirePit(hazard.x, hazard.y);
+          }
+          this.removeBossHazard(hazard);
+        }
+      }
+    }
+  }
+
+  private updateTelegraphs(deltaMs: number): void {
+    for (const telegraph of [...this.bossTelegraphs]) {
+      telegraph.lifeMs -= deltaMs;
+      telegraph.view.alpha = Math.max(0, telegraph.lifeMs / telegraph.maxLifeMs);
+      if (telegraph.lifeMs <= 0) {
+        this.world.removeChild(telegraph.view);
+        telegraph.view.destroy();
+        this.bossTelegraphs = this.bossTelegraphs.filter((candidate) => candidate !== telegraph);
       }
     }
   }
@@ -900,6 +961,8 @@ export class PixiWastelandGame {
       skillCooldownMs: bossId === "chef" ? 3200 : bossId === "clown" ? 4200 : 3600,
       chargeMs: 0,
       chargeAngle: 0,
+      windupMs: 0,
+      pendingChargeAngle: 0,
       contactDamageElapsedMs: 700,
     });
   }
@@ -942,43 +1005,113 @@ export class PixiWastelandGame {
   }
 
   private findOpenBossSpawnPosition(bossId: BossId): { x: number; y: number } {
-    return getBossSpawnPosition(this.player ?? PLAYER_START, bossId);
+    return getBossTerritorySpawnPosition(bossId);
   }
 
   private getNextRoamTarget(boss: Pick<BossActor, "bossId" | "x" | "y">): { x: number; y: number } {
-    const seed = boss.bossId === "chef" ? 0.2 : boss.bossId === "clown" ? 2.1 : 4.0;
-    const angle = seed + this.spawnSeed * 0.83;
-    const range = boss.bossId === "courier" ? 780 : 560;
-    return {
-      x: clamp(boss.x + Math.cos(angle) * range, 80, MAP_WIDTH - 80),
-      y: clamp(boss.y + Math.sin(angle) * range, 80, MAP_HEIGHT - 80),
-    };
+    this.spawnSeed += 1;
+    return getBossRoamTargetInTerritory(boss.bossId, this.spawnSeed);
   }
 
   private triggerBossSkill(boss: BossActor): void {
     boss.skillElapsedMs = 0;
     if (!this.player) return;
     if (boss.bossId === "chef") {
-      boss.mode = "charge";
-      boss.chargeMs = 520;
-      boss.chargeAngle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+      this.throwChiliOil(boss);
       this.emitState(`${this.getBossName(boss.bossId)} 发起冲锋。`);
       return;
     }
     if (boss.bossId === "clown") {
-      for (let index = 0; index < 10; index += 1) {
-        const angle = (Math.PI * 2 * index) / 10;
-        this.spawnBossHazard(boss.x, boss.y, angle, 210, 0x9d4edd, 1500, 7);
+      for (let index = 0; index < 12; index += 1) {
+        const angle = (Math.PI * 2 * index) / 12;
+        this.spawnKnifeHazard(boss.x, boss.y, angle, 440);
       }
       this.emitState(`${this.getBossName(boss.bossId)} 释放环形弹幕。`);
       return;
     }
     const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
-    boss.mode = "charge";
-    boss.chargeMs = 360;
-    boss.chargeAngle = angle;
-    this.spawnBossHazard(boss.x, boss.y, angle, 160, 0xf77f00, 1900, 12);
+    boss.mode = "windup";
+    boss.windupMs = 650;
+    boss.pendingChargeAngle = angle;
+    this.spawnChargeTelegraph(boss, angle);
     this.emitState(`${this.getBossName(boss.bossId)} 投出爆炸包。`);
+  }
+
+  private throwChiliOil(boss: BossActor): void {
+    if (!this.player) return;
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    const travelMs = clamp((distance(boss, this.player) / 360) * 1000, 520, 1350);
+    this.spawnBossHazard(boss.x, boss.y, angle, 360, 0xff6b00, travelMs, 11, "chiliOil", 8, true);
+  }
+
+  private spawnKnifeHazard(x: number, y: number, angle: number, speed: number): void {
+    const view = new Graphics();
+    this.drawFlyingKnife(view);
+    view.position.set(x, y);
+    view.rotation = angle;
+    this.world.addChild(view);
+    this.bossHazards.push({
+      view,
+      kind: "knife",
+      x,
+      y,
+      radius: 13,
+      lifeMs: 1800,
+      damage: 7,
+      tickElapsedMs: 0,
+      expiresIntoFire: false,
+      velocityX: Math.cos(angle) * speed,
+      velocityY: Math.sin(angle) * speed,
+    });
+  }
+
+  private drawFlyingKnife(view: Graphics): void {
+    view.clear();
+    view
+      .poly([18, 0, 2, -5, -12, -3, -14, 0, -12, 3, 2, 5])
+      .fill(0xdce8ef)
+      .stroke({ color: 0x47315f, width: 1.4 });
+    view.rect(-20, -3, 9, 6).fill(0x9d4edd);
+    view.circle(-22, 0, 3).fill(0xffd166);
+  }
+
+  private spawnFirePit(x: number, y: number): void {
+    const view = new Graphics();
+    view
+      .circle(0, 0, 56)
+      .fill({ color: 0xff5a1f, alpha: 0.28 })
+      .stroke({ color: 0xffd166, alpha: 0.72, width: 3 });
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (Math.PI * 2 * index) / 8;
+      view.circle(Math.cos(angle) * 30, Math.sin(angle) * 30, 8).fill({ color: 0xffba08, alpha: 0.55 });
+    }
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.bossHazards.push({
+      view,
+      kind: "firePit",
+      x,
+      y,
+      radius: 56,
+      lifeMs: 4600,
+      damage: 4,
+      tickElapsedMs: 450,
+      expiresIntoFire: false,
+      velocityX: 0,
+      velocityY: 0,
+    });
+  }
+
+  private spawnChargeTelegraph(boss: BossActor, angle: number): void {
+    const view = new Graphics();
+    view
+      .rect(0, -82, 980, 164)
+      .fill({ color: 0xd90429, alpha: 0.28 })
+      .stroke({ color: 0xfff3b0, alpha: 0.7, width: 3 });
+    view.position.set(boss.x, boss.y);
+    view.rotation = angle;
+    this.world.addChild(view);
+    this.bossTelegraphs.push({ view, lifeMs: 650, maxLifeMs: 650 });
   }
 
   private spawnBossHazard(
@@ -989,6 +1122,9 @@ export class PixiWastelandGame {
     color: number,
     lifeMs: number,
     radius: number,
+    kind: HazardKind = "bossProjectile",
+    damage = 9,
+    expiresIntoFire = false,
   ): void {
     const view = new Graphics();
     view.circle(0, 0, radius).fill({ color, alpha: 0.85 }).stroke({ color: 0xfff3b0, alpha: 0.7, width: 2 });
@@ -996,10 +1132,14 @@ export class PixiWastelandGame {
     this.world.addChild(view);
     this.bossHazards.push({
       view,
+      kind,
       x,
       y,
       radius,
       lifeMs,
+      damage,
+      tickElapsedMs: 0,
+      expiresIntoFire,
       velocityX: Math.cos(angle) * speed,
       velocityY: Math.sin(angle) * speed,
     });
@@ -1076,6 +1216,9 @@ export class PixiWastelandGame {
     }
     for (const hazard of this.bossHazards) {
       hazard.view.visible = this.isVisibleFromPlayerZone(hazard);
+    }
+    for (const telegraph of this.bossTelegraphs) {
+      telegraph.view.visible = this.getCurrentBuildingId() === null;
     }
     for (const marker of this.nodeMarkers) {
       marker.view.visible = this.isVisibleFromPlayerZone(marker);
