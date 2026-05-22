@@ -26,6 +26,7 @@ import {
   type ProjectileState,
 } from "../systems/projectiles";
 import { getInitialRoamingBossIds } from "../systems/bossRoaming";
+import { getAimTarget } from "../systems/aiming";
 import { BASIC_GUN } from "../systems/weapons";
 import type { GameMetrics } from "../app/gameStore";
 
@@ -120,6 +121,7 @@ export class PixiWastelandGame {
   private interiorVisibilityMask = new Graphics();
   private keys = new Set<string>();
   private pointerWorld = { x: PLAYER_START.x + 1, y: PLAYER_START.y };
+  private movementDirection = { x: 1, y: 0 };
   private attackMode: AttackMode = "auto";
   private enemySpawnElapsed = 0;
   private autoAttackElapsed = 0;
@@ -375,6 +377,9 @@ export class PixiWastelandGame {
     const dx = (this.isRightDown() ? 1 : 0) - (this.isLeftDown() ? 1 : 0);
     const dy = (this.isDownDown() ? 1 : 0) - (this.isUpDown() ? 1 : 0);
     const length = Math.hypot(dx, dy) || 1;
+    if (dx !== 0 || dy !== 0) {
+      this.movementDirection = { x: dx / length, y: dy / length };
+    }
     const desired = {
       x: clamp(this.player.x + (dx / length) * 260 * seconds, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + (dy / length) * 260 * seconds, 24, MAP_HEIGHT - 24),
@@ -724,13 +729,18 @@ export class PixiWastelandGame {
     this.playerWeapon.container.position.set(this.player.x, this.player.y);
     const angle = Math.atan2(target.y - this.player.y, target.x - this.player.x);
     this.playerWeapon.container.rotation = angle;
+    this.player.view.rotation = angle + Math.PI / 2;
   }
 
   private getWeaponAimTarget(): { x: number; y: number } {
-    if (this.attackMode === "auto") {
-      return this.getNearestTarget(620) ?? this.pointerWorld;
-    }
-    return this.pointerWorld;
+    if (!this.player) return this.pointerWorld;
+    const combatTarget = this.attackMode === "auto" ? this.getNearestTarget(620) : undefined;
+    return getAimTarget(
+      this.player,
+      combatTarget,
+      this.pointerWorld,
+      this.attackMode === "auto" && !combatTarget ? this.movementDirection : undefined,
+    );
   }
 
   private animateGunshot(): void {
