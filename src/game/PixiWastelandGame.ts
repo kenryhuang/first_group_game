@@ -701,22 +701,59 @@ export class PixiWastelandGame {
   }
 
   private animateGunshot(): void {
-    if (!this.playerWeapon) return;
+    if (!this.player || !this.playerWeapon) return;
     const { barrel, muzzleFlash } = this.playerWeapon;
-    barrel.x = -7;
-    gsap.to(barrel, { x: 0, duration: 0.08, ease: "power2.out" });
+    barrel.x = -11;
+    gsap.to(barrel, { x: 0, duration: 0.075, ease: "power2.out" });
 
     muzzleFlash.visible = true;
     muzzleFlash.alpha = 1;
-    muzzleFlash.scale.set(0.7);
-    gsap.to(muzzleFlash.scale, { x: 1.25, y: 1.25, duration: 0.06, ease: "power2.out" });
+    muzzleFlash.scale.set(0.5 + Math.random() * 0.35);
+    muzzleFlash.rotation = (Math.random() - 0.5) * 0.28;
+    gsap.to(muzzleFlash.scale, { x: 1.55, y: 1.35, duration: 0.05, ease: "power2.out" });
     gsap.to(muzzleFlash, {
       alpha: 0,
-      duration: 0.08,
+      duration: 0.07,
       onComplete: () => {
         muzzleFlash.visible = false;
       },
     });
+    this.spawnMuzzleSparks();
+
+    const recoilAngle = this.playerWeapon.container.rotation + Math.PI;
+    const recoilX = Math.cos(recoilAngle) * 2.5;
+    const recoilY = Math.sin(recoilAngle) * 2.5;
+    gsap.fromTo(
+      this.player.view,
+      { x: recoilX, y: recoilY },
+      { x: 0, y: 0, duration: 0.06, ease: "power2.out" },
+    );
+  }
+
+  private spawnMuzzleSparks(): void {
+    if (!this.player || !this.playerWeapon) return;
+    const angle = this.playerWeapon.container.rotation;
+    const muzzleX = this.player.x + Math.cos(angle) * 48;
+    const muzzleY = this.player.y + Math.sin(angle) * 48;
+
+    for (let index = 0; index < 3; index += 1) {
+      const sparkAngle = angle + (Math.random() - 0.5) * 0.75;
+      const spark = new Graphics();
+      spark.circle(0, 0, 1.6 + Math.random() * 1.8).fill(0xffc300);
+      spark.position.set(muzzleX, muzzleY);
+      this.world.addChild(spark);
+      gsap.to(spark, {
+        x: muzzleX + Math.cos(sparkAngle) * (18 + Math.random() * 18),
+        y: muzzleY + Math.sin(sparkAngle) * (18 + Math.random() * 18),
+        alpha: 0,
+        duration: 0.12,
+        ease: "power2.out",
+        onComplete: () => {
+          this.world.removeChild(spark);
+          spark.destroy();
+        },
+      });
+    }
   }
 
   private focusNearestBoss(): void {

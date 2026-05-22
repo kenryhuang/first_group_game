@@ -5,7 +5,7 @@ export interface GunTuning {
 }
 
 export const BASIC_GUN: GunTuning = {
-  damage: 14,
-  projectileSpeed: 1350,
-  attackIntervalMs: 380,
+  damage: 2,
+  projectileSpeed: 1650,
+  attackIntervalMs: 75,
 };
