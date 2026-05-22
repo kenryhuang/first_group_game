@@ -26,6 +26,7 @@ import {
   type ProjectileState,
 } from "../systems/projectiles";
 import { getInitialRoamingBossIds } from "../systems/bossRoaming";
+import { BASIC_GUN } from "../systems/weapons";
 import type { GameMetrics } from "../app/gameStore";
 
 type AttackMode = "auto" | "manual";
@@ -84,6 +85,12 @@ interface DamageNumberActor {
   velocityY: number;
 }
 
+interface WeaponVisual {
+  container: Container;
+  barrel: Graphics;
+  muzzleFlash: Graphics;
+}
+
 interface BuildingVisual {
   id: string;
   shell: Graphics;
@@ -101,6 +108,7 @@ export class PixiWastelandGame {
   private app = new Application();
   private world = new Container();
   private player?: Actor;
+  private playerWeapon?: WeaponVisual;
   private state: RunState = createRunState();
   private nodeMarkers: NodeActor[] = [];
   private enemies: EnemyActor[] = [];
@@ -160,6 +168,7 @@ export class PixiWastelandGame {
     this.updateDamageNumbers(delta);
     this.updateSpawning(delta);
     this.updateAutoAttack(delta);
+    this.updateWeaponAim();
     this.highlightNearbyNode();
     this.updateVisibility();
     this.updateCamera();
@@ -240,7 +249,32 @@ export class PixiWastelandGame {
     view.position.set(PLAYER_START.x, PLAYER_START.y);
     this.world.addChild(view);
     this.player = { view, x: PLAYER_START.x, y: PLAYER_START.y };
+    this.playerWeapon = this.createPlayerWeapon();
     this.updateCamera();
+  }
+
+  private createPlayerWeapon(): WeaponVisual {
+    const container = new Container();
+    container.position.set(PLAYER_START.x, PLAYER_START.y);
+
+    const barrel = new Graphics();
+    barrel
+      .roundRect(4, -4, 34, 8, 3)
+      .fill(0x2b2d42)
+      .stroke({ color: 0xf8f4e3, alpha: 0.72, width: 1.5 });
+    barrel.rect(7, 4, 12, 8).fill(0x3a3028);
+    barrel.rect(28, -2, 12, 4).fill(0x101315);
+    container.addChild(barrel);
+
+    const muzzleFlash = new Graphics();
+    muzzleFlash
+      .poly([38, 0, 54, -8, 49, 0, 54, 8])
+      .fill({ color: 0xfff3b0, alpha: 0.95 });
+    muzzleFlash.visible = false;
+    container.addChild(muzzleFlash);
+
+    this.world.addChild(container);
+    return { container, barrel, muzzleFlash };
   }
 
   private createNodeMarkers(): void {
@@ -278,7 +312,7 @@ export class PixiWastelandGame {
     this.keys.add(event.key.toLowerCase());
     if (event.code === "Space") {
       event.preventDefault();
-      this.fireProjectile(this.pointerWorld, "basic", 34, 720, "手动普攻");
+      this.fireProjectile(this.pointerWorld, "basic", BASIC_GUN.damage, BASIC_GUN.projectileSpeed, "手动普攻");
     }
     if (event.key.toLowerCase() === "q") {
       this.attackMode = this.attackMode === "auto" ? "manual" : "auto";
@@ -480,11 +514,11 @@ export class PixiWastelandGame {
   private updateAutoAttack(deltaMs: number): void {
     if (this.attackMode !== "auto") return;
     this.autoAttackElapsed += deltaMs;
-    if (this.autoAttackElapsed < 600) return;
+    if (this.autoAttackElapsed < BASIC_GUN.attackIntervalMs) return;
     this.autoAttackElapsed = 0;
     const target = this.getNearestTarget(620);
     if (target) {
-      this.fireProjectile(target, "basic", 34, 720, "自动普攻");
+      this.fireProjectile(target, "basic", BASIC_GUN.damage, BASIC_GUN.projectileSpeed, "自动普攻");
     }
   }
 
@@ -522,12 +556,25 @@ export class PixiWastelandGame {
     label?: string,
   ): void {
     if (!this.player) return;
+    this.updateWeaponAim(target);
     const projectile = createProjectileState(this.player, target, kind, speed, damage);
     const view = new Graphics();
-    view.circle(0, 0, projectile.radius).fill(kind === "skill" ? 0xff9f1c : 0xf7e967);
+    if (kind === "basic") {
+      view
+        .roundRect(-14, -2.5, 28, 5, 2.5)
+        .fill({ color: 0xf7e967, alpha: 0.95 })
+        .rect(-26, -1.5, 16, 3)
+        .fill({ color: 0xfff3b0, alpha: 0.35 });
+      view.rotation = Math.atan2(projectile.velocityY, projectile.velocityX);
+    } else {
+      view.circle(0, 0, projectile.radius).fill(0xff9f1c);
+    }
     view.position.set(projectile.x, projectile.y);
     this.world.addChild(view);
     this.bullets.push({ view, x: projectile.x, y: projectile.y, projectile });
+    if (kind === "basic") {
+      this.animateGunshot();
+    }
     this.playShotSound();
     if (label) {
       this.emitState(`${label}：发射子弹。`);
@@ -637,6 +684,39 @@ export class PixiWastelandGame {
       }
     }
     return nearest ? { x: nearest.x, y: nearest.y } : undefined;
+  }
+
+  private updateWeaponAim(target = this.getWeaponAimTarget()): void {
+    if (!this.player || !this.playerWeapon) return;
+    this.playerWeapon.container.position.set(this.player.x, this.player.y);
+    const angle = Math.atan2(target.y - this.player.y, target.x - this.player.x);
+    this.playerWeapon.container.rotation = angle;
+  }
+
+  private getWeaponAimTarget(): { x: number; y: number } {
+    if (this.attackMode === "auto") {
+      return this.getNearestTarget(620) ?? this.pointerWorld;
+    }
+    return this.pointerWorld;
+  }
+
+  private animateGunshot(): void {
+    if (!this.playerWeapon) return;
+    const { barrel, muzzleFlash } = this.playerWeapon;
+    barrel.x = -7;
+    gsap.to(barrel, { x: 0, duration: 0.08, ease: "power2.out" });
+
+    muzzleFlash.visible = true;
+    muzzleFlash.alpha = 1;
+    muzzleFlash.scale.set(0.7);
+    gsap.to(muzzleFlash.scale, { x: 1.25, y: 1.25, duration: 0.06, ease: "power2.out" });
+    gsap.to(muzzleFlash, {
+      alpha: 0,
+      duration: 0.08,
+      onComplete: () => {
+        muzzleFlash.visible = false;
+      },
+    });
   }
 
   private focusNearestBoss(): void {
