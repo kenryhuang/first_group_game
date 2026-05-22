@@ -27,6 +27,7 @@ import {
 } from "../systems/projectiles";
 import { getInitialRoamingBossIds } from "../systems/bossRoaming";
 import { getAimTarget } from "../systems/aiming";
+import { BOSS_VISUAL_THEMES, ZOMBIE_ENEMY_THEME } from "../systems/enemyVisuals";
 import { BASIC_GUN } from "../systems/weapons";
 import type { GameMetrics } from "../app/gameStore";
 
@@ -401,6 +402,7 @@ export class PixiWastelandGame {
       };
       const resolved = resolveBlockedMovement(enemy, desired, 11);
       this.setActorPosition(enemy, resolved.x, resolved.y);
+      enemy.view.rotation = angle;
       if (
         enemy.contactDamageElapsedMs >= 700 &&
         this.isSameVisibilityZone(this.player, enemy) &&
@@ -438,6 +440,7 @@ export class PixiWastelandGame {
       };
       const resolved = resolveBlockedMovement(boss, desired, 34);
       this.setActorPosition(boss, resolved.x, resolved.y);
+      boss.view.rotation = angle;
       if (sameZoneAsPlayer && boss.contactDamageElapsedMs >= 700 && distance(this.player, boss) <= 54) {
         boss.contactDamageElapsedMs = 0;
         this.applyPlayerDamage(boss.mode === "charge" ? 22 : 12);
@@ -562,7 +565,7 @@ export class PixiWastelandGame {
     for (let index = 0; index < count; index += 1) {
       const position = this.findOpenEnemySpawnPosition();
       const view = new Graphics();
-      view.circle(0, 0, 11).fill(0x8d99ae);
+      this.drawZombieEnemy(view);
       view.position.set(position.x, position.y);
       this.world.addChild(view);
       this.enemies.push({
@@ -574,6 +577,30 @@ export class PixiWastelandGame {
         contactDamageElapsedMs: 700,
       });
     }
+  }
+
+  private drawZombieEnemy(view: Graphics, hit = false): void {
+    const theme = ZOMBIE_ENEMY_THEME;
+    view.clear();
+    view
+      .ellipse(0, 0, 9, 13)
+      .fill(hit ? theme.bloodColor : theme.bodyColor)
+      .stroke({ color: 0x26321f, alpha: 0.82, width: 1.4 });
+    view.circle(11, -1, 6).fill(theme.headColor).stroke({ color: theme.bloodColor, alpha: 0.62, width: 1 });
+    view.rect(-10, -12, 5, 18).fill(0x3f5638);
+    view.rect(-7, 8, 5, 15).fill(0x3f5638);
+    view.rect(4, -14, 5, 19).fill(theme.accentColor);
+    view.circle(13, -3, 1.5).fill(0x121510);
+    view.circle(12, 2, 1.3).fill(theme.bloodColor);
+    view.rect(-4, -7, 8, 3).fill({ color: theme.bloodColor, alpha: 0.72 });
+  }
+
+  private flashZombieEnemy(view: Graphics): void {
+    this.drawZombieEnemy(view, true);
+    window.setTimeout(() => {
+      if (view.destroyed) return;
+      this.drawZombieEnemy(view);
+    }, 80);
   }
 
   private findOpenEnemySpawnPosition(): { x: number; y: number } {
@@ -650,7 +677,7 @@ export class PixiWastelandGame {
       enemy.health -= bullet.projectile.damage;
       this.spawnHitSparks(enemy.x, enemy.y, 0x68e1fd, 5);
       this.showDamageNumber(enemy.x, enemy.y - 20, bullet.projectile.damage, "#ffe066");
-      this.flash(enemy.view, 0xd90429, 0x8d99ae, 11);
+      this.flashZombieEnemy(enemy.view);
       if (enemy.health <= 0) {
         this.defeatEnemy(enemy);
       }
@@ -848,13 +875,8 @@ export class PixiWastelandGame {
     const definition = BOSS_ORDER.find((boss) => boss.id === bossId);
     if (!definition) return;
     const position = this.findOpenBossSpawnPosition(bossId);
-    const color: Record<BossId, number> = {
-      chef: 0xe63946,
-      clown: 0x9d4edd,
-      courier: 0xf77f00,
-    };
     const view = new Graphics();
-    view.circle(0, 0, 34).fill(color[bossId]).stroke({ color: 0xfff3b0, width: 4 });
+    this.drawBossSprite(view, bossId);
     view.position.set(position.x, position.y);
     this.world.addChild(view);
     const label = new Text({
@@ -880,6 +902,43 @@ export class PixiWastelandGame {
       chargeAngle: 0,
       contactDamageElapsedMs: 700,
     });
+  }
+
+  private drawBossSprite(view: Graphics, bossId: BossId): void {
+    const theme = BOSS_VISUAL_THEMES[bossId];
+    view.clear();
+    view
+      .ellipse(0, 0, 28, 36)
+      .fill(theme.bodyColor)
+      .stroke({ color: theme.accentColor, alpha: 0.95, width: 4 });
+    view.circle(28, -2, 17).fill(theme.armorColor).stroke({ color: 0xfff3b0, alpha: 0.7, width: 2 });
+    view.rect(-18, -34, 16, 20).fill(theme.armorColor);
+    view.rect(-18, 14, 16, 20).fill(theme.armorColor);
+    view.rect(0, -40, 13, 18).fill(theme.accentColor);
+    view.rect(0, 22, 13, 18).fill(theme.accentColor);
+
+    if (bossId === "chef") {
+      view.rect(3, -24, 18, 48).fill({ color: 0xf1faee, alpha: 0.78 });
+      view.rect(37, -30, 8, 62).fill(theme.weaponColor).stroke({ color: 0x4a1717, width: 2 });
+      view.poly([45, -34, 63, -22, 48, -5]).fill(0xc8d5d9);
+      view.rect(-30, -12, 13, 24).fill(0x6b1f1f);
+    }
+
+    if (bossId === "clown") {
+      view.circle(33, -4, 8).fill(0xfff3b0);
+      view.circle(34, -5, 3).fill(0xd90429);
+      view.circle(-27, -22, 8).fill(0xff4d6d);
+      view.circle(-30, 22, 9).fill(0x68e1fd);
+      view.rect(42, -18, 6, 36).fill(theme.weaponColor);
+    }
+
+    if (bossId === "courier") {
+      view.roundRect(-32, -24, 17, 48, 4).fill(0x3a2c22).stroke({ color: theme.accentColor, width: 2 });
+      view.rect(26, -27, 18, 17).fill(theme.weaponColor);
+      view.rect(26, 10, 18, 17).fill(theme.weaponColor);
+      view.rect(42, -19, 18, 8).fill(0x2b2520);
+      view.rect(42, 11, 18, 8).fill(0x2b2520);
+    }
   }
 
   private findOpenBossSpawnPosition(bossId: BossId): { x: number; y: number } {
@@ -1141,16 +1200,6 @@ export class PixiWastelandGame {
     window.setTimeout(() => {
       if (!this.player || this.player.view.destroyed) return;
       this.drawPlayerMech(this.player.view);
-    }, 80);
-  }
-
-  private flash(view: Graphics, hitColor: number, baseColor: number, radius: number): void {
-    view.clear();
-    view.circle(0, 0, radius).fill(hitColor);
-    window.setTimeout(() => {
-      if (view.destroyed) return;
-      view.clear();
-      view.circle(0, 0, radius).fill(baseColor);
     }, 80);
   }
 
