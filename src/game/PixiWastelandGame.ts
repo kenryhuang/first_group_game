@@ -96,6 +96,7 @@ interface BossActor extends Actor {
   advancedSkillCursor: number;
   chargeMs: number;
   chargeAngle: number;
+  chargeDamage: number;
   windupMs: number;
   pendingChargeAngle: number;
   contactDamageElapsedMs: number;
@@ -1779,6 +1780,24 @@ export class PixiWastelandGame {
     boss.pendingChargeAngle = angle;
     this.spawnChargeTelegraph(boss, angle);
     this.emitState(`${this.getBossName(boss.bossId)} 投出爆炸包。`);
+  }
+
+  private triggerAdvancedBossSkill(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    if (skill.id === "pressure-cooker-bomb") {
+      this.spawnPressureCookerBomb(boss, skill);
+    } else if (skill.id === "chopping-board-charge") {
+      this.startBossCharge(boss, skill.warningMs, 520, skill.damage, 0xff9f1c);
+    } else if (skill.id === "jack-in-the-box") {
+      this.spawnJackInTheBox(boss, skill);
+    } else if (skill.id === "clone-trick") {
+      this.spawnClownClones(boss, skill);
+    } else if (skill.id === "drone-airdrop") {
+      this.spawnCourierDroneAirdrop(skill);
+    } else {
+      this.spawnDeliveryLock(boss, skill);
+    }
+    this.emitState(`${this.getBossName(boss.bossId)}: ${skill.name}`);
   }
 
   private throwChiliOil(boss: BossActor): void {
