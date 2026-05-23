@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { applyRunDamage, createRunState, collectNode, gainRunExperience, killRunBoss, useRunSkill } from "./runState";
+import {
+  applyRunDamage,
+  chooseRunSkillUpgrade,
+  createRunState,
+  collectNode,
+  gainRunExperience,
+  killRunBoss,
+  recordRunEnemyKill,
+  useRunSkill,
+} from "./runState";
+import { KILLS_PER_SKILL_CHOICE } from "./skillChoices";
 
 describe("run state", () => {
   it("starts as an ordinary survivor with no out-of-run growth", () => {
@@ -44,5 +54,19 @@ describe("run state", () => {
 
     const defeated = applyRunDamage(damaged, 200);
     expect(defeated.health).toBe(0);
+  });
+
+  it("opens a three-choice skill upgrade after enough enemy kills", () => {
+    let state = createRunState();
+    for (let index = 0; index < KILLS_PER_SKILL_CHOICE; index += 1) {
+      state = recordRunEnemyKill(state, () => 0);
+    }
+
+    expect(state.enemyKills).toBe(KILLS_PER_SKILL_CHOICE);
+    expect(state.pendingSkillChoiceIds).toHaveLength(3);
+
+    const upgraded = chooseRunSkillUpgrade(state, state.pendingSkillChoiceIds[0]);
+    expect(upgraded.pendingSkillChoiceIds).toEqual([]);
+    expect(upgraded.skillUpgradeRanks[state.pendingSkillChoiceIds[0]]).toBe(1);
   });
 });

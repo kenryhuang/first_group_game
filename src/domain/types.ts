@@ -33,6 +33,39 @@ export interface SkillDefinition {
   tags: SkillTag[];
 }
 
+export interface SkillUpgradeEffect {
+  basicDamageBonus?: number;
+  attackIntervalMultiplier?: number;
+  pickupRadiusBonus?: number;
+  maxHealthBonus?: number;
+  moveSpeedMultiplier?: number;
+  skillDamageMultiplier?: number;
+}
+
+export interface SkillUpgradeDefinition {
+  id: string;
+  name: string;
+  description: string;
+  maxRank: number;
+  effect: SkillUpgradeEffect;
+}
+
+export interface SkillUpgradeStats {
+  basicDamageBonus: number;
+  attackIntervalMultiplier: number;
+  pickupRadiusBonus: number;
+  maxHealthBonus: number;
+  moveSpeedMultiplier: number;
+  skillDamageMultiplier: number;
+}
+
+export interface SkillChoiceProgress {
+  enemyKills: number;
+  killsTowardSkillChoice: number;
+  pendingSkillChoiceIds: string[];
+  skillUpgradeRanks: Record<string, number>;
+}
+
 export interface PassiveFragment {
   id: string;
   name: string;
@@ -167,4 +200,8 @@ export interface RunState {
   exploration: ExplorationState;
   discoveredBossClues: BossId[];
   bossPressure: BossPressureState;
+  enemyKills: number;
+  killsTowardSkillChoice: number;
+  pendingSkillChoiceIds: string[];
+  skillUpgradeRanks: Record<string, number>;
 }

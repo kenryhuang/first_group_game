@@ -5,8 +5,15 @@ import { defeatBoss, useSkill } from "./combat";
 import { createExplorationState, resolveMapNode } from "./exploration";
 import { equipActiveSkill, equipPassiveFragment, getPassiveLoad } from "./loadout";
 import { gainExperience } from "./progression";
+import {
+  applySkillUpgrade,
+  createSkillChoiceProgress,
+  getSkillUpgradeStats,
+  recordSkillChoiceKill,
+} from "./skillChoices";
 
 export function createRunState(): RunState {
+  const skillChoiceProgress = createSkillChoiceProgress();
   return {
     level: 1,
     experience: 0,
@@ -23,6 +30,7 @@ export function createRunState(): RunState {
     exploration: createExplorationState(),
     discoveredBossClues: [],
     bossPressure: createBossPressureState(),
+    ...skillChoiceProgress,
   };
 }
 
@@ -33,11 +41,12 @@ export function gainRunExperience(state: RunState, amount: number): RunState {
     state.bossPressure,
   );
 
+  const maxHealth = getRunMaxHealth(progress.level, state.skillUpgradeRanks);
   return {
     ...state,
     level: progress.level,
     experience: progress.experience,
-    maxHealth: PLAYER_BASELINE.maxHealth + (progress.level - 1) * 2,
+    maxHealth,
     baseDamage: Math.round(PLAYER_BASELINE.basicDamage * (1 + (progress.level - 1) * 0.03)),
     bossPressure,
   };
@@ -90,6 +99,30 @@ export function applyRunDamage(state: RunState, amount: number): RunState {
   };
 }
 
+export function recordRunEnemyKill(state: RunState, random: () => number = Math.random): RunState {
+  return {
+    ...state,
+    ...recordSkillChoiceKill(state, random),
+  };
+}
+
+export function chooseRunSkillUpgrade(state: RunState, upgradeId: string): RunState {
+  if (!state.pendingSkillChoiceIds.includes(upgradeId)) {
+    return state;
+  }
+
+  const previousMaxHealth = state.maxHealth;
+  const progress = applySkillUpgrade(state, upgradeId);
+  const maxHealth = getRunMaxHealth(state.level, progress.skillUpgradeRanks);
+
+  return {
+    ...state,
+    ...progress,
+    maxHealth,
+    health: Math.min(maxHealth, state.health + Math.max(0, maxHealth - previousMaxHealth)),
+  };
+}
+
 export function killRunBoss(state: RunState, bossId: BossId): RunState {
   const boss = BOSS_ORDER.find((candidate) => candidate.id === bossId);
   if (!boss || state.killedBossIds.includes(bossId)) {
@@ -107,4 +140,9 @@ export function killRunBoss(state: RunState, bossId: BossId): RunState {
     stagePollution: state.stagePollution + reward.stagePollution,
     bossPressure: markBossKilled(state.bossPressure, bossId),
   };
+}
+
+function getRunMaxHealth(level: number, skillUpgradeRanks: Record<string, number>): number {
+  const stats = getSkillUpgradeStats(skillUpgradeRanks);
+  return PLAYER_BASELINE.maxHealth + (level - 1) * 2 + stats.maxHealthBonus;
 }

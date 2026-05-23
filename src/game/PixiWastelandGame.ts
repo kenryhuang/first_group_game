@@ -1,9 +1,19 @@
 import { Application, Container, Graphics, Text, TextStyle, type Ticker } from "pixi.js";
 import { Howl } from "howler";
 import { gsap } from "gsap";
-import { BOSS_ORDER } from "../data/prototypeData";
+import { BOSS_ORDER, SKILL_UPGRADES } from "../data/prototypeData";
 import type { BossId, MapNode, RunState } from "../domain/types";
-import { applyRunDamage, collectNode, createRunState, gainRunExperience, killRunBoss, useRunSkill } from "../systems/runState";
+import {
+  applyRunDamage,
+  chooseRunSkillUpgrade,
+  collectNode,
+  createRunState,
+  gainRunExperience,
+  killRunBoss,
+  recordRunEnemyKill,
+  useRunSkill,
+} from "../systems/runState";
+import { getSkillUpgradeStats } from "../systems/skillChoices";
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -27,6 +37,22 @@ import {
 import { getInitialRoamingBossIds } from "../systems/bossRoaming";
 import { getAimTarget } from "../systems/aiming";
 import { BOSS_VISUAL_THEMES, ZOMBIE_ENEMY_THEME } from "../systems/enemyVisuals";
+import {
+  getActiveAutoWeapons,
+  getAutoWeaponDamage,
+  isAutoWeaponReady,
+  type AutoWeaponDefinition,
+  type AutoWeaponId,
+} from "../systems/autoWeapons";
+import {
+  getActiveEnergySkills,
+  getEnergySkillPower,
+  getMechEvolutionStage,
+  isEnergySkillReady,
+  type EnergySkillDefinition,
+  type EnergySkillId,
+} from "../systems/energyWeapons";
+import { getNextAdvancedBossSkill, type AdvancedBossSkill } from "../systems/bossSkills";
 import {
   getBossRoamTargetInTerritory,
   getBossTerritorySpawnPosition,
@@ -67,6 +93,7 @@ interface BossActor extends Actor {
   roamTarget: { x: number; y: number };
   skillElapsedMs: number;
   skillCooldownMs: number;
+  advancedSkillCursor: number;
   chargeMs: number;
   chargeAngle: number;
   windupMs: number;
@@ -76,6 +103,45 @@ interface BossActor extends Actor {
 
 interface BulletActor extends Actor {
   projectile: ProjectileState;
+}
+
+interface HeavyProjectileActor extends Actor {
+  weaponId: AutoWeaponId;
+  target?: Actor;
+  targetX: number;
+  targetY: number;
+  velocityX: number;
+  velocityY: number;
+  radius: number;
+  damage: number;
+  blastRadius: number;
+  lifeMs: number;
+}
+
+interface AutoStrikeActor extends Actor {
+  radius: number;
+  damage: number;
+  lifeMs: number;
+  maxLifeMs: number;
+}
+
+interface LaserEffectActor {
+  view: Graphics;
+  lifeMs: number;
+  maxLifeMs: number;
+}
+
+interface WarpMineActor extends Actor {
+  radius: number;
+  damage: number;
+  lifeMs: number;
+}
+
+interface PlayerSnapshot {
+  x: number;
+  y: number;
+  health: number;
+  ageMs: number;
 }
 
 interface HazardActor extends Actor {
@@ -133,11 +199,16 @@ export class PixiWastelandGame {
   private nodeMarkers: NodeActor[] = [];
   private enemies: EnemyActor[] = [];
   private bullets: BulletActor[] = [];
+  private heavyProjectiles: HeavyProjectileActor[] = [];
+  private autoStrikes: AutoStrikeActor[] = [];
+  private laserEffects: LaserEffectActor[] = [];
+  private warpMines: WarpMineActor[] = [];
   private bossHazards: HazardActor[] = [];
   private bossTelegraphs: TelegraphActor[] = [];
   private bosses: BossActor[] = [];
   private damageNumbers: DamageNumberActor[] = [];
   private buildingVisuals: BuildingVisual[] = [];
+  private skillChoiceOverlay?: Container;
   private interiorVisibilityMask = new Graphics();
   private keys = new Set<string>();
   private pointerWorld = { x: PLAYER_START.x + 1, y: PLAYER_START.y };
@@ -145,6 +216,9 @@ export class PixiWastelandGame {
   private attackMode: AttackMode = "auto";
   private enemySpawnElapsed = 0;
   private autoAttackElapsed = 0;
+  private autoWeaponElapsedMs: Partial<Record<AutoWeaponId, number>> = {};
+  private energySkillElapsedMs: Partial<Record<EnergySkillId, number>> = {};
+  private playerHistory: PlayerSnapshot[] = [];
   private screenShakeMs = 0;
   private screenShakeMagnitude = 0;
   private gameOver = false;
@@ -180,21 +254,39 @@ export class PixiWastelandGame {
   destroy(): void {
     this.unbindInput();
     this.app.ticker.remove(this.update);
+    this.clearSkillChoiceOverlay();
     this.app.destroy(true, { children: true });
   }
 
   private readonly update = (ticker: Ticker): void => {
     if (this.gameOver) return;
     const delta = ticker.deltaMS;
+    if (this.state.pendingSkillChoiceIds.length > 0) {
+      this.showSkillChoiceOverlay();
+      this.updateDamageNumbers(delta);
+      this.updateScreenShake(delta);
+      this.updateWeaponAim();
+      this.updateCamera();
+      this.emitMetrics();
+      return;
+    }
+    this.clearSkillChoiceOverlay();
     this.movePlayer(delta);
     this.updateEnemies(delta);
     this.updateBosses(delta);
     this.updateTelegraphs(delta);
     this.updateProjectiles(delta);
+    this.updateHeavyProjectiles(delta);
+    this.updateAutoStrikes(delta);
+    this.updateLaserEffects(delta);
+    this.updateWarpMines(delta);
     this.updateBossHazards(delta);
     this.updateDamageNumbers(delta);
     this.updateSpawning(delta);
     this.updateAutoAttack(delta);
+    this.updateAutoWeapons(delta);
+    this.updateEnergySkills(delta);
+    this.updatePlayerHistory(delta);
     this.updateScreenShake(delta);
     this.updateWeaponAim();
     this.highlightNearbyNode();
@@ -310,7 +402,8 @@ export class PixiWastelandGame {
     return { container, barrel, muzzleFlash };
   }
 
-  private drawPlayerMech(view: Graphics, energyColor = 0x68e1fd): void {
+  private drawPlayerMech(view: Graphics, energyColor = this.getMechEnergyColor()): void {
+    const stage = getMechEvolutionStage(this.state.skillUpgradeRanks);
     view.clear();
     view
       .poly([-14, -18, 14, -18, 22, -7, 17, 15, 0, 22, -17, 15, -22, -7])
@@ -323,6 +416,22 @@ export class PixiWastelandGame {
     view.roundRect(-19, 14, 10, 16, 3).fill(0x1e2938);
     view.roundRect(9, 14, 10, 16, 3).fill(0x1e2938);
     view.rect(-4, 8, 8, 16).fill({ color: 0xd9f7ff, alpha: 0.55 });
+    if (stage === "heavy" || stage === "laser" || stage === "temporal") {
+      view.roundRect(-35, -17, 10, 24, 4).fill(0x48505f).stroke({ color: 0xfff3b0, alpha: 0.65, width: 1 });
+      view.roundRect(25, -17, 10, 24, 4).fill(0x48505f).stroke({ color: 0xfff3b0, alpha: 0.65, width: 1 });
+      view.circle(-30, -20, 3).fill(0xff9f1c);
+      view.circle(30, -20, 3).fill(0xff9f1c);
+    }
+    if (stage === "laser" || stage === "temporal") {
+      view.circle(0, -3, 12).stroke({ color: 0xd9f7ff, alpha: 0.7, width: 2 });
+      view.rect(-6, -27, 12, 10).fill({ color: 0x68e1fd, alpha: 0.72 });
+      view.rect(39, -3, 20, 6).fill({ color: 0x68e1fd, alpha: 0.48 });
+    }
+    if (stage === "temporal") {
+      view.circle(0, 0, 34).stroke({ color: 0xb56cff, alpha: 0.58, width: 2 });
+      view.circle(0, 0, 42).stroke({ color: 0x68e1fd, alpha: 0.28, width: 1.5 });
+      view.rect(-2, -38, 4, 10).fill({ color: 0xb56cff, alpha: 0.85 });
+    }
   }
 
   private createNodeMarkers(): void {
@@ -358,9 +467,17 @@ export class PixiWastelandGame {
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
     this.keys.add(event.key.toLowerCase());
+    const choiceIndex = Number(event.key) - 1;
+    if (this.state.pendingSkillChoiceIds.length > 0) {
+      if (choiceIndex >= 0 && choiceIndex < this.state.pendingSkillChoiceIds.length) {
+        event.preventDefault();
+        this.chooseSkillUpgrade(this.state.pendingSkillChoiceIds[choiceIndex]);
+      }
+      return;
+    }
     if (event.code === "Space") {
       event.preventDefault();
-      this.fireProjectile(this.pointerWorld, "basic", BASIC_GUN.damage, BASIC_GUN.projectileSpeed, "手动普攻");
+      this.fireProjectile(this.pointerWorld, "basic", this.getBasicGunDamage(), BASIC_GUN.projectileSpeed, "手动普攻");
     }
     if (event.key.toLowerCase() === "q") {
       this.attackMode = this.attackMode === "auto" ? "manual" : "auto";
@@ -376,9 +493,8 @@ export class PixiWastelandGame {
     if (event.key.toLowerCase() === "b") {
       this.focusNearestBoss();
     }
-    const skillIndex = Number(event.key) - 1;
-    if (skillIndex >= 0 && skillIndex < 4) {
-      this.castSkill(skillIndex);
+    if (choiceIndex >= 0 && choiceIndex < 4) {
+      this.castSkill(choiceIndex);
     }
   };
 
@@ -403,9 +519,10 @@ export class PixiWastelandGame {
     if (dx !== 0 || dy !== 0) {
       this.movementDirection = { x: dx / length, y: dy / length };
     }
+    const moveSpeed = this.getPlayerMoveSpeed();
     const desired = {
-      x: clamp(this.player.x + (dx / length) * 260 * seconds, 24, MAP_WIDTH - 24),
-      y: clamp(this.player.y + (dy / length) * 260 * seconds, 24, MAP_HEIGHT - 24),
+      x: clamp(this.player.x + (dx / length) * moveSpeed * seconds, 24, MAP_WIDTH - 24),
+      y: clamp(this.player.y + (dy / length) * moveSpeed * seconds, 24, MAP_HEIGHT - 24),
     };
     const resolved = resolveBlockedMovement(this.player, desired, 16);
     this.setActorPosition(this.player, resolved.x, resolved.y);
@@ -528,6 +645,73 @@ export class PixiWastelandGame {
     }
   }
 
+  private updateHeavyProjectiles(deltaMs: number): void {
+    const seconds = deltaMs / 1000;
+    for (const missile of [...this.heavyProjectiles]) {
+      missile.lifeMs -= deltaMs;
+      if (missile.target && !missile.target.view.destroyed) {
+        missile.targetX = missile.target.x;
+        missile.targetY = missile.target.y;
+      }
+      const dx = missile.targetX - missile.x;
+      const dy = missile.targetY - missile.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const speed = Math.hypot(missile.velocityX, missile.velocityY);
+      missile.velocityX = (dx / length) * speed;
+      missile.velocityY = (dy / length) * speed;
+      missile.view.rotation = Math.atan2(missile.velocityY, missile.velocityX);
+      this.setActorPosition(
+        missile,
+        missile.x + missile.velocityX * seconds,
+        missile.y + missile.velocityY * seconds,
+      );
+
+      if (
+        missile.lifeMs <= 0 ||
+        distance(missile, { x: missile.targetX, y: missile.targetY }) <= Math.max(18, missile.radius * 2)
+      ) {
+        this.detonateAutoWeapon(missile.x, missile.y, missile.blastRadius, missile.damage);
+        this.removeHeavyProjectile(missile);
+      }
+    }
+  }
+
+  private updateAutoStrikes(deltaMs: number): void {
+    for (const strike of [...this.autoStrikes]) {
+      strike.lifeMs -= deltaMs;
+      strike.view.alpha = Math.max(0.22, strike.lifeMs / strike.maxLifeMs);
+      if (strike.lifeMs <= 0) {
+        this.detonateAutoWeapon(strike.x, strike.y, strike.radius, strike.damage, 0xff4d6d);
+        this.removeAutoStrike(strike);
+      }
+    }
+  }
+
+  private updateLaserEffects(deltaMs: number): void {
+    for (const effect of [...this.laserEffects]) {
+      effect.lifeMs -= deltaMs;
+      effect.view.alpha = Math.max(0, effect.lifeMs / effect.maxLifeMs);
+      if (effect.lifeMs <= 0) {
+        this.world.removeChild(effect.view);
+        effect.view.destroy();
+        this.laserEffects = this.laserEffects.filter((candidate) => candidate !== effect);
+      }
+    }
+  }
+
+  private updateWarpMines(deltaMs: number): void {
+    for (const mine of [...this.warpMines]) {
+      mine.lifeMs -= deltaMs;
+      mine.view.rotation += deltaMs / 900;
+      const triggered =
+        this.getVisibleCombatTargets(1200).some((target) => distance(target, mine) <= mine.radius + 12);
+      if (triggered || mine.lifeMs <= 0) {
+        this.detonateAutoWeapon(mine.x, mine.y, mine.radius, mine.damage, 0xb56cff);
+        this.removeWarpMine(mine);
+      }
+    }
+  }
+
   private updateBossHazards(deltaMs: number): void {
     const seconds = deltaMs / 1000;
     for (const hazard of [...this.bossHazards]) {
@@ -616,11 +800,11 @@ export class PixiWastelandGame {
   private updateAutoAttack(deltaMs: number): void {
     if (this.attackMode !== "auto") return;
     this.autoAttackElapsed += deltaMs;
-    if (this.autoAttackElapsed < BASIC_GUN.attackIntervalMs) return;
+    if (this.autoAttackElapsed < this.getBasicGunIntervalMs()) return;
     this.autoAttackElapsed = 0;
     const target = this.getNearestTarget(620);
     if (target) {
-      this.fireProjectile(target, "basic", BASIC_GUN.damage, BASIC_GUN.projectileSpeed, "自动普攻");
+      this.fireProjectile(target, "basic", this.getBasicGunDamage(), BASIC_GUN.projectileSpeed, "自动普攻");
     }
   }
 
@@ -707,6 +891,239 @@ export class PixiWastelandGame {
     }
   }
 
+  private spawnHeavyProjectile(
+    weapon: AutoWeaponDefinition,
+    target: Actor,
+    damage: number,
+    spreadIndex: number,
+  ): void {
+    if (!this.player) return;
+    const launchAngle = Math.atan2(target.y - this.player.y, target.x - this.player.x) + (spreadIndex - 2) * 0.08;
+    const launchPoint = {
+      x: this.player.x + Math.cos(launchAngle - 0.5) * 30,
+      y: this.player.y + Math.sin(launchAngle - 0.5) * 30,
+    };
+    const speed = weapon.projectileSpeed;
+    const view = new Graphics();
+    if (weapon.id === "micro-missiles") {
+      view
+        .roundRect(-12, -3, 24, 6, 3)
+        .fill({ color: 0xf8f4e3, alpha: 0.98 })
+        .stroke({ color: 0x68e1fd, alpha: 0.8, width: 1 });
+      view.circle(-13, 0, 4).fill({ color: 0xff9f1c, alpha: 0.8 });
+    } else {
+      view
+        .roundRect(-18, -5, 36, 10, 4)
+        .fill({ color: 0x39485d, alpha: 0.98 })
+        .stroke({ color: 0xfff3b0, alpha: 0.75, width: 1.5 });
+      view.poly([18, -6, 30, 0, 18, 6]).fill(0xff9f1c);
+      view.circle(-20, 0, 6).fill({ color: 0x68e1fd, alpha: 0.5 });
+    }
+    view.position.set(launchPoint.x, launchPoint.y);
+    view.rotation = launchAngle;
+    this.world.addChild(view);
+    this.heavyProjectiles.push({
+      view,
+      x: launchPoint.x,
+      y: launchPoint.y,
+      weaponId: weapon.id,
+      target,
+      targetX: target.x,
+      targetY: target.y,
+      velocityX: Math.cos(launchAngle) * speed,
+      velocityY: Math.sin(launchAngle) * speed,
+      radius: weapon.id === "micro-missiles" ? 7 : 12,
+      damage,
+      blastRadius: weapon.radius,
+      lifeMs: weapon.id === "micro-missiles" ? 1800 : 2300,
+    });
+    this.spawnHitSparks(launchPoint.x, launchPoint.y, 0x68e1fd, 6);
+    this.playShotSound();
+  }
+
+  private spawnAutoStrike(x: number, y: number, radius: number, damage: number): void {
+    const view = new Graphics();
+    view
+      .circle(0, 0, radius)
+      .fill({ color: 0xff1744, alpha: 0.16 })
+      .stroke({ color: 0xff4d6d, alpha: 0.92, width: 3 })
+      .moveTo(-radius, 0)
+      .lineTo(radius, 0)
+      .moveTo(0, -radius)
+      .lineTo(0, radius)
+      .stroke({ color: 0xfff3b0, alpha: 0.72, width: 2 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.autoStrikes.push({ view, x, y, radius, damage, lifeMs: 650, maxLifeMs: 650 });
+  }
+
+  private fireLaserBeam(origin: { x: number; y: number }, target: Actor, damage: number, range: number): void {
+    const angle = Math.atan2(target.y - origin.y, target.x - origin.x);
+    const end = {
+      x: origin.x + Math.cos(angle) * range,
+      y: origin.y + Math.sin(angle) * range,
+    };
+    this.drawLaserEffect(origin, end, 0x68e1fd);
+    this.damageTargetsAlongLine(origin, end, 24, damage);
+    const prismRank = this.state.skillUpgradeRanks["prism-amplifier"] ?? 0;
+    if (prismRank > 0) {
+      const prismTarget = this.getVisibleCombatTargets(420).find(
+        (candidate) => candidate !== target && distance(candidate, target) <= 420,
+      );
+      if (prismTarget) {
+        this.drawLaserEffect(target, prismTarget, 0xb56cff);
+        this.damageTargetsAlongLine(target, prismTarget, 20, Math.round(damage * (0.55 + prismRank * 0.12)));
+      }
+    }
+    this.addScreenShake(55, 2.5);
+    this.emitState("聚能激光：穿透扫射");
+  }
+
+  private drawLaserEffect(start: { x: number; y: number }, end: { x: number; y: number }, color: number): void {
+    const view = new Graphics();
+    view
+      .moveTo(start.x, start.y)
+      .lineTo(end.x, end.y)
+      .stroke({ color: 0xd9f7ff, alpha: 0.88, width: 5 })
+      .moveTo(start.x, start.y)
+      .lineTo(end.x, end.y)
+      .stroke({ color, alpha: 0.55, width: 14 });
+    this.world.addChild(view);
+    this.laserEffects.push({ view, lifeMs: 220, maxLifeMs: 220 });
+  }
+
+  private damageTargetsAlongLine(
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+    beamRadius: number,
+    damage: number,
+  ): void {
+    for (const enemy of [...this.enemies]) {
+      if (this.getVisibilityZoneId(enemy) !== this.getVisibilityZoneId(start)) continue;
+      if (distancePointToSegment(enemy, start, end) > beamRadius + 11) continue;
+      enemy.health -= damage;
+      this.showDamageNumber(enemy.x, enemy.y - 24, damage, "#9ffcff");
+      this.flashZombieEnemy(enemy.view);
+      if (enemy.health <= 0) {
+        this.defeatEnemy(enemy);
+      }
+    }
+    for (const boss of [...this.bosses]) {
+      if (this.getVisibilityZoneId(boss) !== this.getVisibilityZoneId(start)) continue;
+      if (distancePointToSegment(boss, start, end) > beamRadius + 34) continue;
+      boss.health -= damage;
+      this.showDamageNumber(boss.x, boss.y - 46, damage, "#9ffcff");
+      gsap.fromTo(boss.view.scale, { x: 1.12, y: 1.12 }, { x: 1, y: 1, duration: 0.12 });
+      if (boss.health <= 0) {
+        this.defeatBoss(boss);
+      }
+    }
+  }
+
+  private spawnEnergyStrike(x: number, y: number, radius: number, damage: number): void {
+    const telegraph = new Graphics();
+    telegraph
+      .circle(0, 0, radius)
+      .fill({ color: 0x68e1fd, alpha: 0.12 })
+      .stroke({ color: 0x9ffcff, alpha: 0.92, width: 2 });
+    telegraph.position.set(x, y);
+    this.world.addChild(telegraph);
+    window.setTimeout(() => {
+      if (telegraph.destroyed) return;
+      this.world.removeChild(telegraph);
+      telegraph.destroy();
+      this.drawLaserColumn(x, y, radius);
+      this.detonateAutoWeapon(x, y, radius, damage, 0x68e1fd);
+    }, 420);
+  }
+
+  private drawLaserColumn(x: number, y: number, radius: number): void {
+    const view = new Graphics();
+    view
+      .rect(-5, -260, 10, 520)
+      .fill({ color: 0xd9f7ff, alpha: 0.75 })
+      .rect(-16, -260, 32, 520)
+      .fill({ color: 0x68e1fd, alpha: 0.18 })
+      .circle(0, 0, radius)
+      .stroke({ color: 0xd9f7ff, alpha: 0.72, width: 2 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.laserEffects.push({ view, lifeMs: 260, maxLifeMs: 260 });
+  }
+
+  private shouldPhaseBlink(): boolean {
+    if (!this.player) return false;
+    const nearbyEnemies = this.getVisibleCombatTargets(180).length;
+    return nearbyEnemies >= 4 || this.state.health <= this.state.maxHealth * 0.42;
+  }
+
+  private phaseBlink(damage: number, radius: number, range: number): void {
+    if (!this.player) return;
+    const angle = Math.atan2(
+      this.pointerWorld.y - this.player.y || this.movementDirection.y,
+      this.pointerWorld.x - this.player.x || this.movementDirection.x,
+    );
+    const desired = {
+      x: clamp(this.player.x + Math.cos(angle) * range, 24, MAP_WIDTH - 24),
+      y: clamp(this.player.y + Math.sin(angle) * range, 24, MAP_HEIGHT - 24),
+    };
+    const resolved = resolveBlockedMovement(this.player, desired, 16);
+    this.drawPhaseRing(this.player.x, this.player.y, radius);
+    this.setActorPosition(this.player, resolved.x, resolved.y);
+    this.drawPhaseRing(this.player.x, this.player.y, radius);
+    this.detonateAutoWeapon(this.player.x, this.player.y, radius, damage, 0xb56cff);
+    this.emitState("相位闪现：折跃脱离");
+  }
+
+  private temporalRewind(skill: EnergySkillDefinition): boolean {
+    if (!this.player) return false;
+    const snapshot = [...this.playerHistory].reverse().find((entry) => entry.ageMs >= 2200) ?? this.playerHistory[0];
+    if (!snapshot) return false;
+    this.drawPhaseRing(this.player.x, this.player.y, skill.radius);
+    this.setActorPosition(this.player, snapshot.x, snapshot.y);
+    this.drawPhaseRing(this.player.x, this.player.y, skill.radius + 20);
+    this.state = {
+      ...this.state,
+      health: Math.min(this.state.maxHealth, Math.max(this.state.health, snapshot.health) + skill.basePower),
+    };
+    this.callbacks.onRunState(this.state);
+    this.emitState("时间回溯：返回安全坐标");
+    return true;
+  }
+
+  private placeWarpMine(radius: number, damage: number): void {
+    if (!this.player) return;
+    const x = clamp(this.player.x - this.movementDirection.x * 78, 24, MAP_WIDTH - 24);
+    const y = clamp(this.player.y - this.movementDirection.y * 78, 24, MAP_HEIGHT - 24);
+    const view = new Graphics();
+    view
+      .circle(0, 0, 14)
+      .fill({ color: 0x2b173a, alpha: 0.92 })
+      .stroke({ color: 0xb56cff, alpha: 0.9, width: 2 })
+      .circle(0, 0, radius)
+      .stroke({ color: 0x68e1fd, alpha: 0.18, width: 1 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.warpMines.push({ view, x, y, radius, damage, lifeMs: 9000 });
+    this.emitState("折跃地雷：后方布设");
+  }
+
+  private drawPhaseRing(x: number, y: number, radius: number): void {
+    const ring = new Graphics();
+    ring.circle(0, 0, radius).stroke({ color: 0xb56cff, alpha: 0.78, width: 3 });
+    ring.position.set(x, y);
+    this.world.addChild(ring);
+    gsap.to(ring.scale, { x: 1.5, y: 1.5, duration: 0.24 });
+    gsap.to(ring, {
+      alpha: 0,
+      duration: 0.28,
+      onComplete: () => {
+        this.world.removeChild(ring);
+        ring.destroy();
+      },
+    });
+  }
+
   private castSkill(index: number): void {
     const skillId = this.state.activeSkillIds[index];
     if (!skillId) {
@@ -727,7 +1144,7 @@ export class PixiWastelandGame {
           y: (this.player?.y ?? PLAYER_START.y) + Math.sin(angle) * 360,
         },
         "skill",
-        72,
+        this.getSkillProjectileDamage(),
         820,
       );
     }
@@ -771,7 +1188,107 @@ export class PixiWastelandGame {
     this.world.removeChild(enemy.view);
     enemy.view.destroy();
     this.enemies = this.enemies.filter((candidate) => candidate !== enemy);
-    this.state = gainRunExperience(this.state, 6);
+    this.state = recordRunEnemyKill(gainRunExperience(this.state, 6));
+    if (this.state.pendingSkillChoiceIds.length > 0) {
+      this.emitState("击杀充能完成，选择一个机甲强化。");
+    } else {
+      this.callbacks.onRunState(this.state);
+    }
+  }
+
+  private updateAutoWeapons(deltaMs: number): void {
+    if (!this.player) return;
+    for (const weapon of getActiveAutoWeapons(this.state.skillUpgradeRanks)) {
+      this.autoWeaponElapsedMs[weapon.id] = (this.autoWeaponElapsedMs[weapon.id] ?? weapon.cooldownMs * 0.55) + deltaMs;
+      if (!isAutoWeaponReady(weapon, this.autoWeaponElapsedMs[weapon.id] ?? 0)) continue;
+      if (this.fireAutoWeapon(weapon)) {
+        this.autoWeaponElapsedMs[weapon.id] = 0;
+      }
+    }
+  }
+
+  private updateEnergySkills(deltaMs: number): void {
+    if (!this.player) return;
+    for (const skill of getActiveEnergySkills(this.state.skillUpgradeRanks)) {
+      if (skill.mode === "passive") continue;
+      this.energySkillElapsedMs[skill.id] = (this.energySkillElapsedMs[skill.id] ?? skill.cooldownMs * 0.7) + deltaMs;
+      if (!isEnergySkillReady(skill, this.energySkillElapsedMs[skill.id] ?? 0)) continue;
+      if (this.fireEnergySkill(skill)) {
+        this.energySkillElapsedMs[skill.id] = 0;
+      }
+    }
+  }
+
+  private fireEnergySkill(skill: EnergySkillDefinition): boolean {
+    const rank = this.state.skillUpgradeRanks[skill.id] ?? 0;
+    const power = getEnergySkillPower(skill, rank);
+    if (skill.mode === "beam") {
+      const target = this.getNearestEnergyTarget(skill.range);
+      if (!target || !this.player) return false;
+      this.fireLaserBeam(this.player, target, power, skill.range);
+      return true;
+    }
+    if (skill.mode === "rain") {
+      const targets = this.getVisibleCombatTargets(skill.range).slice(0, skill.burstCount);
+      if (targets.length === 0) return false;
+      targets.forEach((target, index) => {
+        window.setTimeout(() => this.spawnEnergyStrike(target.x, target.y, skill.radius, power), index * 120);
+      });
+      this.emitState(`${skill.name}：轨道校准`);
+      return true;
+    }
+    if (skill.mode === "blink") {
+      if (!this.shouldPhaseBlink()) return false;
+      this.phaseBlink(power, skill.radius, skill.range);
+      return true;
+    }
+    if (skill.mode === "rewind") {
+      if (this.state.health > this.state.maxHealth * 0.35) return false;
+      return this.temporalRewind(skill);
+    }
+    if (skill.mode === "mine") {
+      this.placeWarpMine(skill.radius, power);
+      return true;
+    }
+    return false;
+  }
+
+  private getNearestEnergyTarget(range: number): Actor | undefined {
+    if (!this.player) return undefined;
+    return this.getVisibleCombatTargets(range).sort(
+      (a, b) => distance(this.player!, a) - distance(this.player!, b),
+    )[0];
+  }
+
+  private fireAutoWeapon(weapon: AutoWeaponDefinition): boolean {
+    const rank = this.state.skillUpgradeRanks[weapon.id] ?? 0;
+    const damage = getAutoWeaponDamage(weapon, rank);
+    if (weapon.id === "orbital-flak") {
+      const target = this.getAutoWeaponTarget(weapon);
+      if (!target) return false;
+      this.spawnAutoStrike(target.x, target.y, weapon.radius, damage);
+      this.emitState(`${weapon.name}：目标锁定`);
+      return true;
+    }
+
+    if (weapon.id === "micro-missiles") {
+      const targets = this.getAutoWeaponTargets(weapon, weapon.burstCount);
+      if (targets.length === 0) return false;
+      targets.forEach((target, index) => {
+        window.setTimeout(() => {
+          if (!this.player || this.gameOver) return;
+          this.spawnHeavyProjectile(weapon, target, damage, index);
+        }, index * 90);
+      });
+      this.emitState(`${weapon.name}：蜂群发射`);
+      return true;
+    }
+
+    const target = this.getAutoWeaponTarget(weapon);
+    if (!target) return false;
+    this.spawnHeavyProjectile(weapon, target, damage, 0);
+    this.emitState(`${weapon.name}：导弹发射`);
+    return true;
   }
 
   private defeatBoss(boss: BossActor): void {
@@ -781,6 +1298,185 @@ export class PixiWastelandGame {
     this.bosses = this.bosses.filter((candidate) => candidate !== boss);
     this.state = killRunBoss(this.state, boss.bossId);
     this.emitState(`击杀 Boss：${this.getBossName(boss.bossId)}`);
+  }
+
+  private showSkillChoiceOverlay(): void {
+    if (this.skillChoiceOverlay) return;
+
+    const overlay = new Container();
+    overlay.zIndex = 1000;
+    const width = this.app.screen.width;
+    const height = this.app.screen.height;
+
+    const backdrop = new Graphics();
+    backdrop.rect(0, 0, width, height).fill({ color: 0x050807, alpha: 0.78 });
+    overlay.addChild(backdrop);
+
+    const panelWidth = Math.min(760, width - 48);
+    const panelHeight = 360;
+    const panelX = (width - panelWidth) / 2;
+    const panelY = (height - panelHeight) / 2;
+    const panel = new Graphics();
+    panel
+      .roundRect(panelX, panelY, panelWidth, panelHeight, 8)
+      .fill({ color: 0x141b1b, alpha: 0.96 })
+      .stroke({ color: 0x68e1fd, alpha: 0.8, width: 2 });
+    overlay.addChild(panel);
+
+    const title = new Text({
+      text: "选择机甲强化",
+      style: new TextStyle({
+        fill: "#f8f4e3",
+        fontFamily: "Arial",
+        fontSize: 28,
+        fontWeight: "700",
+      }),
+    });
+    title.anchor.set(0.5, 0);
+    title.position.set(width / 2, panelY + 28);
+    overlay.addChild(title);
+
+    const subtitle = new Text({
+      text: "击杀充能已满，点击一个选项或按 1-3 继续战斗",
+      style: new TextStyle({ fill: "#b9c7a7", fontFamily: "Arial", fontSize: 15 }),
+    });
+    subtitle.anchor.set(0.5, 0);
+    subtitle.position.set(width / 2, panelY + 68);
+    overlay.addChild(subtitle);
+
+    const choices = this.state.pendingSkillChoiceIds
+      .map((id) => SKILL_UPGRADES.find((upgrade) => upgrade.id === id))
+      .filter((upgrade): upgrade is NonNullable<typeof upgrade> => Boolean(upgrade));
+    const cardWidth = (panelWidth - 80) / 3;
+    for (const [index, choice] of choices.entries()) {
+      const x = panelX + 28 + index * (cardWidth + 12);
+      const y = panelY + 122;
+      const rank = this.state.skillUpgradeRanks[choice.id] ?? 0;
+      const card = new Container();
+      card.eventMode = "static";
+      card.cursor = "pointer";
+      card.on("pointertap", () => this.chooseSkillUpgrade(choice.id));
+
+      const shape = new Graphics();
+      shape
+        .roundRect(x, y, cardWidth, 190, 6)
+        .fill({ color: 0x243136, alpha: 0.96 })
+        .stroke({ color: 0xfff3b0, alpha: 0.58, width: 1.5 });
+      card.addChild(shape);
+
+      const number = new Text({
+        text: `${index + 1}`,
+        style: new TextStyle({ fill: "#68e1fd", fontFamily: "Arial", fontSize: 20, fontWeight: "700" }),
+      });
+      number.position.set(x + 16, y + 14);
+      card.addChild(number);
+
+      const name = new Text({
+        text: choice.name,
+        style: new TextStyle({ fill: "#ffffff", fontFamily: "Arial", fontSize: 20, fontWeight: "700" }),
+      });
+      name.position.set(x + 48, y + 14);
+      card.addChild(name);
+
+      const rankText = new Text({
+        text: `Lv ${rank} -> ${rank + 1}`,
+        style: new TextStyle({ fill: "#ffcf66", fontFamily: "Arial", fontSize: 14 }),
+      });
+      rankText.position.set(x + 18, y + 58);
+      card.addChild(rankText);
+
+      const description = new Text({
+        text: choice.description,
+        style: new TextStyle({
+          fill: "#d6dfd1",
+          fontFamily: "Arial",
+          fontSize: 15,
+          wordWrap: true,
+          wordWrapWidth: cardWidth - 36,
+        }),
+      });
+      description.position.set(x + 18, y + 90);
+      card.addChild(description);
+
+      overlay.addChild(card);
+    }
+
+    this.skillChoiceOverlay = overlay;
+    this.app.stage.addChild(overlay);
+  }
+
+  private clearSkillChoiceOverlay(): void {
+    if (!this.skillChoiceOverlay) return;
+    this.app.stage.removeChild(this.skillChoiceOverlay);
+    this.skillChoiceOverlay.destroy({ children: true });
+    this.skillChoiceOverlay = undefined;
+  }
+
+  private chooseSkillUpgrade(upgradeId: string): void {
+    const definition = SKILL_UPGRADES.find((upgrade) => upgrade.id === upgradeId);
+    this.state = chooseRunSkillUpgrade(this.state, upgradeId);
+    if (this.player) {
+      this.drawPlayerMech(this.player.view);
+    }
+    this.clearSkillChoiceOverlay();
+    this.emitState(`选择强化：${definition?.name ?? upgradeId}`);
+  }
+
+  private detonateAutoWeapon(x: number, y: number, radius: number, damage: number, color = 0xff9f1c): void {
+    this.spawnHitSparks(x, y, color, 16);
+    this.addScreenShake(120, 6);
+    const blast = new Graphics();
+    blast.circle(0, 0, radius).fill({ color, alpha: 0.2 }).stroke({ color: 0xfff3b0, alpha: 0.65, width: 2 });
+    blast.position.set(x, y);
+    this.world.addChild(blast);
+    gsap.to(blast, {
+      alpha: 0,
+      duration: 0.28,
+      onComplete: () => {
+        this.world.removeChild(blast);
+        blast.destroy();
+      },
+    });
+
+    for (const enemy of [...this.enemies]) {
+      if (this.getVisibilityZoneId(enemy) !== this.getVisibilityZoneId({ x, y })) continue;
+      if (distance(enemy, { x, y }) > radius + 11) continue;
+      enemy.health -= damage;
+      this.showDamageNumber(enemy.x, enemy.y - 24, damage, "#ffe066");
+      this.flashZombieEnemy(enemy.view);
+      if (enemy.health <= 0) {
+        this.defeatEnemy(enemy);
+      }
+    }
+
+    for (const boss of [...this.bosses]) {
+      if (this.getVisibilityZoneId(boss) !== this.getVisibilityZoneId({ x, y })) continue;
+      if (distance(boss, { x, y }) > radius + 34) continue;
+      boss.health -= damage;
+      this.showDamageNumber(boss.x, boss.y - 46, damage, "#ff9f1c");
+      gsap.fromTo(boss.view.scale, { x: 1.16, y: 1.16 }, { x: 1, y: 1, duration: 0.14 });
+      if (boss.health <= 0) {
+        this.defeatBoss(boss);
+      }
+    }
+  }
+
+  private removeHeavyProjectile(projectile: HeavyProjectileActor): void {
+    this.world.removeChild(projectile.view);
+    projectile.view.destroy();
+    this.heavyProjectiles = this.heavyProjectiles.filter((candidate) => candidate !== projectile);
+  }
+
+  private removeAutoStrike(strike: AutoStrikeActor): void {
+    this.world.removeChild(strike.view);
+    strike.view.destroy();
+    this.autoStrikes = this.autoStrikes.filter((candidate) => candidate !== strike);
+  }
+
+  private removeWarpMine(mine: WarpMineActor): void {
+    this.world.removeChild(mine.view);
+    mine.view.destroy();
+    this.warpMines = this.warpMines.filter((candidate) => candidate !== mine);
   }
 
   private removeBullet(bullet: BulletActor): void {
@@ -813,6 +1509,46 @@ export class PixiWastelandGame {
       }
     }
     return nearest ? { x: nearest.x, y: nearest.y } : undefined;
+  }
+
+  private getAutoWeaponTarget(weapon: AutoWeaponDefinition): Actor | undefined {
+    const targets = this.getAutoWeaponTargets(weapon, 1);
+    return targets[0];
+  }
+
+  private getAutoWeaponTargets(weapon: AutoWeaponDefinition, count: number): Actor[] {
+    if (!this.player) return [];
+    const targets = this.getVisibleCombatTargets(weapon.range);
+    if (weapon.priority === "boss") {
+      targets.sort((a, b) => {
+        const bossScore = Number(this.bosses.includes(b as BossActor)) - Number(this.bosses.includes(a as BossActor));
+        if (bossScore !== 0) return bossScore;
+        return distance(this.player!, a) - distance(this.player!, b);
+      });
+    } else if (weapon.priority === "cluster") {
+      targets.sort((a, b) => this.countTargetsNear(b, 150) - this.countTargetsNear(a, 150));
+    } else {
+      targets.sort((a, b) => distance(this.player!, a) - distance(this.player!, b));
+    }
+    if (targets.length === 0) return [];
+    const selected: Actor[] = [];
+    for (let index = 0; index < count; index += 1) {
+      selected.push(targets[index % targets.length]);
+    }
+    return selected;
+  }
+
+  private getVisibleCombatTargets(maxDistance: number): Actor[] {
+    if (!this.player) return [];
+    return [...this.enemies, ...this.bosses].filter(
+      (target) => this.isSameVisibilityZone(this.player!, target) && distance(this.player!, target) <= maxDistance,
+    );
+  }
+
+  private countTargetsNear(origin: Actor, radius: number): number {
+    return [...this.enemies, ...this.bosses].filter(
+      (target) => this.isSameVisibilityZone(origin, target) && distance(origin, target) <= radius,
+    ).length;
   }
 
   private updateWeaponAim(target = this.getWeaponAimTarget()): void {
@@ -962,6 +1698,7 @@ export class PixiWastelandGame {
       roamTarget: this.getNextRoamTarget({ bossId, x: position.x, y: position.y } as BossActor),
       skillElapsedMs: 0,
       skillCooldownMs: bossId === "chef" ? 3200 : bossId === "clown" ? 4200 : 3600,
+      advancedSkillCursor: 0,
       chargeMs: 0,
       chargeAngle: 0,
       windupMs: 0,
@@ -1019,6 +1756,10 @@ export class PixiWastelandGame {
   private triggerBossSkill(boss: BossActor): void {
     boss.skillElapsedMs = 0;
     if (!this.player) return;
+    const skill = getNextAdvancedBossSkill(boss.bossId, boss.advancedSkillCursor);
+    boss.advancedSkillCursor += 1;
+    this.triggerAdvancedBossSkill(boss, skill);
+    return;
     if (boss.bossId === "chef") {
       this.throwChiliOil(boss);
       this.emitState(`${this.getBossName(boss.bossId)} 发起冲锋。`);
@@ -1182,7 +1923,7 @@ export class PixiWastelandGame {
     if (!this.player) return undefined;
     return this.nodeMarkers.find((marker) => {
       const alreadyResolved = this.state.exploration.resolvedNodeIds.includes(marker.nodeId);
-      return !alreadyResolved && distance(this.player!, marker) <= 72;
+      return !alreadyResolved && distance(this.player!, marker) <= this.getInteractionRadius();
     });
   }
 
@@ -1216,6 +1957,15 @@ export class PixiWastelandGame {
     }
     for (const bullet of this.bullets) {
       bullet.view.visible = this.isVisibleFromPlayerZone(bullet);
+    }
+    for (const projectile of this.heavyProjectiles) {
+      projectile.view.visible = this.isVisibleFromPlayerZone(projectile);
+    }
+    for (const strike of this.autoStrikes) {
+      strike.view.visible = this.isVisibleFromPlayerZone(strike);
+    }
+    for (const mine of this.warpMines) {
+      mine.view.visible = this.isVisibleFromPlayerZone(mine);
     }
     for (const hazard of this.bossHazards) {
       hazard.view.visible = this.isVisibleFromPlayerZone(hazard);
@@ -1263,7 +2013,12 @@ export class PixiWastelandGame {
     const metrics = {
       enemyCount: this.enemies.length,
       bossCount: this.bosses.length,
-      bulletCount: this.bullets.length,
+      bulletCount:
+        this.bullets.length +
+        this.heavyProjectiles.length +
+        this.autoStrikes.length +
+        this.laserEffects.length +
+        this.warpMines.length,
       buildingCount: BUILDINGS.length,
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT,
@@ -1286,6 +2041,35 @@ export class PixiWastelandGame {
     actor.x = x;
     actor.y = y;
     actor.view.position.set(x, y);
+  }
+
+  private getBasicGunDamage(): number {
+    return BASIC_GUN.damage + getSkillUpgradeStats(this.state.skillUpgradeRanks).basicDamageBonus;
+  }
+
+  private getBasicGunIntervalMs(): number {
+    const interval = BASIC_GUN.attackIntervalMs * getSkillUpgradeStats(this.state.skillUpgradeRanks).attackIntervalMultiplier;
+    return Math.max(35, Math.round(interval));
+  }
+
+  private getPlayerMoveSpeed(): number {
+    return 260 * getSkillUpgradeStats(this.state.skillUpgradeRanks).moveSpeedMultiplier;
+  }
+
+  private getSkillProjectileDamage(): number {
+    return Math.round(72 * getSkillUpgradeStats(this.state.skillUpgradeRanks).skillDamageMultiplier);
+  }
+
+  private getInteractionRadius(): number {
+    return 72 + getSkillUpgradeStats(this.state.skillUpgradeRanks).pickupRadiusBonus;
+  }
+
+  private getMechEnergyColor(): number {
+    const stage = getMechEvolutionStage(this.state.skillUpgradeRanks);
+    if (stage === "temporal") return 0xb56cff;
+    if (stage === "laser") return 0xd9f7ff;
+    if (stage === "heavy") return 0xfff3b0;
+    return 0x68e1fd;
   }
 
   private getCurrentBuildingId(): string | null {
@@ -1318,6 +2102,22 @@ export class PixiWastelandGame {
     if (this.state.health <= 0) {
       this.gameOver = true;
       this.callbacks.onGameOver(this.state);
+    }
+  }
+
+  private updatePlayerHistory(deltaMs: number): void {
+    if (!this.player) return;
+    this.playerHistory = this.playerHistory
+      .map((entry) => ({ ...entry, ageMs: entry.ageMs + deltaMs }))
+      .filter((entry) => entry.ageMs <= 4200);
+    const latest = this.playerHistory[0];
+    if (!latest || latest.ageMs >= 220) {
+      this.playerHistory.unshift({
+        x: this.player.x,
+        y: this.player.y,
+        health: this.state.health,
+        ageMs: 0,
+      });
     }
   }
 
@@ -1380,6 +2180,18 @@ export class PixiWastelandGame {
 
 function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function distancePointToSegment(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy || 1;
+  const t = clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared, 0, 1);
+  return distance(point, { x: start.x + dx * t, y: start.y + dy * t });
 }
 
 function clamp(value: number, min: number, max: number): number {

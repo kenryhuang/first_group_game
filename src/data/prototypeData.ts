@@ -5,6 +5,7 @@ import type {
   PlayerBaseline,
   PrototypeLimits,
   SkillDefinition,
+  SkillUpgradeDefinition,
 } from "../domain/types";
 
 export const PROTOTYPE_LIMITS: PrototypeLimits = {
@@ -54,6 +55,114 @@ export const SKILLS: SkillDefinition[] = [
     damage: 64,
     temporaryPollution: 7,
     tags: ["throw", "explosive"],
+  },
+];
+
+export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
+  {
+    id: "firepower-core",
+    name: "火力核心",
+    description: "基础枪伤害 +1。",
+    maxRank: 6,
+    effect: { basicDamageBonus: 1 },
+  },
+  {
+    id: "rapid-feeder",
+    name: "高速供弹",
+    description: "自动射击间隔缩短 12%。",
+    maxRank: 5,
+    effect: { attackIntervalMultiplier: 0.88 },
+  },
+  {
+    id: "magnetic-recovery",
+    name: "磁吸回收",
+    description: "交互和拾取范围 +22。",
+    maxRank: 5,
+    effect: { pickupRadiusBonus: 22 },
+  },
+  {
+    id: "armor-plating",
+    name: "装甲加固",
+    description: "最大生命 +15，并立即修复同等生命。",
+    maxRank: 6,
+    effect: { maxHealthBonus: 15 },
+  },
+  {
+    id: "servo-legs",
+    name: "推进腿甲",
+    description: "移动速度 +8%。",
+    maxRank: 5,
+    effect: { moveSpeedMultiplier: 1.08 },
+  },
+  {
+    id: "skill-overclock",
+    name: "技能超频",
+    description: "技能弹幕伤害 +15%。",
+    maxRank: 5,
+    effect: { skillDamageMultiplier: 1.15 },
+  },
+  {
+    id: "missile-pod",
+    name: "肩载导弹巢",
+    description: "自动向怪物密集处发射范围导弹。",
+    maxRank: 4,
+    effect: {},
+  },
+  {
+    id: "orbital-flak",
+    name: "轨道高射炮",
+    description: "自动标记高威胁目标并精准炮击。",
+    maxRank: 4,
+    effect: {},
+  },
+  {
+    id: "micro-missiles",
+    name: "蜂群微型导弹",
+    description: "自动连续发射追踪小导弹。",
+    maxRank: 4,
+    effect: {},
+  },
+  {
+    id: "focus-laser",
+    name: "聚能激光",
+    description: "自动发射穿透直线目标的高能激光。",
+    maxRank: 5,
+    effect: {},
+  },
+  {
+    id: "orbital-laser-rain",
+    name: "轨道激光雨",
+    description: "自动在周围目标上落下多道激光柱。",
+    maxRank: 4,
+    effect: {},
+  },
+  {
+    id: "phase-blink",
+    name: "相位闪现",
+    description: "被包围或濒危时自动短距离传送并释放冲击波。",
+    maxRank: 4,
+    effect: {},
+  },
+  {
+    id: "temporal-rewind",
+    name: "时间回溯",
+    description: "濒死时自动回到几秒前的位置并恢复生命。",
+    maxRank: 3,
+    effect: {},
+  },
+  {
+    id: "warp-mines",
+    name: "折跃地雷",
+    description: "自动在身后布置时空地雷，爆炸后短暂压制怪物。",
+    maxRank: 4,
+    effect: {},
+  },
+  {
+    id: "prism-amplifier",
+    name: "棱镜增幅器",
+    description: "激光命中后会折射到附近额外目标。",
+    maxRank: 3,
+    effect: {},
   },
 ];
 
