@@ -592,7 +592,7 @@ export class PixiWastelandGame {
       boss.view.rotation = angle;
       if (sameZoneAsPlayer && boss.contactDamageElapsedMs >= 700 && distance(this.player, boss) <= 54) {
         boss.contactDamageElapsedMs = 0;
-        this.applyPlayerDamage(boss.mode === "charge" ? 22 : 12);
+        this.applyPlayerDamage(boss.mode === "charge" ? boss.chargeDamage : 12);
       }
 
       boss.chargeMs = Math.max(0, boss.chargeMs - deltaMs);
@@ -1702,6 +1702,7 @@ export class PixiWastelandGame {
       advancedSkillCursor: 0,
       chargeMs: 0,
       chargeAngle: 0,
+      chargeDamage: 22,
       windupMs: 0,
       pendingChargeAngle: 0,
       contactDamageElapsedMs: 700,
@@ -1774,7 +1775,7 @@ export class PixiWastelandGame {
       this.emitState(`${this.getBossName(boss.bossId)} 释放环形弹幕。`);
       return;
     }
-    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    const angle = Math.atan2(this.player!.y - boss.y, this.player!.x - boss.x);
     boss.mode = "windup";
     boss.windupMs = 650;
     boss.pendingChargeAngle = angle;
@@ -1798,6 +1799,138 @@ export class PixiWastelandGame {
       this.spawnDeliveryLock(boss, skill);
     }
     this.emitState(`${this.getBossName(boss.bossId)}: ${skill.name}`);
+  }
+
+  private spawnPressureCookerBomb(boss: BossActor, skill: AdvancedBossSkill): void {
+    const target = this.player ?? boss;
+    this.spawnDelayedBossBlast(
+      target.x,
+      target.y,
+      skill.radius,
+      skill.damage,
+      skill.warningMs,
+      0xc8d5d9,
+      "高压锅",
+      () => this.spawnFirePit(target.x, target.y),
+    );
+  }
+
+  private spawnJackInTheBox(boss: BossActor, skill: AdvancedBossSkill): void {
+    const angle = Math.atan2((this.player?.y ?? boss.y) - boss.y, (this.player?.x ?? boss.x) - boss.x);
+    const x = boss.x + Math.cos(angle) * 220;
+    const y = boss.y + Math.sin(angle) * 220;
+    this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, 0xff4d6d, "魔盒");
+  }
+
+  private spawnCourierDroneAirdrop(skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    for (const offset of [-80, 95]) {
+      const x = clamp(this.player.x + offset + (Math.random() - 0.5) * 90, 24, MAP_WIDTH - 24);
+      const y = clamp(this.player.y + (Math.random() - 0.5) * 150, 24, MAP_HEIGHT - 24);
+      this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, offset < 0 ? 0xff6b00 : 0x68e1fd, "无人机");
+    }
+  }
+
+  private spawnDeliveryLock(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const lock = new Graphics();
+    lock
+      .roundRect(-45, -24, 90, 48, 5)
+      .fill({ color: 0xfff3b0, alpha: 0.22 })
+      .stroke({ color: 0xd90429, alpha: 0.92, width: 3 })
+      .rect(-28, -4, 56, 8)
+      .fill({ color: 0xd90429, alpha: 0.8 });
+    lock.position.set(this.player.x, this.player.y - 42);
+    this.world.addChild(lock);
+    window.setTimeout(() => {
+      if (lock.destroyed) return;
+      this.world.removeChild(lock);
+      lock.destroy();
+      if (!this.player || !this.bosses.includes(boss)) return;
+      this.startBossCharge(boss, 320, 760, skill.damage, 0xd90429);
+    }, skill.warningMs);
+  }
+
+  private spawnClownClones(boss: BossActor, skill: AdvancedBossSkill): void {
+    for (let index = 0; index < 3; index += 1) {
+      const angle = (Math.PI * 2 * index) / 3 + this.spawnSeed;
+      const view = new Graphics();
+      this.drawBossSprite(view, "clown");
+      view.alpha = 0.52;
+      const x = clamp(boss.x + Math.cos(angle) * 115, 24, MAP_WIDTH - 24);
+      const y = clamp(boss.y + Math.sin(angle) * 115, 24, MAP_HEIGHT - 24);
+      view.position.set(x, y);
+      this.world.addChild(view);
+      this.enemies.push({
+        view,
+        x,
+        y,
+        health: 16,
+        speed: 118,
+        contactDamageElapsedMs: 700,
+      });
+    }
+    this.spawnHitSparks(boss.x, boss.y, 0xff4d6d, 14);
+  }
+
+  private startBossCharge(
+    boss: BossActor,
+    warningMs: number,
+    distanceScale: number,
+    damage: number,
+    color: number,
+  ): void {
+    if (!this.player) return;
+    const angle = Math.atan2(this.player!.y - boss.y, this.player!.x - boss.x);
+    boss.mode = "windup";
+    boss.windupMs = warningMs;
+    boss.pendingChargeAngle = angle;
+    boss.chargeDamage = damage;
+    this.spawnChargeTelegraph(boss, angle, distanceScale, color);
+  }
+
+  private spawnDelayedBossBlast(
+    x: number,
+    y: number,
+    radius: number,
+    damage: number,
+    warningMs: number,
+    color: number,
+    label: string,
+    onExplode?: () => void,
+  ): void {
+    const marker = new Graphics();
+    marker
+      .circle(0, 0, radius)
+      .fill({ color, alpha: 0.18 })
+      .stroke({ color: 0xfff3b0, alpha: 0.82, width: 3 })
+      .circle(0, 0, 18)
+      .fill({ color, alpha: 0.82 });
+    marker.position.set(x, y);
+    this.world.addChild(marker);
+    const text = new Text({
+      text: label,
+      style: new TextStyle({ fill: "#fff3b0", fontFamily: "Arial", fontSize: 14, fontWeight: "700" }),
+    });
+    text.anchor.set(0.5);
+    text.position.set(x, y - radius - 20);
+    this.world.addChild(text);
+    window.setTimeout(() => {
+      if (!marker.destroyed) {
+        this.world.removeChild(marker);
+        marker.destroy();
+      }
+      if (!text.destroyed) {
+        this.world.removeChild(text);
+        text.destroy();
+      }
+      this.spawnHitSparks(x, y, color, 18);
+      this.addScreenShake(140, 7);
+      if (this.player && this.getVisibilityZoneId(this.player) === this.getVisibilityZoneId({ x, y }) && distance(this.player, { x, y }) <= radius + 16) {
+        this.applyPlayerDamage(damage);
+      }
+      onExplode?.();
+    }, warningMs);
   }
 
   private throwChiliOil(boss: BossActor): void {
@@ -1865,11 +1998,11 @@ export class PixiWastelandGame {
     });
   }
 
-  private spawnChargeTelegraph(boss: BossActor, angle: number): void {
+  private spawnChargeTelegraph(boss: BossActor, angle: number, length = 980, color = 0xd90429): void {
     const view = new Graphics();
     view
-      .rect(0, -82, 980, 164)
-      .fill({ color: 0xd90429, alpha: 0.28 })
+      .rect(0, -82, length, 164)
+      .fill({ color, alpha: 0.28 })
       .stroke({ color: 0xfff3b0, alpha: 0.7, width: 3 });
     view.position.set(boss.x, boss.y);
     view.rotation = angle;
