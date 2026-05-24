@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ENERGY_SKILL_DEFINITIONS,
+  advanceEnergySkillCooldowns,
   getActiveEnergySkills,
+  getAutoEnergySkills,
+  getManualEnergySkills,
   getEnergySkillPower,
   getMechEvolutionStage,
   isEnergySkillReady,
@@ -31,6 +34,25 @@ describe("energy and mobility skills", () => {
     expect(ENERGY_SKILL_DEFINITIONS.find((skill) => skill.id === "focus-laser")?.mode).toBe("beam");
     expect(ENERGY_SKILL_DEFINITIONS.find((skill) => skill.id === "phase-blink")?.mode).toBe("blink");
     expect(ENERGY_SKILL_DEFINITIONS.find((skill) => skill.id === "temporal-rewind")?.mode).toBe("rewind");
+    expect(ENERGY_SKILL_DEFINITIONS.find((skill) => skill.id === "phase-blink")?.trigger).toBe("manual");
+  });
+
+  it("keeps manual phase blink out of automatic energy skill casts", () => {
+    const automatic = getAutoEnergySkills({
+      "focus-laser": 1,
+      "phase-blink": 1,
+      "warp-mines": 1,
+    });
+
+    expect(automatic.map((skill) => skill.id)).toEqual(["focus-laser", "warp-mines"]);
+  });
+
+  it("advances manual skill cooldowns after they are used", () => {
+    const phaseBlink = ENERGY_SKILL_DEFINITIONS.find((skill) => skill.id === "phase-blink")!;
+    const manual = getManualEnergySkills({ "phase-blink": 1 });
+    const cooldowns = advanceEnergySkillCooldowns({ "phase-blink": 0 }, manual, phaseBlink.cooldownMs);
+
+    expect(isEnergySkillReady(phaseBlink, cooldowns["phase-blink"] ?? 0)).toBe(true);
   });
 
   it("scales power by rank and gates cooldown readiness", () => {

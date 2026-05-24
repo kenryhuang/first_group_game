@@ -39,7 +39,7 @@ test("prototype loads and responds to keyboard controls", async ({ page }) => {
     .toBe(10000);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.bossCount ?? 0))
-    .toBe(3);
+    .toBe(4);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.enemyCount ?? 0))
     .toBeGreaterThan(0);
@@ -74,11 +74,11 @@ test("prototype loads and responds to keyboard controls", async ({ page }) => {
     .not.toBe(beforeInput);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.bossCount ?? 0))
-    .toBe(3);
+    .toBe(4);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.bossNames.join(" / ") ?? ""))
     .toContain("变异厨师");
-  await expect(page.getByText(/Boss 3\/3/)).toBeVisible();
+  await expect(page.getByText(/Boss 4\/4/)).toBeVisible();
 });
 
 async function canvasHasVisiblePixels(handle: ElementHandle<SVGElement | HTMLElement> | null): Promise<boolean> {

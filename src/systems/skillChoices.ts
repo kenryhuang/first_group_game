@@ -3,6 +3,15 @@ import type { SkillChoiceProgress, SkillUpgradeStats } from "../domain/types";
 
 export const KILLS_PER_SKILL_CHOICE = 15;
 
+export function getCompletedSkillUpgradeCount(ranks: Record<string, number>): number {
+  return Object.values(ranks).reduce((total, rank) => total + Math.max(0, Math.floor(rank)), 0);
+}
+
+export function getKillsRequiredForSkillChoice(completedSkillChoices: number): number {
+  const completedChoices = Math.max(0, Math.floor(completedSkillChoices));
+  return KILLS_PER_SKILL_CHOICE + (completedChoices * (completedChoices + 1)) / 2;
+}
+
 export function createSkillChoiceProgress(): SkillChoiceProgress {
   return {
     enemyKills: 0,
@@ -15,6 +24,7 @@ export function createSkillChoiceProgress(): SkillChoiceProgress {
 export function recordSkillChoiceKill(
   progress: SkillChoiceProgress,
   random: () => number = Math.random,
+  requiredKills = KILLS_PER_SKILL_CHOICE,
 ): SkillChoiceProgress {
   const enemyKills = progress.enemyKills + 1;
   if (progress.pendingSkillChoiceIds.length > 0) {
@@ -22,7 +32,7 @@ export function recordSkillChoiceKill(
   }
 
   const killsTowardSkillChoice = progress.killsTowardSkillChoice + 1;
-  if (killsTowardSkillChoice < KILLS_PER_SKILL_CHOICE) {
+  if (killsTowardSkillChoice < requiredKills) {
     return { ...progress, enemyKills, killsTowardSkillChoice };
   }
 

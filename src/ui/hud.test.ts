@@ -22,4 +22,29 @@ describe("hud", () => {
     expect(lines[2]).toContain("追杀 变异厨师");
     expect(lines[3]).toContain("技能 菜刀冲刺");
   });
+  it("shows pending and selected final mech forms", () => {
+    const pendingLines = createHudLines({
+      ...createRunState(),
+      pendingMechFormIds: ["laser", "missile"],
+    });
+
+    expect(pendingLines).toContain("最终形态 待选择：激光形态 / 导弹形态");
+
+    const selectedLines = createHudLines({
+      ...createRunState(),
+      selectedMechFormId: "blade",
+    });
+
+    expect(selectedLines).toContain("最终形态 大刀形态  R 释放终极技");
+  });
+
+  it("shows the endgame super ultimate after the final phase begins", () => {
+    const lines = createHudLines({
+      ...createRunState(),
+      level: 60,
+      selectedMechFormId: "missile",
+    });
+
+    expect(lines).toContain("终局大招 T 战术核弹");
+  });
 });

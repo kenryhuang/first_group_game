@@ -4,10 +4,13 @@ import { processLevelMilestone, createBossPressureState, markBossKilled } from "
 import { defeatBoss, useSkill } from "./combat";
 import { createExplorationState, resolveMapNode } from "./exploration";
 import { equipActiveSkill, equipPassiveFragment, getPassiveLoad } from "./loadout";
+import { MECH_FORM_UNLOCK_LEVEL, getAvailableMechForms } from "./mechForms";
 import { gainExperience } from "./progression";
 import {
   applySkillUpgrade,
   createSkillChoiceProgress,
+  getCompletedSkillUpgradeCount,
+  getKillsRequiredForSkillChoice,
   getSkillUpgradeStats,
   recordSkillChoiceKill,
 } from "./skillChoices";
@@ -30,6 +33,8 @@ export function createRunState(): RunState {
     exploration: createExplorationState(),
     discoveredBossClues: [],
     bossPressure: createBossPressureState(),
+    selectedMechFormId: null,
+    pendingMechFormIds: [],
     ...skillChoiceProgress,
   };
 }
@@ -42,6 +47,11 @@ export function gainRunExperience(state: RunState, amount: number): RunState {
   );
 
   const maxHealth = getRunMaxHealth(progress.level, state.skillUpgradeRanks);
+  const pendingMechFormIds =
+    state.selectedMechFormId || state.pendingMechFormIds.length > 0
+      ? state.pendingMechFormIds
+      : getAvailableMechForms(progress.level, state.skillUpgradeRanks);
+
   return {
     ...state,
     level: progress.level,
@@ -49,6 +59,7 @@ export function gainRunExperience(state: RunState, amount: number): RunState {
     maxHealth,
     baseDamage: Math.round(PLAYER_BASELINE.basicDamage * (1 + (progress.level - 1) * 0.03)),
     bossPressure,
+    pendingMechFormIds,
   };
 }
 
@@ -100,9 +111,23 @@ export function applyRunDamage(state: RunState, amount: number): RunState {
 }
 
 export function recordRunEnemyKill(state: RunState, random: () => number = Math.random): RunState {
+  const requiredKills = getKillsRequiredForSkillChoice(getCompletedSkillUpgradeCount(state.skillUpgradeRanks));
+  const shouldOpenChoice =
+    state.pendingSkillChoiceIds.length === 0 &&
+    state.killsTowardSkillChoice + 1 >= requiredKills;
+  const progress = recordSkillChoiceKill(state, random, requiredKills);
+  const shouldOpenMechForm =
+    shouldOpenChoice &&
+    progress.pendingSkillChoiceIds.length === 0 &&
+    !state.selectedMechFormId &&
+    state.pendingMechFormIds.length === 0;
+
   return {
     ...state,
-    ...recordSkillChoiceKill(state, random),
+    ...progress,
+    pendingMechFormIds: shouldOpenMechForm
+      ? getAvailableMechForms(Math.max(state.level, MECH_FORM_UNLOCK_LEVEL), progress.skillUpgradeRanks)
+      : state.pendingMechFormIds,
   };
 }
 
@@ -120,6 +145,17 @@ export function chooseRunSkillUpgrade(state: RunState, upgradeId: string): RunSt
     ...progress,
     maxHealth,
     health: Math.min(maxHealth, state.health + Math.max(0, maxHealth - previousMaxHealth)),
+  };
+}
+
+export function chooseRunMechForm(state: RunState, formId: RunState["selectedMechFormId"]): RunState {
+  if (!formId || !state.pendingMechFormIds.includes(formId)) {
+    return state;
+  }
+  return {
+    ...state,
+    selectedMechFormId: formId,
+    pendingMechFormIds: [],
   };
 }
 

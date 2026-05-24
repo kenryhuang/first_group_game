@@ -9,7 +9,7 @@ import type {
 } from "../domain/types";
 
 export const PROTOTYPE_LIMITS: PrototypeLimits = {
-  levelCap: 30,
+  levelCap: 60,
   activeSkillSlots: 4,
 };
 
@@ -65,6 +65,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "基础枪伤害 +1。",
     maxRank: 6,
     effect: { basicDamageBonus: 1 },
+    formTags: ["missile"],
   },
   {
     id: "rapid-feeder",
@@ -72,6 +73,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "自动射击间隔缩短 12%。",
     maxRank: 5,
     effect: { attackIntervalMultiplier: 0.88 },
+    formTags: ["missile"],
   },
   {
     id: "magnetic-recovery",
@@ -86,6 +88,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "最大生命 +15，并立即修复同等生命。",
     maxRank: 6,
     effect: { maxHealthBonus: 15 },
+    formTags: ["blade"],
   },
   {
     id: "servo-legs",
@@ -93,6 +96,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "移动速度 +8%。",
     maxRank: 5,
     effect: { moveSpeedMultiplier: 1.08 },
+    formTags: ["blade"],
   },
   {
     id: "skill-overclock",
@@ -100,6 +104,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "技能弹幕伤害 +15%。",
     maxRank: 5,
     effect: { skillDamageMultiplier: 1.15 },
+    formTags: ["laser"],
   },
   {
     id: "missile-pod",
@@ -107,6 +112,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "自动向怪物密集处发射范围导弹。",
     maxRank: 4,
     effect: {},
+    formTags: ["missile"],
   },
   {
     id: "orbital-flak",
@@ -114,6 +120,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "自动标记高威胁目标并精准炮击。",
     maxRank: 4,
     effect: {},
+    formTags: ["missile"],
   },
   {
     id: "micro-missiles",
@@ -121,6 +128,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "自动连续发射追踪小导弹。",
     maxRank: 4,
     effect: {},
+    formTags: ["missile"],
   },
   {
     id: "focus-laser",
@@ -128,6 +136,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "自动发射穿透直线目标的高能激光。",
     maxRank: 5,
     effect: {},
+    formTags: ["laser"],
   },
   {
     id: "orbital-laser-rain",
@@ -135,6 +144,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "自动在周围目标上落下多道激光柱。",
     maxRank: 4,
     effect: {},
+    formTags: ["laser"],
   },
   {
     id: "phase-blink",
@@ -142,6 +152,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "被包围或濒危时自动短距离传送并释放冲击波。",
     maxRank: 4,
     effect: {},
+    formTags: ["blade"],
   },
   {
     id: "temporal-rewind",
@@ -149,6 +160,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "濒死时自动回到几秒前的位置并恢复生命。",
     maxRank: 3,
     effect: {},
+    formTags: ["blade"],
   },
   {
     id: "warp-mines",
@@ -156,6 +168,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "自动在身后布置时空地雷，爆炸后短暂压制怪物。",
     maxRank: 4,
     effect: {},
+    formTags: ["blade"],
   },
   {
     id: "prism-amplifier",
@@ -163,6 +176,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
     description: "激光命中后会折射到附近额外目标。",
     maxRank: 3,
     effect: {},
+    formTags: ["laser"],
   },
 ];
 

@@ -3,6 +3,8 @@ import {
   KILLS_PER_SKILL_CHOICE,
   applySkillUpgrade,
   createSkillChoiceProgress,
+  getCompletedSkillUpgradeCount,
+  getKillsRequiredForSkillChoice,
   getSkillUpgradeStats,
   recordSkillChoiceKill,
   rollSkillChoices,
@@ -39,6 +41,24 @@ describe("skill choices", () => {
     expect(next.enemyKills).toBe(KILLS_PER_SKILL_CHOICE + 1);
     expect(next.killsTowardSkillChoice).toBe(0);
     expect(next.pendingSkillChoiceIds).toEqual(progress.pendingSkillChoiceIds);
+  });
+
+  it("raises the kill threshold only after skill upgrades are selected", () => {
+    expect(getKillsRequiredForSkillChoice(0)).toBe(15);
+    expect(getKillsRequiredForSkillChoice(1)).toBe(16);
+    expect(getKillsRequiredForSkillChoice(2)).toBe(18);
+    expect(getKillsRequiredForSkillChoice(3)).toBe(21);
+    expect(getCompletedSkillUpgradeCount({ "focus-laser": 2, "missile-pod": 1 })).toBe(3);
+
+    let progress = createSkillChoiceProgress();
+    const required = getKillsRequiredForSkillChoice(getCompletedSkillUpgradeCount(progress.skillUpgradeRanks));
+    for (let index = 0; index < required - 1; index += 1) {
+      progress = recordSkillChoiceKill(progress, () => 0, required);
+    }
+
+    expect(progress.pendingSkillChoiceIds).toEqual([]);
+    progress = recordSkillChoiceKill(progress, () => 0, required);
+    expect(progress.pendingSkillChoiceIds).toHaveLength(3);
   });
 
   it("applies a selected upgrade rank and exposes cumulative stats", () => {

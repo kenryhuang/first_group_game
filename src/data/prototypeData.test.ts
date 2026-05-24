@@ -7,7 +7,7 @@ import {
 } from "./prototypeData";
 
 describe("prototype data", () => {
-  it("defines the 30-level prototype Boss order from the spec", () => {
+  it("defines the prototype Boss order from the spec", () => {
     expect(BOSS_ORDER.map((boss) => boss.id)).toEqual([
       "chef",
       "clown",
@@ -31,7 +31,7 @@ describe("prototype data", () => {
       safePollutionLoad: 100,
     });
     expect(PROTOTYPE_LIMITS.activeSkillSlots).toBe(4);
-    expect(PROTOTYPE_LIMITS.levelCap).toBe(30);
+    expect(PROTOTYPE_LIMITS.levelCap).toBe(60);
   });
 
   it("includes at least one explosive skill for the courier chain", () => {

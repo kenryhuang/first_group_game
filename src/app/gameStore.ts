@@ -55,7 +55,7 @@ export const useGameStore = defineStore("game", {
   getters: {
     hudLines: (state): string[] => [
       ...createHudLines(state.runState),
-      `地图 ${state.mapWidth}x${state.mapHeight}  怪物 ${state.enemyCount}  子弹 ${state.bulletCount}  楼房 ${state.buildingCount}  Boss ${state.bossCount}/3`,
+      `地图 ${state.mapWidth}x${state.mapHeight}  怪物 ${state.enemyCount}  子弹 ${state.bulletCount}  楼房 ${state.buildingCount}  Boss ${state.bossCount}/${Math.max(3, state.bossCount, state.bossNames.length)}`,
       `位置 ${state.currentBuildingId ? `室内 ${state.currentBuildingId}` : "室外"}`,
       `游荡 Boss ${state.bossNames.join(" / ") || "无"}`,
       `普攻 ${state.attackMode === "auto" ? "自动" : "手动"}  Space 发射子弹  1-4 技能弹幕`,

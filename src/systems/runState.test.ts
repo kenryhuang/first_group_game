@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { SKILL_UPGRADES } from "../data/prototypeData";
 import {
   applyRunDamage,
+  chooseRunMechForm,
   chooseRunSkillUpgrade,
   createRunState,
   collectNode,
@@ -9,7 +11,7 @@ import {
   recordRunEnemyKill,
   useRunSkill,
 } from "./runState";
-import { KILLS_PER_SKILL_CHOICE } from "./skillChoices";
+import { KILLS_PER_SKILL_CHOICE, getCompletedSkillUpgradeCount, getKillsRequiredForSkillChoice } from "./skillChoices";
 
 describe("run state", () => {
   it("starts as an ordinary survivor with no out-of-run growth", () => {
@@ -68,5 +70,58 @@ describe("run state", () => {
     const upgraded = chooseRunSkillUpgrade(state, state.pendingSkillChoiceIds[0]);
     expect(upgraded.pendingSkillChoiceIds).toEqual([]);
     expect(upgraded.skillUpgradeRanks[state.pendingSkillChoiceIds[0]]).toBe(1);
+  });
+
+  it("does not increase the next skill threshold until the player chooses an upgrade", () => {
+    const leveled = {
+      ...createRunState(),
+      level: 12,
+    };
+    let state = leveled;
+    for (let index = 0; index < KILLS_PER_SKILL_CHOICE; index += 1) {
+      state = recordRunEnemyKill(state, () => 0);
+    }
+
+    expect(state.pendingSkillChoiceIds).toHaveLength(3);
+    expect(getKillsRequiredForSkillChoice(getCompletedSkillUpgradeCount(state.skillUpgradeRanks))).toBe(15);
+
+    const upgraded = chooseRunSkillUpgrade(state, state.pendingSkillChoiceIds[0]);
+    expect(getCompletedSkillUpgradeCount(upgraded.skillUpgradeRanks)).toBe(1);
+    expect(getKillsRequiredForSkillChoice(getCompletedSkillUpgradeCount(upgraded.skillUpgradeRanks))).toBe(16);
+  });
+
+  it("opens final mech form choices at level 50 and records the chosen form", () => {
+    const state = gainRunExperience(
+      {
+        ...createRunState(),
+        skillUpgradeRanks: { "focus-laser": 4, "missile-pod": 3 },
+      },
+      99999,
+    );
+
+    expect(state.level).toBeGreaterThanOrEqual(50);
+    expect(state.pendingMechFormIds).toEqual(["laser", "missile"]);
+
+    const chosen = chooseRunMechForm(state, "laser");
+    expect(chosen.selectedMechFormId).toBe("laser");
+    expect(chosen.pendingMechFormIds).toEqual([]);
+  });
+
+  it("starts mech form evolution when no skill upgrades remain to choose", () => {
+    const maxedRanks = Object.fromEntries(SKILL_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxRank]));
+    const level = 42;
+    const requiredKills = getKillsRequiredForSkillChoice(getCompletedSkillUpgradeCount(maxedRanks));
+    const state = recordRunEnemyKill(
+      {
+        ...createRunState(),
+        level,
+        killsTowardSkillChoice: requiredKills - 1,
+        skillUpgradeRanks: maxedRanks,
+      },
+      () => 0,
+    );
+
+    expect(state.pendingSkillChoiceIds).toEqual([]);
+    expect(state.pendingMechFormIds).toEqual(["laser", "missile", "blade"]);
   });
 });

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  ENEMY_SPAWN_TICK_MS,
   MAP_HEIGHT,
   MAP_WIDTH,
+  getEnemyMaxAlive,
+  getEnemySpawnBatchSize,
   getBossSpawnPosition,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
@@ -57,5 +60,14 @@ describe("spawning", () => {
     expect(position.x).toBeLessThan(3200);
     expect(position.y).toBeGreaterThan(1000);
     expect(position.y).toBeLessThan(3200);
+  });
+
+  it("scales each spawn wave with progress instead of flooding every second", () => {
+    expect(ENEMY_SPAWN_TICK_MS).toBe(1000);
+    expect(getEnemySpawnBatchSize(1, ENEMY_SPAWN_TICK_MS)).toBe(10);
+    expect(getEnemySpawnBatchSize(10, ENEMY_SPAWN_TICK_MS)).toBe(19);
+    expect(getEnemySpawnBatchSize(60, ENEMY_SPAWN_TICK_MS)).toBe(69);
+    expect(getEnemyMaxAlive(1)).toBe(80);
+    expect(getEnemyMaxAlive(60)).toBe(260);
   });
 });

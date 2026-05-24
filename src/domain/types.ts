@@ -1,4 +1,5 @@
 export type BossId = "chef" | "clown" | "courier";
+export type MechFormId = "laser" | "missile" | "blade";
 export type SkillTag =
   | "melee"
   | "fire"
@@ -48,6 +49,7 @@ export interface SkillUpgradeDefinition {
   description: string;
   maxRank: number;
   effect: SkillUpgradeEffect;
+  formTags?: MechFormId[];
 }
 
 export interface SkillUpgradeStats {
@@ -64,6 +66,11 @@ export interface SkillChoiceProgress {
   killsTowardSkillChoice: number;
   pendingSkillChoiceIds: string[];
   skillUpgradeRanks: Record<string, number>;
+}
+
+export interface MechFormState {
+  selectedMechFormId: MechFormId | null;
+  pendingMechFormIds: MechFormId[];
 }
 
 export interface PassiveFragment {
@@ -204,4 +211,6 @@ export interface RunState {
   killsTowardSkillChoice: number;
   pendingSkillChoiceIds: string[];
   skillUpgradeRanks: Record<string, number>;
+  selectedMechFormId: MechFormId | null;
+  pendingMechFormIds: MechFormId[];
 }

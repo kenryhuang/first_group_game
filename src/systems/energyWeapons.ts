@@ -7,6 +7,7 @@ export type EnergySkillId =
   | "prism-amplifier";
 
 export type EnergySkillMode = "beam" | "rain" | "blink" | "rewind" | "mine" | "passive";
+export type EnergySkillTrigger = "auto" | "manual";
 export type MechEvolutionStage = "base" | "heavy" | "laser" | "temporal";
 
 export interface EnergySkillDefinition {
@@ -18,7 +19,10 @@ export interface EnergySkillDefinition {
   range: number;
   radius: number;
   burstCount: number;
+  trigger?: EnergySkillTrigger;
 }
+
+export type EnergySkillCooldowns = Partial<Record<EnergySkillId, number>>;
 
 export const ENERGY_SKILL_DEFINITIONS: EnergySkillDefinition[] = [
   {
@@ -50,6 +54,7 @@ export const ENERGY_SKILL_DEFINITIONS: EnergySkillDefinition[] = [
     range: 270,
     radius: 86,
     burstCount: 1,
+    trigger: "manual",
   },
   {
     id: "temporal-rewind",
@@ -85,6 +90,27 @@ export const ENERGY_SKILL_DEFINITIONS: EnergySkillDefinition[] = [
 
 export function getActiveEnergySkills(ranks: Record<string, number>): EnergySkillDefinition[] {
   return ENERGY_SKILL_DEFINITIONS.filter((skill) => (ranks[skill.id] ?? 0) > 0);
+}
+
+export function getAutoEnergySkills(ranks: Record<string, number>): EnergySkillDefinition[] {
+  return getActiveEnergySkills(ranks).filter((skill) => (skill.trigger ?? "auto") === "auto");
+}
+
+export function getManualEnergySkills(ranks: Record<string, number>): EnergySkillDefinition[] {
+  return getActiveEnergySkills(ranks).filter((skill) => skill.trigger === "manual");
+}
+
+export function advanceEnergySkillCooldowns(
+  cooldowns: EnergySkillCooldowns,
+  skills: EnergySkillDefinition[],
+  deltaMs: number,
+): EnergySkillCooldowns {
+  const next = { ...cooldowns };
+  for (const skill of skills) {
+    if (skill.cooldownMs <= 0) continue;
+    next[skill.id] = (next[skill.id] ?? skill.cooldownMs) + deltaMs;
+  }
+  return next;
 }
 
 export function isEnergySkillReady(skill: EnergySkillDefinition, elapsedMs: number): boolean {

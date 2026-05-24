@@ -3,9 +3,14 @@ import type { BossId } from "../domain/types";
 export const MAP_WIDTH = 10000;
 export const MAP_HEIGHT = 10000;
 export const PLAYER_START = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+export const ENEMY_SPAWN_TICK_MS = 1000;
 
 const ENEMY_MIN_SPAWN_DISTANCE = 380;
 const ENEMY_MAX_SPAWN_DISTANCE = 620;
+const BASE_ENEMY_SPAWN_BATCH = 10;
+const MIN_ENEMY_MAX_ALIVE = 80;
+const MAX_ENEMY_MAX_ALIVE = 260;
+const SPAWN_PRESSURE_LEVEL_CAP = 60;
 
 export interface Point {
   x: number;
@@ -42,6 +47,19 @@ export function getNodeWorldPosition(node: Point): Point {
   };
 }
 
+export function getEnemySpawnRatePerSecond(level: number): number {
+  return BASE_ENEMY_SPAWN_BATCH + Math.max(0, Math.floor(level) - 1);
+}
+
+export function getEnemySpawnBatchSize(level: number, elapsedMs: number): number {
+  return Math.max(1, Math.round((getEnemySpawnRatePerSecond(level) * elapsedMs) / 1000));
+}
+
+export function getEnemyMaxAlive(level: number): number {
+  const progress = getLevelProgress(level);
+  return Math.round(MIN_ENEMY_MAX_ALIVE + (MAX_ENEMY_MAX_ALIVE - MIN_ENEMY_MAX_ALIVE) * progress);
+}
+
 function clampToMap(point: Point): Point {
   return {
     x: clamp(point.x, 24, MAP_WIDTH - 24),
@@ -51,4 +69,8 @@ function clampToMap(point: Point): Point {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function getLevelProgress(level: number): number {
+  return clamp((level - 1) / (SPAWN_PRESSURE_LEVEL_CAP - 1), 0, 1);
 }

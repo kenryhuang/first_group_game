@@ -5,6 +5,7 @@ import { BOSS_ORDER, SKILL_UPGRADES } from "../data/prototypeData";
 import type { BossId, MapNode, RunState } from "../domain/types";
 import {
   applyRunDamage,
+  chooseRunMechForm,
   chooseRunSkillUpgrade,
   collectNode,
   createRunState,
@@ -15,9 +16,12 @@ import {
 } from "../systems/runState";
 import { getSkillUpgradeStats } from "../systems/skillChoices";
 import {
+  ENEMY_SPAWN_TICK_MS,
   MAP_HEIGHT,
   MAP_WIDTH,
   PLAYER_START,
+  getEnemyMaxAlive,
+  getEnemySpawnBatchSize,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
 } from "../systems/spawning";
@@ -45,14 +49,37 @@ import {
   type AutoWeaponId,
 } from "../systems/autoWeapons";
 import {
-  getActiveEnergySkills,
+  ENERGY_SKILL_DEFINITIONS,
+  advanceEnergySkillCooldowns,
+  getAutoEnergySkills,
   getEnergySkillPower,
+  getManualEnergySkills,
   getMechEvolutionStage,
   isEnergySkillReady,
   type EnergySkillDefinition,
   type EnergySkillId,
 } from "../systems/energyWeapons";
 import { getNextAdvancedBossSkill, type AdvancedBossSkill } from "../systems/bossSkills";
+import { getUltimateDefinition, type UltimateDefinition } from "../systems/mechForms";
+import {
+  FINAL_BOSS_DEFINITION,
+  getEndgameUltimateDefinition,
+  getFinalBossPhase,
+  isEndgameReady,
+  type EndgameUltimateDefinition,
+} from "../systems/endgame";
+import {
+  HOSPITAL_KNIGHT_AGGRO_RADIUS,
+  HOSPITAL_KNIGHT_DEFINITION,
+  HOSPITAL_KNIGHT_SPAWN,
+  getHospitalKnightGuardRoamTarget,
+  getHospitalKnightPhase,
+  getInitialBoneHordeCount,
+  isHospitalKnightDamageable,
+  shouldConvertZombieToBoneSoldier,
+  shouldHospitalKnightAggro,
+  type HospitalKnightPhase,
+} from "../systems/hospitalKnight";
 import {
   getBossRoamTargetInTerritory,
   getBossTerritorySpawnPosition,
@@ -64,6 +91,7 @@ import type { GameMetrics } from "../app/gameStore";
 type AttackMode = "auto" | "manual";
 type BossMode = "roam" | "chase" | "charge" | "windup";
 type HazardKind = "bossProjectile" | "chiliOil" | "firePit" | "knife";
+type EnemyKind = "zombie" | "bone" | "boneSoldier";
 
 interface GameCallbacks {
   onMetrics(metrics: GameMetrics): void;
@@ -79,9 +107,14 @@ interface Actor {
 }
 
 interface EnemyActor extends Actor {
+  kind: EnemyKind;
   health: number;
   speed: number;
   contactDamageElapsedMs: number;
+  dashElapsedMs?: number;
+  dashMs?: number;
+  dashAngle?: number;
+  guardTarget?: { x: number; y: number };
 }
 
 interface BossActor extends Actor {
@@ -100,6 +133,44 @@ interface BossActor extends Actor {
   windupMs: number;
   pendingChargeAngle: number;
   contactDamageElapsedMs: number;
+}
+
+interface FinalBossActor extends Actor {
+  health: number;
+  maxHealth: number;
+  label: Text;
+  phase: 1 | 2 | 3;
+  skillElapsedMs: number;
+  skillCooldownMs: number;
+  contactDamageElapsedMs: number;
+}
+
+interface HospitalKnightActor extends Actor {
+  health: number;
+  maxHealth: number;
+  label: Text;
+  phase: HospitalKnightPhase;
+  skillElapsedMs: number;
+  skillCooldownMs: number;
+  skillCursor: number;
+  holyShroudCasts: number;
+  contactDamageElapsedMs: number;
+  chargeMs: number;
+  chargeAngle: number;
+  aggro: boolean;
+  guardTarget: { x: number; y: number };
+}
+
+interface BonePileActor extends Actor {
+  radius: number;
+}
+
+interface PlayerTrapActor {
+  view: Graphics;
+  x: number;
+  y: number;
+  radius: number;
+  lifeMs: number;
 }
 
 interface BulletActor extends Actor {
@@ -207,9 +278,14 @@ export class PixiWastelandGame {
   private bossHazards: HazardActor[] = [];
   private bossTelegraphs: TelegraphActor[] = [];
   private bosses: BossActor[] = [];
+  private finalBoss?: FinalBossActor;
+  private hospitalKnight?: HospitalKnightActor;
+  private bonePiles: BonePileActor[] = [];
+  private playerTrap?: PlayerTrapActor;
   private damageNumbers: DamageNumberActor[] = [];
   private buildingVisuals: BuildingVisual[] = [];
   private skillChoiceOverlay?: Container;
+  private formChoiceOverlay?: Container;
   private interiorVisibilityMask = new Graphics();
   private keys = new Set<string>();
   private pointerWorld = { x: PLAYER_START.x + 1, y: PLAYER_START.y };
@@ -220,6 +296,10 @@ export class PixiWastelandGame {
   private autoWeaponElapsedMs: Partial<Record<AutoWeaponId, number>> = {};
   private energySkillElapsedMs: Partial<Record<EnergySkillId, number>> = {};
   private playerHistory: PlayerSnapshot[] = [];
+  private ultimateElapsedMs = 999999;
+  private endgameUltimateElapsedMs = 999999;
+  private mechTransformMs = 0;
+  private mechTransformDamageElapsedMs = 0;
   private screenShakeMs = 0;
   private screenShakeMagnitude = 0;
   private gameOver = false;
@@ -245,9 +325,10 @@ export class PixiWastelandGame {
     this.createPlayer();
     this.createNodeMarkers();
     this.spawnInitialBosses();
+    this.spawnHospitalKnight();
     this.world.addChild(this.interiorVisibilityMask);
     this.bindInput();
-    this.spawnEnemyWave(12);
+    this.spawnEnemyWave(getEnemySpawnBatchSize(this.state.level, 1000));
     this.app.ticker.add(this.update);
     this.emitState("10000x10000 城市废土已展开，所有常规 Boss 正在游荡。");
   }
@@ -256,6 +337,7 @@ export class PixiWastelandGame {
     this.unbindInput();
     this.app.ticker.remove(this.update);
     this.clearSkillChoiceOverlay();
+    this.clearFormChoiceOverlay();
     this.app.destroy(true, { children: true });
   }
 
@@ -272,9 +354,31 @@ export class PixiWastelandGame {
       return;
     }
     this.clearSkillChoiceOverlay();
+    if (this.state.pendingMechFormIds.length > 0) {
+      this.showFormChoiceOverlay();
+      this.updateDamageNumbers(delta);
+      this.updateScreenShake(delta);
+      this.updateWeaponAim();
+      this.updateCamera();
+      this.emitMetrics();
+      return;
+    }
+    this.clearFormChoiceOverlay();
+    this.ultimateElapsedMs += delta;
+    this.endgameUltimateElapsedMs += delta;
+    const wasTransformed = this.mechTransformMs > 0;
+    this.mechTransformMs = Math.max(0, this.mechTransformMs - delta);
+    if (wasTransformed && this.mechTransformMs === 0 && this.player) {
+      this.drawPlayerMech(this.player.view);
+    }
+    this.ensureEndgameBoss();
     this.movePlayer(delta);
     this.updateEnemies(delta);
+    this.updateMechTransformationDamage(delta);
     this.updateBosses(delta);
+    this.updateFinalBoss(delta);
+    this.updateHospitalKnight(delta);
+    this.updatePlayerTrap(delta);
     this.updateTelegraphs(delta);
     this.updateProjectiles(delta);
     this.updateHeavyProjectiles(delta);
@@ -404,7 +508,15 @@ export class PixiWastelandGame {
   }
 
   private drawPlayerMech(view: Graphics, energyColor = this.getMechEnergyColor()): void {
-    const stage = getMechEvolutionStage(this.state.skillUpgradeRanks);
+    const finalForm = this.state.selectedMechFormId;
+    const stage =
+      finalForm === "laser"
+        ? "laser"
+        : finalForm === "missile"
+          ? "heavy"
+          : finalForm === "blade"
+            ? "temporal"
+            : getMechEvolutionStage(this.state.skillUpgradeRanks);
     view.clear();
     view
       .poly([-14, -18, 14, -18, 22, -7, 17, 15, 0, 22, -17, 15, -22, -7])
@@ -432,6 +544,14 @@ export class PixiWastelandGame {
       view.circle(0, 0, 34).stroke({ color: 0xb56cff, alpha: 0.58, width: 2 });
       view.circle(0, 0, 42).stroke({ color: 0x68e1fd, alpha: 0.28, width: 1.5 });
       view.rect(-2, -38, 4, 10).fill({ color: 0xb56cff, alpha: 0.85 });
+    }
+    if (finalForm === "missile") {
+      view.rect(-43, -28, 10, 56).fill(0x2f3745).stroke({ color: 0xff9f1c, alpha: 0.9, width: 1.5 });
+      view.rect(33, -28, 10, 56).fill(0x2f3745).stroke({ color: 0xff9f1c, alpha: 0.9, width: 1.5 });
+    }
+    if (finalForm === "blade") {
+      view.poly([34, -7, 96, 0, 34, 7, 16, 0]).fill({ color: 0xff4d6d, alpha: 0.88 });
+      view.poly([38, -3, 86, 0, 38, 3]).fill({ color: 0xfff3b0, alpha: 0.9 });
     }
   }
 
@@ -476,8 +596,18 @@ export class PixiWastelandGame {
       }
       return;
     }
+    if (this.state.pendingMechFormIds.length > 0) {
+      if (choiceIndex >= 0 && choiceIndex < this.state.pendingMechFormIds.length) {
+        event.preventDefault();
+        this.chooseMechForm(this.state.pendingMechFormIds[choiceIndex]);
+      }
+      return;
+    }
     if (event.code === "Space") {
       event.preventDefault();
+      if (this.tryManualPhaseBlink()) {
+        return;
+      }
       this.fireProjectile(this.pointerWorld, "basic", this.getBasicGunDamage(), BASIC_GUN.projectileSpeed, "手动普攻");
     }
     if (event.key.toLowerCase() === "q") {
@@ -493,6 +623,12 @@ export class PixiWastelandGame {
     }
     if (event.key.toLowerCase() === "b") {
       this.focusNearestBoss();
+    }
+    if (event.key.toLowerCase() === "r") {
+      this.castUltimate();
+    }
+    if (event.key.toLowerCase() === "t") {
+      this.castEndgameUltimate();
     }
     if (choiceIndex >= 0 && choiceIndex < 4) {
       this.castSkill(choiceIndex);
@@ -525,7 +661,14 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + (dx / length) * moveSpeed * seconds, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + (dy / length) * moveSpeed * seconds, 24, MAP_HEIGHT - 24),
     };
-    const resolved = resolveBlockedMovement(this.player, desired, 16);
+    let resolved = resolveBlockedMovement(this.player, desired, 16);
+    if (this.playerTrap && distance(resolved, this.playerTrap) > this.playerTrap.radius) {
+      const angle = Math.atan2(resolved.y - this.playerTrap.y, resolved.x - this.playerTrap.x);
+      resolved = {
+        x: this.playerTrap.x + Math.cos(angle) * this.playerTrap.radius,
+        y: this.playerTrap.y + Math.sin(angle) * this.playerTrap.radius,
+      };
+    }
     this.setActorPosition(this.player, resolved.x, resolved.y);
   }
 
@@ -535,6 +678,10 @@ export class PixiWastelandGame {
 
     for (const enemy of this.enemies) {
       enemy.contactDamageElapsedMs += deltaMs;
+      if (this.isDormantHospitalEnemy(enemy)) {
+        this.updateDormantHospitalEnemy(enemy, deltaMs);
+        continue;
+      }
       const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
       const desired = {
         x: enemy.x + Math.cos(angle) * enemy.speed * seconds,
@@ -543,15 +690,62 @@ export class PixiWastelandGame {
       const resolved = resolveBlockedMovement(enemy, desired, 11);
       this.setActorPosition(enemy, resolved.x, resolved.y);
       enemy.view.rotation = angle;
+      enemy.dashElapsedMs = (enemy.dashElapsedMs ?? 0) + deltaMs;
+      if (enemy.kind === "boneSoldier" && (enemy.dashElapsedMs ?? 0) >= 2400 && distance(this.player, enemy) < 280) {
+        enemy.dashElapsedMs = 0;
+        enemy.dashMs = 260;
+        enemy.dashAngle = angle;
+      }
+      if ((enemy.dashMs ?? 0) > 0) {
+        enemy.dashMs = Math.max(0, (enemy.dashMs ?? 0) - deltaMs);
+        this.setActorPosition(
+          enemy,
+          clamp(enemy.x + Math.cos(enemy.dashAngle ?? angle) * 520 * seconds, 24, MAP_WIDTH - 24),
+          clamp(enemy.y + Math.sin(enemy.dashAngle ?? angle) * 520 * seconds, 24, MAP_HEIGHT - 24),
+        );
+      }
       if (
         enemy.contactDamageElapsedMs >= 700 &&
         this.isSameVisibilityZone(this.player, enemy) &&
         distance(this.player, enemy) <= 28
       ) {
         enemy.contactDamageElapsedMs = 0;
-        this.applyPlayerDamage(5);
+        this.applyPlayerDamage(enemy.kind === "boneSoldier" ? 9 : enemy.kind === "bone" ? 6 : 5);
       }
     }
+  }
+
+  private isDormantHospitalEnemy(enemy: EnemyActor): boolean {
+    return (enemy.kind === "bone" || enemy.kind === "boneSoldier") && this.hospitalKnight?.aggro === false;
+  }
+
+  private updateDormantHospitalEnemy(enemy: EnemyActor, deltaMs: number): void {
+    if (!this.player) return;
+    if (shouldHospitalKnightAggro(distance(this.player, enemy), false)) {
+      this.aggroHospitalKnight();
+      return;
+    }
+    const seconds = deltaMs / 1000;
+    if (!enemy.guardTarget || distance(enemy, enemy.guardTarget) <= 18) {
+      this.spawnSeed += 1;
+      enemy.guardTarget = getHospitalKnightGuardRoamTarget(this.spawnSeed + Math.round(enemy.x + enemy.y));
+    }
+    const angle = Math.atan2(enemy.guardTarget.y - enemy.y, enemy.guardTarget.x - enemy.x);
+    this.setActorPosition(
+      enemy,
+      clamp(enemy.x + Math.cos(angle) * 34 * seconds, 24, MAP_WIDTH - 24),
+      clamp(enemy.y + Math.sin(angle) * 34 * seconds, 24, MAP_HEIGHT - 24),
+    );
+    enemy.view.rotation = angle;
+  }
+
+  private updateMechTransformationDamage(deltaMs: number): void {
+    if (!this.player || this.mechTransformMs <= 0) return;
+    this.mechTransformDamageElapsedMs += deltaMs;
+    if (this.mechTransformDamageElapsedMs < 220) return;
+    this.mechTransformDamageElapsedMs = 0;
+    this.drawPhaseRing(this.player.x, this.player.y, 170);
+    this.detonateAutoWeapon(this.player.x, this.player.y, 170, 96, 0xff4d6d);
   }
 
   private updateBosses(deltaMs: number): void {
@@ -607,6 +801,41 @@ export class PixiWastelandGame {
     }
   }
 
+  private updateFinalBoss(deltaMs: number): void {
+    if (!this.player || !this.finalBoss) return;
+    const boss = this.finalBoss;
+    const phase = getFinalBossPhase(boss.health, boss.maxHealth);
+    if (phase !== boss.phase) {
+      boss.phase = phase;
+      this.drawFinalBossSprite(boss.view, phase);
+      this.emitState(`${FINAL_BOSS_DEFINITION.name} 进入第 ${phase} 阶段。`);
+    }
+
+    boss.skillElapsedMs += deltaMs;
+    boss.contactDamageElapsedMs += deltaMs;
+    const seconds = deltaMs / 1000;
+    const speed = phase === 1 ? 78 : phase === 2 ? 96 : 132;
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    const desired = {
+      x: clamp(boss.x + Math.cos(angle) * speed * seconds, 24, MAP_WIDTH - 24),
+      y: clamp(boss.y + Math.sin(angle) * speed * seconds, 24, MAP_HEIGHT - 24),
+    };
+    const resolved = resolveBlockedMovement(boss, desired, 46);
+    this.setActorPosition(boss, resolved.x, resolved.y);
+    boss.view.rotation = angle;
+
+    if (boss.contactDamageElapsedMs >= 650 && distance(this.player, boss) <= 72) {
+      boss.contactDamageElapsedMs = 0;
+      this.applyPlayerDamage(phase === 3 ? 24 : 16);
+    }
+    if (boss.skillElapsedMs >= boss.skillCooldownMs) {
+      boss.skillElapsedMs = 0;
+      this.triggerFinalBossSkill(boss);
+    }
+    boss.label.position.set(boss.x - 108, boss.y - 86);
+    boss.label.text = `${FINAL_BOSS_DEFINITION.name} P${phase} ${Math.ceil(boss.health)}/${boss.maxHealth}`;
+  }
+
   private getBossMovementTarget(boss: BossActor): { x: number; y: number } {
     if (boss.mode === "charge") {
       return {
@@ -640,7 +869,12 @@ export class PixiWastelandGame {
         continue;
       }
 
-      if (this.hitEnemyWithBullet(bullet) || this.hitBossWithBullet(bullet)) {
+      if (
+        this.hitEnemyWithBullet(bullet) ||
+        this.hitBossWithBullet(bullet) ||
+        this.hitFinalBossWithBullet(bullet) ||
+        this.hitHospitalKnightWithBullet(bullet)
+      ) {
         this.removeBullet(bullet);
       }
     }
@@ -791,10 +1025,16 @@ export class PixiWastelandGame {
 
   private updateSpawning(deltaMs: number): void {
     this.enemySpawnElapsed += deltaMs;
-    if (this.enemySpawnElapsed < 900) return;
-    this.enemySpawnElapsed = 0;
-    if (this.enemies.length < 55) {
-      this.spawnEnemyWave(3);
+    const maxAlive = getEnemyMaxAlive(this.state.level);
+    let ticks = 0;
+    while (this.enemySpawnElapsed >= ENEMY_SPAWN_TICK_MS && this.enemies.length < maxAlive && ticks < 8) {
+      this.enemySpawnElapsed -= ENEMY_SPAWN_TICK_MS;
+      ticks += 1;
+      const spawnCount = Math.min(
+        getEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS),
+        maxAlive - this.enemies.length,
+      );
+      this.spawnEnemyWave(spawnCount);
     }
   }
 
@@ -819,6 +1059,7 @@ export class PixiWastelandGame {
       this.world.addChild(view);
       this.enemies.push({
         view,
+        kind: "zombie",
         x: position.x,
         y: position.y,
         health: 28,
@@ -849,6 +1090,19 @@ export class PixiWastelandGame {
     window.setTimeout(() => {
       if (view.destroyed) return;
       this.drawZombieEnemy(view);
+    }, 80);
+  }
+
+  private flashEnemy(enemy: EnemyActor): void {
+    if (enemy.kind === "zombie") {
+      this.flashZombieEnemy(enemy.view);
+      return;
+    }
+    const kind: "bone" | "boneSoldier" = enemy.kind;
+    this.drawBoneEnemy(enemy.view, kind, true);
+    window.setTimeout(() => {
+      if (enemy.view.destroyed) return;
+      this.drawBoneEnemy(enemy.view, kind);
     }, 80);
   }
 
@@ -1002,9 +1256,12 @@ export class PixiWastelandGame {
     for (const enemy of [...this.enemies]) {
       if (this.getVisibilityZoneId(enemy) !== this.getVisibilityZoneId(start)) continue;
       if (distancePointToSegment(enemy, start, end) > beamRadius + 11) continue;
+      if (enemy.kind === "bone" || enemy.kind === "boneSoldier") {
+        this.aggroHospitalKnight();
+      }
       enemy.health -= damage;
       this.showDamageNumber(enemy.x, enemy.y - 24, damage, "#9ffcff");
-      this.flashZombieEnemy(enemy.view);
+      this.flashEnemy(enemy);
       if (enemy.health <= 0) {
         this.defeatEnemy(enemy);
       }
@@ -1018,6 +1275,16 @@ export class PixiWastelandGame {
       if (boss.health <= 0) {
         this.defeatBoss(boss);
       }
+    }
+    if (this.finalBoss && distancePointToSegment(this.finalBoss, start, end) <= beamRadius + 58) {
+      this.damageFinalBoss(damage);
+    }
+    if (
+      this.hospitalKnight &&
+      this.getVisibilityZoneId(this.hospitalKnight) === this.getVisibilityZoneId(start) &&
+      distancePointToSegment(this.hospitalKnight, start, end) <= beamRadius + 46
+    ) {
+      this.damageHospitalKnight(damage);
     }
   }
 
@@ -1052,18 +1319,77 @@ export class PixiWastelandGame {
     this.laserEffects.push({ view, lifeMs: 260, maxLifeMs: 260 });
   }
 
+  private drawNukeCloud(x: number, y: number, radius: number): void {
+    const cloud = new Graphics();
+    cloud
+      .circle(0, 0, radius * 0.4)
+      .fill({ color: 0xfff3b0, alpha: 0.62 })
+      .circle(0, -radius * 0.36, radius * 0.22)
+      .fill({ color: 0xff9f1c, alpha: 0.58 })
+      .rect(-radius * 0.06, -radius * 0.34, radius * 0.12, radius * 0.52)
+      .fill({ color: 0xff4d6d, alpha: 0.36 })
+      .circle(0, 0, radius)
+      .stroke({ color: 0xfff3b0, alpha: 0.5, width: 5 });
+    cloud.position.set(x, y);
+    this.world.addChild(cloud);
+    gsap.to(cloud.scale, { x: 1.7, y: 1.7, duration: 0.5, ease: "power2.out" });
+    gsap.to(cloud, {
+      alpha: 0,
+      duration: 1.25,
+      onComplete: () => {
+        this.world.removeChild(cloud);
+        cloud.destroy();
+      },
+    });
+  }
+
   private shouldPhaseBlink(): boolean {
     if (!this.player) return false;
     const nearbyEnemies = this.getVisibleCombatTargets(180).length;
     return nearbyEnemies >= 4 || this.state.health <= this.state.maxHealth * 0.42;
   }
 
-  private phaseBlink(damage: number, radius: number, range: number): void {
+  private tryManualPhaseBlink(): boolean {
+    const skill = ENERGY_SKILL_DEFINITIONS.find((candidate) => candidate.id === "phase-blink");
+    if (!skill || !this.player || (this.state.skillUpgradeRanks["phase-blink"] ?? 0) <= 0) return false;
+    this.energySkillElapsedMs["phase-blink"] = (this.energySkillElapsedMs["phase-blink"] ?? skill.cooldownMs) + 0;
+    if (!isEnergySkillReady(skill, this.energySkillElapsedMs["phase-blink"] ?? 0)) {
+      const seconds = Math.ceil((skill.cooldownMs - (this.energySkillElapsedMs["phase-blink"] ?? 0)) / 1000);
+      this.emitState(`相位闪现冷却中：${seconds}s`);
+      return true;
+    }
+
+    const rank = this.state.skillUpgradeRanks["phase-blink"] ?? 1;
+    const power = getEnergySkillPower(skill, rank);
+    this.phaseBlink(power, skill.radius, skill.range, this.getManualBlinkDirection());
+    this.energySkillElapsedMs["phase-blink"] = 0;
+    return true;
+  }
+
+  private getManualBlinkDirection(): { x: number; y: number } {
+    if (!this.player) return this.movementDirection;
+    const dx = (this.keys.has("d") || this.keys.has("arrowright") ? 1 : 0) - (this.keys.has("a") || this.keys.has("arrowleft") ? 1 : 0);
+    const dy = (this.keys.has("s") || this.keys.has("arrowdown") ? 1 : 0) - (this.keys.has("w") || this.keys.has("arrowup") ? 1 : 0);
+    const length = Math.hypot(dx, dy);
+    if (length > 0) {
+      return { x: dx / length, y: dy / length };
+    }
+    const pointerDx = this.pointerWorld.x - this.player.x;
+    const pointerDy = this.pointerWorld.y - this.player.y;
+    const pointerLength = Math.hypot(pointerDx, pointerDy);
+    if (pointerLength > 0) {
+      return { x: pointerDx / pointerLength, y: pointerDy / pointerLength };
+    }
+    return this.movementDirection;
+  }
+
+  private phaseBlink(damage: number, radius: number, range: number, direction?: { x: number; y: number }): void {
     if (!this.player) return;
-    const angle = Math.atan2(
-      this.pointerWorld.y - this.player.y || this.movementDirection.y,
-      this.pointerWorld.x - this.player.x || this.movementDirection.x,
-    );
+    const blinkDirection = direction ?? {
+      x: this.pointerWorld.x - this.player.x || this.movementDirection.x,
+      y: this.pointerWorld.y - this.player.y || this.movementDirection.y,
+    };
+    const angle = Math.atan2(blinkDirection.y, blinkDirection.x);
     const desired = {
       x: clamp(this.player.x + Math.cos(angle) * range, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + Math.sin(angle) * range, 24, MAP_HEIGHT - 24),
@@ -1152,14 +1478,183 @@ export class PixiWastelandGame {
     this.emitState(`释放技能槽 ${index + 1}：扇形弹幕。`);
   }
 
+  private castUltimate(): void {
+    if (!this.player || !this.state.selectedMechFormId) {
+      this.emitState("终极形态尚未上线。");
+      return;
+    }
+    const ultimate = getUltimateDefinition(this.state.selectedMechFormId);
+    if (this.ultimateElapsedMs < ultimate.cooldownMs) {
+      const seconds = Math.ceil((ultimate.cooldownMs - this.ultimateElapsedMs) / 1000);
+      this.emitState(`终极技冷却中：${seconds}s`);
+      return;
+    }
+
+    this.ultimateElapsedMs = 0;
+    if (ultimate.formId === "laser") {
+      this.castLaserUltimate(ultimate);
+    } else if (ultimate.formId === "missile") {
+      this.castMissileUltimate(ultimate);
+    } else {
+      this.castBladeUltimate(ultimate);
+    }
+  }
+
+  private castLaserUltimate(ultimate: UltimateDefinition): void {
+    if (!this.player) return;
+    const anchors = this.getVisibleCombatTargets(1400).slice(0, 8);
+    const targets =
+      anchors.length > 0
+        ? anchors.map((target) => ({ x: target.x, y: target.y }))
+        : Array.from({ length: 6 }, (_, index) => {
+            const angle = (Math.PI * 2 * index) / 6;
+            return {
+              x: clamp(this.player!.x + Math.cos(angle) * 320, 24, MAP_WIDTH - 24),
+              y: clamp(this.player!.y + Math.sin(angle) * 320, 24, MAP_HEIGHT - 24),
+            };
+          });
+
+    targets.forEach((target, index) => {
+      window.setTimeout(() => {
+        this.drawLaserColumn(target.x, target.y, ultimate.radius);
+        this.detonateAutoWeapon(target.x, target.y, ultimate.radius, ultimate.damage, 0x68e1fd);
+      }, index * 110);
+    });
+    this.addScreenShake(280, 7);
+    this.emitState(`${ultimate.name}：轨道激光矩阵锁定。`);
+  }
+
+  private castMissileUltimate(ultimate: UltimateDefinition): void {
+    if (!this.player) return;
+    const anchors = this.getVisibleCombatTargets(1600);
+    const center = anchors[0] ?? this.player;
+    for (let index = 0; index < 16; index += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const spread = Math.random() * 360;
+      const target = anchors[index % Math.max(anchors.length, 1)] ?? center;
+      const x = clamp(target.x + Math.cos(angle) * spread, 24, MAP_WIDTH - 24);
+      const y = clamp(target.y + Math.sin(angle) * spread, 24, MAP_HEIGHT - 24);
+      window.setTimeout(() => this.spawnEnergyStrike(x, y, ultimate.radius, ultimate.damage), index * 90);
+    }
+    this.addScreenShake(360, 8);
+    this.emitState(`${ultimate.name}：导弹舱全开，区域饱和覆盖。`);
+  }
+
+  private castBladeUltimate(ultimate: UltimateDefinition): void {
+    if (!this.player) return;
+    const start = { x: this.player.x, y: this.player.y };
+    const angle = Math.atan2(
+      this.pointerWorld.y - this.player.y || this.movementDirection.y,
+      this.pointerWorld.x - this.player.x || this.movementDirection.x,
+    );
+    const desired = {
+      x: clamp(this.player.x + Math.cos(angle) * 820, 24, MAP_WIDTH - 24),
+      y: clamp(this.player.y + Math.sin(angle) * 820, 24, MAP_HEIGHT - 24),
+    };
+    const end = resolveBlockedMovement(this.player, desired, 16);
+    this.drawPhaseRing(start.x, start.y, ultimate.radius * 0.55);
+    this.drawLaserEffect(start, end, 0xff4d6d);
+    this.damageTargetsAlongLine(start, end, ultimate.radius, ultimate.damage);
+    this.setActorPosition(this.player, end.x, end.y);
+    this.drawPhaseRing(end.x, end.y, ultimate.radius * 0.7);
+    this.detonateAutoWeapon(end.x, end.y, ultimate.radius * 0.55, Math.round(ultimate.damage * 0.75), 0xff4d6d);
+    this.addScreenShake(260, 8);
+    this.emitState(`${ultimate.name}：高热刀刃贯穿战场。`);
+  }
+
+  private castEndgameUltimate(): void {
+    if (!this.player || !this.state.selectedMechFormId) {
+      this.emitState("终局大招尚未解锁。");
+      return;
+    }
+    if (!isEndgameReady(this.state)) {
+      this.emitState("终局阶段尚未开始。");
+      return;
+    }
+    const ultimate = getEndgameUltimateDefinition(this.state.selectedMechFormId);
+    if (this.endgameUltimateElapsedMs < ultimate.cooldownMs) {
+      const seconds = Math.ceil((ultimate.cooldownMs - this.endgameUltimateElapsedMs) / 1000);
+      this.emitState(`超级大招冷却中：${seconds}s`);
+      return;
+    }
+    this.endgameUltimateElapsedMs = 0;
+    if (ultimate.formId === "laser") {
+      this.castSkyPillarUltimate(ultimate);
+    } else if (ultimate.formId === "missile") {
+      this.castNukeUltimate(ultimate);
+    } else {
+      this.castMechTransformUltimate(ultimate);
+    }
+  }
+
+  private castSkyPillarUltimate(ultimate: EndgameUltimateDefinition): void {
+    if (!this.player) return;
+    const targets = this.getVisibleCombatTargets(2400).slice(0, 18);
+    const points =
+      targets.length > 0
+        ? targets.map((target) => ({ x: target.x, y: target.y }))
+        : Array.from({ length: 14 }, (_, index) => {
+            const angle = (Math.PI * 2 * index) / 14;
+            return {
+              x: clamp(this.player!.x + Math.cos(angle) * 620, 24, MAP_WIDTH - 24),
+              y: clamp(this.player!.y + Math.sin(angle) * 620, 24, MAP_HEIGHT - 24),
+            };
+          });
+    points.forEach((point, index) => {
+      window.setTimeout(() => {
+        this.drawLaserColumn(point.x, point.y, ultimate.radius);
+        this.detonateAutoWeapon(point.x, point.y, ultimate.radius, ultimate.damage, 0xd9f7ff);
+      }, index * 80);
+    });
+    this.addScreenShake(520, 10);
+    this.emitState(`${ultimate.name}：整片天空被光柱贯穿。`);
+  }
+
+  private castNukeUltimate(ultimate: EndgameUltimateDefinition): void {
+    const target = {
+      x: clamp(this.pointerWorld.x, 24, MAP_WIDTH - 24),
+      y: clamp(this.pointerWorld.y, 24, MAP_HEIGHT - 24),
+    };
+    const warning = new Graphics();
+    warning
+      .circle(0, 0, ultimate.radius)
+      .fill({ color: 0xff1744, alpha: 0.14 })
+      .stroke({ color: 0xfff3b0, alpha: 0.92, width: 4 });
+    warning.position.set(target.x, target.y);
+    this.world.addChild(warning);
+    window.setTimeout(() => {
+      if (!warning.destroyed) {
+        this.world.removeChild(warning);
+        warning.destroy();
+      }
+      this.detonateAutoWeapon(target.x, target.y, ultimate.radius, ultimate.damage, 0xff9f1c);
+      this.drawNukeCloud(target.x, target.y, ultimate.radius);
+    }, 650);
+    this.addScreenShake(700, 12);
+    this.emitState(`${ultimate.name}：核弹坐标已确认。`);
+  }
+
+  private castMechTransformUltimate(ultimate: EndgameUltimateDefinition): void {
+    if (!this.player) return;
+    this.mechTransformMs = 12000;
+    this.drawPlayerMech(this.player.view, 0xff4d6d);
+    this.drawPhaseRing(this.player.x, this.player.y, ultimate.radius);
+    this.detonateAutoWeapon(this.player.x, this.player.y, ultimate.radius, ultimate.damage, 0xff4d6d);
+    this.addScreenShake(420, 9);
+    this.emitState(`${ultimate.name}：突击装甲展开，近身碾压启动。`);
+  }
+
   private hitEnemyWithBullet(bullet: BulletActor): boolean {
     for (const enemy of [...this.enemies]) {
       if (!this.isSameVisibilityZone(bullet, enemy)) continue;
       if (!projectileHitsCircle(bullet.projectile, { x: enemy.x, y: enemy.y, radius: 11 })) continue;
+      if (enemy.kind === "bone" || enemy.kind === "boneSoldier") {
+        this.aggroHospitalKnight();
+      }
       enemy.health -= bullet.projectile.damage;
       this.spawnHitSparks(enemy.x, enemy.y, 0x68e1fd, 5);
       this.showDamageNumber(enemy.x, enemy.y - 20, bullet.projectile.damage, "#ffe066");
-      this.flashZombieEnemy(enemy.view);
+      this.flashEnemy(enemy);
       if (enemy.health <= 0) {
         this.defeatEnemy(enemy);
       }
@@ -1185,7 +1680,87 @@ export class PixiWastelandGame {
     return false;
   }
 
+  private hitFinalBossWithBullet(bullet: BulletActor): boolean {
+    const boss = this.finalBoss;
+    if (!boss) return false;
+    if (!projectileHitsCircle(bullet.projectile, { x: boss.x, y: boss.y, radius: 58 })) return false;
+    this.damageFinalBoss(bullet.projectile.damage);
+    this.spawnHitSparks(boss.x, boss.y, 0xff4d6d, 12);
+    this.addScreenShake(80, 3.8);
+    return true;
+  }
+
+  private hitHospitalKnightWithBullet(bullet: BulletActor): boolean {
+    const boss = this.hospitalKnight;
+    if (!boss) return false;
+    if (!this.isSameVisibilityZone(bullet, boss)) return false;
+    if (!projectileHitsCircle(bullet.projectile, { x: boss.x, y: boss.y, radius: 46 })) return false;
+    this.aggroHospitalKnight();
+    this.damageHospitalKnight(bullet.projectile.damage);
+    this.spawnHitSparks(boss.x, boss.y, 0xd9f7ff, 10);
+    this.addScreenShake(70, 3.4);
+    return true;
+  }
+
+  private damageFinalBoss(amount: number): void {
+    const boss = this.finalBoss;
+    if (!boss) return;
+    const damage = Math.max(0, Math.round(amount));
+    boss.health = Math.max(0, boss.health - damage);
+    this.showDamageNumber(boss.x, boss.y - 64, damage, "#ff4d6d");
+    gsap.fromTo(boss.view.scale, { x: 1.1, y: 1.1 }, { x: 1, y: 1, duration: 0.12 });
+    if (boss.health <= 0) {
+      this.defeatFinalBoss();
+    }
+  }
+
+  private damageHospitalKnight(amount: number): void {
+    const boss = this.hospitalKnight;
+    if (!boss) return;
+    this.aggroHospitalKnight();
+    const soldiers = this.getActiveBoneSoldierCount();
+    if (!isHospitalKnightDamageable(boss.phase, soldiers)) {
+      this.showDamageNumber(boss.x, boss.y - 64, 0, "#d9f7ff", "IMM ");
+      this.spawnHitSparks(boss.x, boss.y, 0x68e1fd, 7);
+      return;
+    }
+    const damage = Math.max(0, Math.round(amount));
+    boss.health = Math.max(0, boss.health - damage);
+    this.showDamageNumber(boss.x, boss.y - 64, damage, "#d9f7ff");
+    gsap.fromTo(boss.view.scale, { x: 1.12, y: 1.12 }, { x: 1, y: 1, duration: 0.12 });
+    if (boss.health <= 0) {
+      this.defeatHospitalKnight();
+    }
+  }
+
+  private defeatHospitalKnight(): void {
+    const boss = this.hospitalKnight;
+    if (!boss) return;
+    this.world.removeChild(boss.view);
+    this.world.removeChild(boss.label);
+    boss.view.destroy();
+    boss.label.destroy();
+    this.hospitalKnight = undefined;
+    this.addScreenShake(520, 10);
+    this.emitState("Hospital knight defeated. The ruined hospital falls silent.");
+  }
+
+  private defeatFinalBoss(): void {
+    const boss = this.finalBoss;
+    if (!boss) return;
+    this.world.removeChild(boss.view);
+    this.world.removeChild(boss.label);
+    boss.view.destroy();
+    boss.label.destroy();
+    this.finalBoss = undefined;
+    this.addScreenShake(800, 12);
+    this.emitState(`${FINAL_BOSS_DEFINITION.name} 已被击破，废土战役完成。`);
+  }
+
   private defeatEnemy(enemy: EnemyActor): void {
+    if (enemy.kind === "bone" || enemy.kind === "boneSoldier") {
+      this.spawnBonePile(enemy.x, enemy.y);
+    }
     this.world.removeChild(enemy.view);
     enemy.view.destroy();
     this.enemies = this.enemies.filter((candidate) => candidate !== enemy);
@@ -1210,7 +1785,12 @@ export class PixiWastelandGame {
 
   private updateEnergySkills(deltaMs: number): void {
     if (!this.player) return;
-    for (const skill of getActiveEnergySkills(this.state.skillUpgradeRanks)) {
+    this.energySkillElapsedMs = advanceEnergySkillCooldowns(
+      this.energySkillElapsedMs,
+      getManualEnergySkills(this.state.skillUpgradeRanks),
+      deltaMs,
+    );
+    for (const skill of getAutoEnergySkills(this.state.skillUpgradeRanks)) {
       if (skill.mode === "passive") continue;
       this.energySkillElapsedMs[skill.id] = (this.energySkillElapsedMs[skill.id] ?? skill.cooldownMs * 0.7) + deltaMs;
       if (!isEnergySkillReady(skill, this.energySkillElapsedMs[skill.id] ?? 0)) continue;
@@ -1423,6 +2003,115 @@ export class PixiWastelandGame {
     this.emitState(`选择强化：${definition?.name ?? upgradeId}`);
   }
 
+  private showFormChoiceOverlay(): void {
+    if (this.formChoiceOverlay) return;
+    const overlay = new Container();
+    const width = this.app.screen.width;
+    const height = this.app.screen.height;
+    const backdrop = new Graphics();
+    backdrop.rect(0, 0, width, height).fill({ color: 0x030407, alpha: 0.84 });
+    overlay.addChild(backdrop);
+
+    const panelWidth = Math.min(800, width - 48);
+    const panelX = (width - panelWidth) / 2;
+    const panelY = (height - 380) / 2;
+    const panel = new Graphics();
+    panel
+      .roundRect(panelX, panelY, panelWidth, 380, 8)
+      .fill({ color: 0x111827, alpha: 0.97 })
+      .stroke({ color: 0xfff3b0, alpha: 0.88, width: 2 });
+    overlay.addChild(panel);
+
+    const title = new Text({
+      text: "选择最终机甲形态",
+      style: new TextStyle({ fill: "#fff3b0", fontFamily: "Arial", fontSize: 30, fontWeight: "700" }),
+    });
+    title.anchor.set(0.5, 0);
+    title.position.set(width / 2, panelY + 26);
+    overlay.addChild(title);
+
+    const subtitle = new Text({
+      text: "Lv50 形态核心上线。点击一个选项或按 1-3，R 释放终极大招。",
+      style: new TextStyle({ fill: "#d6dfd1", fontFamily: "Arial", fontSize: 15 }),
+    });
+    subtitle.anchor.set(0.5, 0);
+    subtitle.position.set(width / 2, panelY + 70);
+    overlay.addChild(subtitle);
+
+    const cardWidth = (panelWidth - 80) / 3;
+    for (const [index, formId] of this.state.pendingMechFormIds.entries()) {
+      const ultimate = getUltimateDefinition(formId);
+      const x = panelX + 28 + index * (cardWidth + 12);
+      const y = panelY + 122;
+      const card = new Container();
+      card.eventMode = "static";
+      card.cursor = "pointer";
+      card.on("pointertap", () => this.chooseMechForm(formId));
+      const color = formId === "laser" ? 0x68e1fd : formId === "missile" ? 0xff9f1c : 0xff4d6d;
+      const shape = new Graphics();
+      shape
+        .roundRect(x, y, cardWidth, 210, 6)
+        .fill({ color: 0x1d2733, alpha: 0.96 })
+        .stroke({ color, alpha: 0.9, width: 2 });
+      card.addChild(shape);
+      const name = new Text({
+        text: `${index + 1}. ${this.getMechFormName(formId)}`,
+        style: new TextStyle({ fill: "#ffffff", fontFamily: "Arial", fontSize: 21, fontWeight: "700" }),
+      });
+      name.position.set(x + 18, y + 18);
+      card.addChild(name);
+      const ult = new Text({
+        text: ultimate.name,
+        style: new TextStyle({ fill: "#fff3b0", fontFamily: "Arial", fontSize: 17, fontWeight: "700" }),
+      });
+      ult.position.set(x + 18, y + 62);
+      card.addChild(ult);
+      const desc = new Text({
+        text: this.getMechFormDescription(formId),
+        style: new TextStyle({ fill: "#d6dfd1", fontFamily: "Arial", fontSize: 15, wordWrap: true, wordWrapWidth: cardWidth - 36 }),
+      });
+      desc.position.set(x + 18, y + 102);
+      card.addChild(desc);
+      overlay.addChild(card);
+    }
+
+    this.formChoiceOverlay = overlay;
+    this.app.stage.addChild(overlay);
+  }
+
+  private clearFormChoiceOverlay(): void {
+    if (!this.formChoiceOverlay) return;
+    this.app.stage.removeChild(this.formChoiceOverlay);
+    this.formChoiceOverlay.destroy({ children: true });
+    this.formChoiceOverlay = undefined;
+  }
+
+  private chooseMechForm(formId: NonNullable<RunState["selectedMechFormId"]>): void {
+    this.state = chooseRunMechForm(this.state, formId);
+    this.ultimateElapsedMs = 999999;
+    if (this.player) {
+      this.drawPlayerMech(this.player.view);
+    }
+    this.clearFormChoiceOverlay();
+    this.emitState(`最终形态：${this.getMechFormName(formId)}，终极技 ${getUltimateDefinition(formId).name}`);
+  }
+
+  private getMechFormName(formId: NonNullable<RunState["selectedMechFormId"]>): string {
+    if (formId === "laser") return "激光形态";
+    if (formId === "missile") return "导弹形态";
+    return "大刀形态";
+  }
+
+  private getMechFormDescription(formId: NonNullable<RunState["selectedMechFormId"]>): string {
+    if (formId === "laser") {
+      return "强化持续激光、折射链路和轨道锁定。终极技召唤多束天基裁决光束。";
+    }
+    if (formId === "missile") {
+      return "强化爆炸、导弹舱和高射炮覆盖。终极技在目标区进行末日饱和轰炸。";
+    }
+    return "强化冲刺、回溯和近身压制。终极技拔出热熔斩舰刀向指向位置突进斩击。";
+  }
+
   private detonateAutoWeapon(x: number, y: number, radius: number, damage: number, color = 0xff9f1c): void {
     this.spawnHitSparks(x, y, color, 16);
     this.addScreenShake(120, 6);
@@ -1442,9 +2131,12 @@ export class PixiWastelandGame {
     for (const enemy of [...this.enemies]) {
       if (this.getVisibilityZoneId(enemy) !== this.getVisibilityZoneId({ x, y })) continue;
       if (distance(enemy, { x, y }) > radius + 11) continue;
+      if (enemy.kind === "bone" || enemy.kind === "boneSoldier") {
+        this.aggroHospitalKnight();
+      }
       enemy.health -= damage;
       this.showDamageNumber(enemy.x, enemy.y - 24, damage, "#ffe066");
-      this.flashZombieEnemy(enemy.view);
+      this.flashEnemy(enemy);
       if (enemy.health <= 0) {
         this.defeatEnemy(enemy);
       }
@@ -1459,6 +2151,18 @@ export class PixiWastelandGame {
       if (boss.health <= 0) {
         this.defeatBoss(boss);
       }
+    }
+
+    if (this.finalBoss && distance(this.finalBoss, { x, y }) <= radius + 58) {
+      this.damageFinalBoss(damage);
+    }
+
+    if (
+      this.hospitalKnight &&
+      this.getVisibilityZoneId(this.hospitalKnight) === this.getVisibilityZoneId({ x, y }) &&
+      distance(this.hospitalKnight, { x, y }) <= radius + 46
+    ) {
+      this.damageHospitalKnight(damage);
     }
   }
 
@@ -1509,6 +2213,18 @@ export class PixiWastelandGame {
         nearest = { x: boss.x, y: boss.y, distance: distanceToBoss };
       }
     }
+    if (this.finalBoss) {
+      const distanceToFinalBoss = distance(this.player, this.finalBoss);
+      if (distanceToFinalBoss <= maxDistance && (!nearest || distanceToFinalBoss < nearest.distance)) {
+        nearest = { x: this.finalBoss.x, y: this.finalBoss.y, distance: distanceToFinalBoss };
+      }
+    }
+    if (this.hospitalKnight) {
+      const distanceToHospitalKnight = distance(this.player, this.hospitalKnight);
+      if (distanceToHospitalKnight <= maxDistance && (!nearest || distanceToHospitalKnight < nearest.distance)) {
+        nearest = { x: this.hospitalKnight.x, y: this.hospitalKnight.y, distance: distanceToHospitalKnight };
+      }
+    }
     return nearest ? { x: nearest.x, y: nearest.y } : undefined;
   }
 
@@ -1541,13 +2257,27 @@ export class PixiWastelandGame {
 
   private getVisibleCombatTargets(maxDistance: number): Actor[] {
     if (!this.player) return [];
-    return [...this.enemies, ...this.bosses].filter(
+    const targets: Actor[] = [...this.enemies, ...this.bosses];
+    if (this.finalBoss) {
+      targets.push(this.finalBoss);
+    }
+    if (this.hospitalKnight) {
+      targets.push(this.hospitalKnight);
+    }
+    return targets.filter(
       (target) => this.isSameVisibilityZone(this.player!, target) && distance(this.player!, target) <= maxDistance,
     );
   }
 
   private countTargetsNear(origin: Actor, radius: number): number {
-    return [...this.enemies, ...this.bosses].filter(
+    const targets: Actor[] = [...this.enemies, ...this.bosses];
+    if (this.finalBoss) {
+      targets.push(this.finalBoss);
+    }
+    if (this.hospitalKnight) {
+      targets.push(this.hospitalKnight);
+    }
+    return targets.filter(
       (target) => this.isSameVisibilityZone(origin, target) && distance(origin, target) <= radius,
     ).length;
   }
@@ -1663,6 +2393,497 @@ export class PixiWastelandGame {
     }
     gsap.fromTo(boss.view.scale, { x: 1.45, y: 1.45 }, { x: 1, y: 1, duration: 0.32 });
     this.emitState(`最近 Boss：${this.getBossName(boss.bossId)}，正在${boss.mode === "roam" ? "游荡" : "追击"}。`);
+  }
+
+  private ensureEndgameBoss(): void {
+    if (!this.player || this.finalBoss || !isEndgameReady(this.state)) return;
+    this.spawnFinalBoss();
+  }
+
+  private spawnFinalBoss(): void {
+    if (!this.player) return;
+    const position = {
+      x: clamp(this.player.x + 460, 120, MAP_WIDTH - 120),
+      y: clamp(this.player.y - 260, 120, MAP_HEIGHT - 120),
+    };
+    const view = new Graphics();
+    this.drawFinalBossSprite(view, 1);
+    view.position.set(position.x, position.y);
+    this.world.addChild(view);
+    const label = new Text({
+      text: "",
+      style: new TextStyle({ fill: "#ff4d6d", fontFamily: "Arial", fontSize: 18, fontWeight: "700" }),
+    });
+    label.position.set(position.x - 108, position.y - 86);
+    this.world.addChild(label);
+    this.finalBoss = {
+      view,
+      label,
+      x: position.x,
+      y: position.y,
+      health: FINAL_BOSS_DEFINITION.maxHealth,
+      maxHealth: FINAL_BOSS_DEFINITION.maxHealth,
+      phase: 1,
+      skillElapsedMs: 0,
+      skillCooldownMs: 3100,
+      contactDamageElapsedMs: 650,
+    };
+    this.addScreenShake(500, 9);
+    this.emitState(`${FINAL_BOSS_DEFINITION.name} 已降临，终局阶段开始。按 T 释放超级大招。`);
+  }
+
+  private drawFinalBossSprite(view: Graphics, phase: 1 | 2 | 3): void {
+    const accent = phase === 1 ? 0xff9f1c : phase === 2 ? 0x68e1fd : 0xff4d6d;
+    view.clear();
+    view
+      .circle(0, 0, 54)
+      .fill(0x161923)
+      .stroke({ color: accent, alpha: 0.96, width: 5 })
+      .rect(-66, -28, 32, 56)
+      .fill(0x2f3745)
+      .stroke({ color: 0xfff3b0, alpha: 0.55, width: 2 })
+      .rect(34, -28, 32, 56)
+      .fill(0x2f3745)
+      .stroke({ color: 0xfff3b0, alpha: 0.55, width: 2 })
+      .rect(-16, -78, 32, 42)
+      .fill(0x3b4456)
+      .stroke({ color: accent, alpha: 0.8, width: 2 })
+      .circle(0, 0, 21)
+      .fill({ color: accent, alpha: 0.42 })
+      .circle(0, 0, 9)
+      .fill(0xd9f7ff);
+    if (phase >= 2) {
+      view.circle(0, 0, 82).stroke({ color: 0x68e1fd, alpha: 0.36, width: 3 });
+      view.rect(-86, -8, 34, 16).fill({ color: 0x68e1fd, alpha: 0.66 });
+      view.rect(52, -8, 34, 16).fill({ color: 0x68e1fd, alpha: 0.66 });
+    }
+    if (phase >= 3) {
+      view.poly([28, -9, 122, 0, 28, 9]).fill({ color: 0xff4d6d, alpha: 0.9 });
+      view.circle(0, 0, 104).stroke({ color: 0xff4d6d, alpha: 0.28, width: 4 });
+    }
+  }
+
+  private triggerFinalBossSkill(boss: FinalBossActor): void {
+    if (!this.player) return;
+    if (boss.phase === 1) {
+      const origin = { x: boss.x, y: boss.y };
+      this.drawLaserEffect(origin, this.player, 0xff9f1c);
+      if (distancePointToSegment(this.player, origin, this.player) <= 30) {
+        this.applyPlayerDamage(14);
+      }
+      this.emitState(`${FINAL_BOSS_DEFINITION.name}：高能扫射。`);
+      return;
+    }
+    if (boss.phase === 2) {
+      this.spawnEnemyWave(18);
+      for (let index = 0; index < 4; index += 1) {
+        const angle = (Math.PI * 2 * index) / 4;
+        this.spawnEnergyStrike(
+          clamp(this.player.x + Math.cos(angle) * 210, 24, MAP_WIDTH - 24),
+          clamp(this.player.y + Math.sin(angle) * 210, 24, MAP_HEIGHT - 24),
+          110,
+          30,
+        );
+      }
+      this.emitState(`${FINAL_BOSS_DEFINITION.name}：护盾节点展开，召唤无人机群。`);
+      return;
+    }
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    const end = {
+      x: clamp(boss.x + Math.cos(angle) * 900, 24, MAP_WIDTH - 24),
+      y: clamp(boss.y + Math.sin(angle) * 900, 24, MAP_HEIGHT - 24),
+    };
+    this.drawLaserEffect(boss, end, 0xff4d6d);
+    if (distancePointToSegment(this.player, boss, end) <= 90) {
+      this.applyPlayerDamage(32);
+    }
+    this.addScreenShake(200, 6);
+    this.emitState(`${FINAL_BOSS_DEFINITION.name}：复制机甲形态，热熔突进。`);
+  }
+
+  private spawnHospitalKnight(): void {
+    if (this.hospitalKnight) return;
+    const view = new Graphics();
+    this.drawHospitalKnight(view, 1);
+    view.position.set(HOSPITAL_KNIGHT_SPAWN.x, HOSPITAL_KNIGHT_SPAWN.y);
+    this.world.addChild(view);
+    const label = new Text({
+      text: "",
+      style: new TextStyle({ fill: "#fff3b0", fontFamily: "Arial", fontSize: 17, fontWeight: "700" }),
+    });
+    this.world.addChild(label);
+    this.hospitalKnight = {
+      view,
+      label,
+      x: HOSPITAL_KNIGHT_SPAWN.x,
+      y: HOSPITAL_KNIGHT_SPAWN.y,
+      health: HOSPITAL_KNIGHT_DEFINITION.maxHealth,
+      maxHealth: HOSPITAL_KNIGHT_DEFINITION.maxHealth,
+      phase: 1,
+      skillElapsedMs: 0,
+      skillCooldownMs: 3400,
+      skillCursor: 0,
+      holyShroudCasts: 0,
+      contactDamageElapsedMs: 700,
+      chargeMs: 0,
+      chargeAngle: 0,
+      aggro: false,
+      guardTarget: getHospitalKnightGuardRoamTarget(this.spawnSeed),
+    };
+    for (let index = 0; index < getInitialBoneHordeCount(); index += 1) {
+      const angle = (Math.PI * 2 * index) / getInitialBoneHordeCount();
+      this.spawnBoneEnemy(
+        HOSPITAL_KNIGHT_SPAWN.x + Math.cos(angle) * (150 + (index % 3) * 42),
+        HOSPITAL_KNIGHT_SPAWN.y + Math.sin(angle) * (150 + (index % 3) * 42),
+        "bone",
+      );
+    }
+  }
+
+  private drawHospitalKnight(view: Graphics, phase: HospitalKnightPhase): void {
+    view.clear();
+    const accent = phase === 1 ? 0xfff3b0 : 0x68e1fd;
+    view
+      .ellipse(0, 0, 58, 42)
+      .fill(0x232936)
+      .stroke({ color: 0x0b0f16, width: 4, alpha: 0.95 })
+      .ellipse(0, 0, 42, 28)
+      .fill(0x3a4252)
+      .stroke({ color: accent, width: 4, alpha: 0.9 })
+      .circle(0, 0, 16)
+      .fill({ color: accent, alpha: 0.72 })
+      .circle(0, 0, 7)
+      .fill(0xd9f7ff)
+      .rect(-72, -8, 144, 16)
+      .fill({ color: 0xcbd5e1, alpha: 0.9 })
+      .rect(-8, -72, 16, 144)
+      .fill({ color: 0xcbd5e1, alpha: 0.9 })
+      .poly([54, -10, 120, 0, 54, 10, 34, 0])
+      .fill(0xfff3b0)
+      .stroke({ color: 0x111827, width: 2 });
+    if (phase === 2) {
+      view.circle(0, 0, 76).stroke({ color: 0x68e1fd, alpha: 0.42, width: 5 });
+      view.circle(0, 0, 96).stroke({ color: 0xd9f7ff, alpha: 0.22, width: 3 });
+      view.rect(-92, -5, 28, 10).fill(0xd9f7ff);
+    }
+  }
+
+  private spawnBoneEnemy(x: number, y: number, kind: "bone" | "boneSoldier"): void {
+    const view = new Graphics();
+    this.drawBoneEnemy(view, kind);
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.enemies.push({
+      view,
+      kind,
+      x,
+      y,
+      health: kind === "boneSoldier" ? 54 : 18,
+      speed: kind === "boneSoldier" ? 48 : 112,
+      contactDamageElapsedMs: 700,
+      dashElapsedMs: 0,
+      dashMs: 0,
+      guardTarget: getHospitalKnightGuardRoamTarget(this.spawnSeed + Math.round(x + y)),
+    });
+  }
+
+  private drawBoneEnemy(view: Graphics, kind: "bone" | "boneSoldier", hit = false): void {
+    view.clear();
+    const body = hit ? 0xfff3b0 : kind === "boneSoldier" ? 0xcbd5e1 : 0xe8edf3;
+    const core = kind === "boneSoldier" ? 0x68e1fd : 0xfff3b0;
+    view
+      .ellipse(0, 0, kind === "boneSoldier" ? 24 : 18, kind === "boneSoldier" ? 15 : 11)
+      .fill(body)
+      .stroke({ color: 0x6b7280, width: 2 })
+      .circle(0, 0, kind === "boneSoldier" ? 7 : 4)
+      .fill({ color: core, alpha: 0.78 })
+      .poly([-18, -3, -35, -10, -20, 7])
+      .fill(0xf1f5f9)
+      .poly([-15, 9, -29, 24, -8, 14])
+      .fill(0xf1f5f9)
+      .poly([18, -3, 35, -10, 20, 7])
+      .fill(0xf1f5f9)
+      .poly([15, 9, 29, 24, 8, 14])
+      .fill(0xf1f5f9);
+    if (kind === "boneSoldier") {
+      view.ellipse(0, 0, 34, 22).stroke({ color: 0x68e1fd, alpha: 0.45, width: 3 });
+      view.poly([24, -8, 52, 0, 24, 8]).fill({ color: 0xfff3b0, alpha: 0.9 });
+    }
+  }
+
+  private spawnBonePile(x: number, y: number): void {
+    const view = new Graphics();
+    view
+      .ellipse(0, 0, 24, 10)
+      .fill({ color: 0xd8dee9, alpha: 0.7 })
+      .stroke({ color: 0x8d99ae, width: 1.5 })
+      .rect(-18, -3, 36, 5)
+      .fill({ color: 0xf1f5f9, alpha: 0.8 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.bonePiles.push({ view, x, y, radius: 24 });
+  }
+
+  private updateHospitalKnight(deltaMs: number): void {
+    const knight = this.hospitalKnight;
+    if (!this.player || !knight) return;
+
+    if (!knight.aggro) {
+      this.updateDormantHospitalKnight(knight, deltaMs);
+      return;
+    }
+
+    const nextPhase = getHospitalKnightPhase(knight.health);
+    if (nextPhase !== knight.phase) {
+      knight.phase = nextPhase;
+      this.drawHospitalKnight(knight.view, knight.phase);
+      this.reviveBonePiles();
+      this.convertNearbyBonesToSoldiers();
+      this.addScreenShake(260, 7);
+      this.emitState("Hospital knight phase two: bones rise as soldiers.");
+    }
+
+    knight.skillElapsedMs += deltaMs;
+    knight.contactDamageElapsedMs += deltaMs;
+    const seconds = deltaMs / 1000;
+    const angleToPlayer = Math.atan2(this.player.y - knight.y, this.player.x - knight.x);
+    const speed = knight.chargeMs > 0 ? 780 : knight.phase === 2 ? 88 : 62;
+    const moveAngle = knight.chargeMs > 0 ? knight.chargeAngle : angleToPlayer;
+    knight.chargeMs = Math.max(0, knight.chargeMs - deltaMs);
+    const desired = {
+      x: clamp(knight.x + Math.cos(moveAngle) * speed * seconds, 24, MAP_WIDTH - 24),
+      y: clamp(knight.y + Math.sin(moveAngle) * speed * seconds, 24, MAP_HEIGHT - 24),
+    };
+    const resolved = resolveBlockedMovement(knight, desired, 44);
+    this.setActorPosition(knight, resolved.x, resolved.y);
+    knight.view.rotation = angleToPlayer;
+
+    if (knight.contactDamageElapsedMs >= 700 && distance(this.player, knight) <= 70) {
+      knight.contactDamageElapsedMs = 0;
+      this.applyPlayerDamage(knight.phase === 2 ? 18 : 13);
+    }
+
+    if (knight.skillElapsedMs >= knight.skillCooldownMs) {
+      this.triggerHospitalKnightSkill(knight);
+    }
+
+    const soldiers = this.getActiveBoneSoldierCount();
+    const shield = knight.phase === 2 && soldiers > 0 ? " IMMUNE" : "";
+    knight.label.position.set(knight.x - 92, knight.y - 84);
+    knight.label.text = `${HOSPITAL_KNIGHT_DEFINITION.name} P${knight.phase} ${Math.ceil(knight.health)}/${knight.maxHealth}${shield}`;
+  }
+
+  private updateDormantHospitalKnight(knight: HospitalKnightActor, deltaMs: number): void {
+    if (!this.player) return;
+    if (shouldHospitalKnightAggro(distance(this.player, knight), false)) {
+      this.aggroHospitalKnight();
+      return;
+    }
+    const seconds = deltaMs / 1000;
+    if (distance(knight, knight.guardTarget) <= 24) {
+      this.spawnSeed += 1;
+      knight.guardTarget = getHospitalKnightGuardRoamTarget(this.spawnSeed);
+    }
+    const angle = Math.atan2(knight.guardTarget.y - knight.y, knight.guardTarget.x - knight.x);
+    this.setActorPosition(
+      knight,
+      clamp(knight.x + Math.cos(angle) * 28 * seconds, 24, MAP_WIDTH - 24),
+      clamp(knight.y + Math.sin(angle) * 28 * seconds, 24, MAP_HEIGHT - 24),
+    );
+    knight.view.rotation = angle;
+    knight.label.position.set(knight.x - 92, knight.y - 84);
+    knight.label.text = `${HOSPITAL_KNIGHT_DEFINITION.name} GUARD ${Math.ceil(knight.health)}/${knight.maxHealth}`;
+  }
+
+  private aggroHospitalKnight(): void {
+    const knight = this.hospitalKnight;
+    if (!knight || knight.aggro) return;
+    knight.aggro = true;
+    knight.skillElapsedMs = 0;
+    this.addScreenShake(160, 4);
+    this.emitState("Hospital knight awakened: the ruined hospital is hostile.");
+  }
+
+  private triggerHospitalKnightSkill(knight: HospitalKnightActor): void {
+    knight.skillElapsedMs = 0;
+    if (!this.player) return;
+    if (knight.phase === 2 && shouldConvertZombieToBoneSoldier(knight.holyShroudCasts)) {
+      knight.holyShroudCasts += 1;
+      this.convertNearbyZombiesToBoneSoldiers(knight, 12);
+      this.drawHolyShroud(knight);
+      this.emitState(`Holy shroud ${knight.holyShroudCasts}/3: nearby zombies become bone soldiers.`);
+      return;
+    }
+
+    if (knight.skillCursor % 2 === 0) {
+      this.castGiantSwordShackle();
+    } else {
+      this.castHolyCharge(knight);
+    }
+    knight.skillCursor += 1;
+  }
+
+  private castGiantSwordShackle(): void {
+    if (!this.player) return;
+    const x = this.player.x;
+    const y = this.player.y;
+    const radius = 128;
+    const warning = new Graphics();
+    warning
+      .circle(0, 0, radius)
+      .fill({ color: 0xd90429, alpha: 0.2 })
+      .stroke({ color: 0xfff3b0, alpha: 0.88, width: 3 })
+      .rect(-12, -180, 24, 210)
+      .fill({ color: 0xf8fafc, alpha: 0.45 });
+    warning.position.set(x, y);
+    this.world.addChild(warning);
+    window.setTimeout(() => {
+      if (!warning.destroyed) {
+        this.world.removeChild(warning);
+        warning.destroy();
+      }
+      this.drawGiantSwordImpact(x, y, radius);
+      if (this.player && distance(this.player, { x, y }) <= radius) {
+        this.applyPlayerDamage(36);
+        this.startPlayerTrap(x, y, radius, 10000);
+      }
+    }, 900);
+    this.emitState("Hospital knight casts Giant Sword Shackle.");
+  }
+
+  private drawGiantSwordImpact(x: number, y: number, radius: number): void {
+    const view = new Graphics();
+    view
+      .rect(-10, -210, 20, 250)
+      .fill({ color: 0xf8fafc, alpha: 0.92 })
+      .poly([0, 64, -32, 16, 32, 16])
+      .fill(0xfff3b0)
+      .circle(0, 0, radius)
+      .stroke({ color: 0xfff3b0, alpha: 0.75, width: 4 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    gsap.to(view, {
+      alpha: 0,
+      duration: 0.42,
+      onComplete: () => {
+        this.world.removeChild(view);
+        view.destroy();
+      },
+    });
+    this.addScreenShake(260, 8);
+  }
+
+  private startPlayerTrap(x: number, y: number, radius: number, lifeMs: number): void {
+    if (this.playerTrap) {
+      this.world.removeChild(this.playerTrap.view);
+      this.playerTrap.view.destroy();
+    }
+    const view = new Graphics();
+    view
+      .circle(0, 0, radius)
+      .fill({ color: 0x68e1fd, alpha: 0.08 })
+      .stroke({ color: 0xd9f7ff, alpha: 0.8, width: 4 })
+      .circle(0, 0, radius - 18)
+      .stroke({ color: 0xfff3b0, alpha: 0.55, width: 2 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.playerTrap = { view, x, y, radius, lifeMs };
+    this.emitState("Giant Sword Shackle: player trapped for 10 seconds.");
+  }
+
+  private updatePlayerTrap(deltaMs: number): void {
+    if (!this.playerTrap) return;
+    this.playerTrap.lifeMs -= deltaMs;
+    this.playerTrap.view.alpha = Math.max(0.18, this.playerTrap.lifeMs / 10000);
+    if (this.playerTrap.lifeMs > 0) return;
+    this.world.removeChild(this.playerTrap.view);
+    this.playerTrap.view.destroy();
+    this.playerTrap = undefined;
+  }
+
+  private castHolyCharge(knight: HospitalKnightActor): void {
+    if (!this.player) return;
+    const angle = Math.atan2(this.player.y - knight.y, this.player.x - knight.x);
+    knight.chargeAngle = angle;
+    knight.chargeMs = 620;
+    this.spawnHospitalChargeTelegraph(knight, angle);
+    for (const bone of this.enemies) {
+      if (bone.kind === "zombie" || distance(bone, this.player) > 520) continue;
+      bone.dashAngle = Math.atan2(this.player.y - bone.y, this.player.x - bone.x);
+      bone.dashMs = bone.kind === "boneSoldier" ? 340 : 240;
+      bone.dashElapsedMs = 0;
+    }
+    this.emitState("Hospital knight casts Holy Charge.");
+  }
+
+  private spawnHospitalChargeTelegraph(knight: HospitalKnightActor, angle: number): void {
+    const view = new Graphics();
+    view
+      .rect(0, -70, 760, 140)
+      .fill({ color: 0xfff3b0, alpha: 0.24 })
+      .stroke({ color: 0xd9f7ff, alpha: 0.8, width: 3 });
+    view.position.set(knight.x, knight.y);
+    view.rotation = angle;
+    this.world.addChild(view);
+    this.bossTelegraphs.push({ view, lifeMs: 520, maxLifeMs: 520 });
+  }
+
+  private reviveBonePiles(): void {
+    const piles = [...this.bonePiles];
+    for (const pile of piles) {
+      this.world.removeChild(pile.view);
+      pile.view.destroy();
+      this.spawnBoneEnemy(pile.x, pile.y, "boneSoldier");
+    }
+    this.bonePiles = [];
+  }
+
+  private convertNearbyBonesToSoldiers(): void {
+    for (const enemy of this.enemies) {
+      if (enemy.kind !== "bone") continue;
+      enemy.kind = "boneSoldier";
+      enemy.health = Math.max(enemy.health, 54);
+      enemy.speed = 48;
+      this.drawBoneEnemy(enemy.view, "boneSoldier");
+    }
+  }
+
+  private convertNearbyZombiesToBoneSoldiers(origin: Actor, count: number): void {
+    const zombies = this.enemies
+      .filter((enemy) => enemy.kind === "zombie" && distance(enemy, origin) <= 1100)
+      .sort((a, b) => distance(a, origin) - distance(b, origin))
+      .slice(0, count);
+    for (const enemy of zombies) {
+      enemy.kind = "boneSoldier";
+      enemy.health = 54;
+      enemy.speed = 48;
+      enemy.dashElapsedMs = 0;
+      enemy.dashMs = 0;
+      this.drawBoneEnemy(enemy.view, "boneSoldier");
+    }
+  }
+
+  private drawHolyShroud(knight: HospitalKnightActor): void {
+    const view = new Graphics();
+    view
+      .circle(0, 0, 520)
+      .fill({ color: 0xd9f7ff, alpha: 0.1 })
+      .stroke({ color: 0xfff3b0, alpha: 0.7, width: 5 });
+    view.position.set(knight.x, knight.y);
+    this.world.addChild(view);
+    gsap.to(view.scale, { x: 1.55, y: 1.55, duration: 0.45 });
+    gsap.to(view, {
+      alpha: 0,
+      duration: 0.58,
+      onComplete: () => {
+        this.world.removeChild(view);
+        view.destroy();
+      },
+    });
+  }
+
+  private getActiveBoneSoldierCount(): number {
+    return this.enemies.filter((enemy) => enemy.kind === "boneSoldier").length;
   }
 
   private spawnInitialBosses(): void {
@@ -1863,6 +3084,7 @@ export class PixiWastelandGame {
       this.world.addChild(view);
       this.enemies.push({
         view,
+        kind: "zombie",
         x,
         y,
         health: 16,
@@ -2107,6 +3329,22 @@ export class PixiWastelandGame {
       boss.view.visible = visible;
       boss.label.visible = visible;
     }
+    if (this.finalBoss) {
+      const visible = this.isVisibleFromPlayerZone(this.finalBoss);
+      this.finalBoss.view.visible = visible;
+      this.finalBoss.label.visible = visible;
+    }
+    if (this.hospitalKnight) {
+      const visible = this.isVisibleFromPlayerZone(this.hospitalKnight);
+      this.hospitalKnight.view.visible = visible;
+      this.hospitalKnight.label.visible = visible;
+    }
+    for (const pile of this.bonePiles) {
+      pile.view.visible = this.isVisibleFromPlayerZone(pile);
+    }
+    if (this.playerTrap) {
+      this.playerTrap.view.visible = this.isVisibleFromPlayerZone(this.playerTrap);
+    }
     for (const bullet of this.bullets) {
       bullet.view.visible = this.isVisibleFromPlayerZone(bullet);
     }
@@ -2159,12 +3397,18 @@ export class PixiWastelandGame {
 
   private emitMetrics(): void {
     const bossNames = this.bosses.map((boss) => this.getBossName(boss.bossId));
+    if (this.finalBoss) {
+      bossNames.push(FINAL_BOSS_DEFINITION.name);
+    }
+    if (this.hospitalKnight) {
+      bossNames.push(HOSPITAL_KNIGHT_DEFINITION.name);
+    }
     const nearestBoss = this.getNearestBoss();
     const currentBuildingId = this.getCurrentBuildingId();
     const insideBuilding = this.player ? pointInsideBuildings(this.player) : false;
     const metrics = {
       enemyCount: this.enemies.length,
-      bossCount: this.bosses.length,
+      bossCount: this.bosses.length + (this.finalBoss ? 1 : 0) + (this.hospitalKnight ? 1 : 0),
       bulletCount:
         this.bullets.length +
         this.heavyProjectiles.length +
@@ -2175,7 +3419,13 @@ export class PixiWastelandGame {
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT,
       attackMode: this.attackMode,
-      bossName: nearestBoss ? this.getBossName(nearestBoss.bossId) : null,
+      bossName: this.finalBoss
+        ? FINAL_BOSS_DEFINITION.name
+        : this.hospitalKnight
+          ? HOSPITAL_KNIGHT_DEFINITION.name
+          : nearestBoss
+            ? this.getBossName(nearestBoss.bossId)
+            : null,
       bossNames,
       insideBuilding,
       currentBuildingId,
@@ -2205,7 +3455,7 @@ export class PixiWastelandGame {
   }
 
   private getPlayerMoveSpeed(): number {
-    return 260 * getSkillUpgradeStats(this.state.skillUpgradeRanks).moveSpeedMultiplier;
+    return 260 * getSkillUpgradeStats(this.state.skillUpgradeRanks).moveSpeedMultiplier * (this.mechTransformMs > 0 ? 1.55 : 1);
   }
 
   private getSkillProjectileDamage(): number {
@@ -2217,6 +3467,9 @@ export class PixiWastelandGame {
   }
 
   private getMechEnergyColor(): number {
+    if (this.state.selectedMechFormId === "blade") return 0xff4d6d;
+    if (this.state.selectedMechFormId === "laser") return 0xd9f7ff;
+    if (this.state.selectedMechFormId === "missile") return 0xfff3b0;
     const stage = getMechEvolutionStage(this.state.skillUpgradeRanks);
     if (stage === "temporal") return 0xb56cff;
     if (stage === "laser") return 0xd9f7ff;
