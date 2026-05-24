@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ENEMY_SPAWN_TICK_MS,
+  EXPERIMENTAL_DISABLE_SMALL_ENEMIES,
   MAP_HEIGHT,
   MAP_WIDTH,
   getEnemyMaxAlive,
@@ -8,6 +9,7 @@ import {
   getBossSpawnPosition,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
+  shouldAllowSmallEnemySpawning,
 } from "./spawning";
 
 describe("spawning", () => {
@@ -69,5 +71,12 @@ describe("spawning", () => {
     expect(getEnemySpawnBatchSize(60, ENEMY_SPAWN_TICK_MS)).toBe(69);
     expect(getEnemyMaxAlive(1)).toBe(80);
     expect(getEnemyMaxAlive(60)).toBe(260);
+  });
+
+  it("uses normal small enemy spawning outside final boss testing", () => {
+    expect(EXPERIMENTAL_DISABLE_SMALL_ENEMIES).toBe(false);
+    expect(shouldAllowSmallEnemySpawning({ experimentalDisabled: false, finalBossActive: false })).toBe(true);
+    expect(shouldAllowSmallEnemySpawning({ experimentalDisabled: false, finalBossActive: true })).toBe(false);
+    expect(shouldAllowSmallEnemySpawning({ experimentalDisabled: true, finalBossActive: false })).toBe(false);
   });
 });

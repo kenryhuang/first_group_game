@@ -20,7 +20,59 @@ export interface FinalBossDefinition {
 export const FINAL_BOSS_DEFINITION: FinalBossDefinition = {
   id: "war-core",
   name: "失控战争核心",
-  maxHealth: 5000,
+  maxHealth: 10000,
+};
+
+export const FINAL_BOSS_PHASE_ONE_SKILL = {
+  coreSpeed: 0,
+  interferenceRadius: 15000,
+  slowMs: 2600,
+  slowMultiplier: 0.5,
+  beamDelayMs: 1000,
+  beamRadius: 48,
+  beamRange: 15000,
+  beamDamage: 18,
+  buildingCollisionDamage: 10,
+  buildingCollisionIntervalMs: 1000,
+  buildingChargeDamage: 10,
+  buildingChargeCooldownMs: 5000,
+  buildingChargeRange: 360,
+  buildingChargeSpeed: 1500,
+};
+
+export const FINAL_BOSS_PHASE_TWO_SKILL = {
+  coreSpeed: 0,
+  onlyExplosiveDamage: true,
+  bombWarningMs: 2000,
+  bombDamage: 42,
+  bombMinRadius: 120,
+  bombMaxRadius: 240,
+  sniperBuildingCount: 2,
+  sniperDamage: 32,
+  sniperRange: 520,
+  sniperCooldownMs: 1800,
+};
+
+export const FINAL_BOSS_PHASE_THREE_SKILL = {
+  mechSpeed: 92,
+  buildingWeaponDamage: 20,
+  buildingWeaponRange: 560,
+  buildingWeaponCooldownMs: 3000,
+  buildingWeaponSpeed: 1800,
+  orangeBeamDamage: 80,
+  orangeBeamRadius: 72,
+  orangeBeamRange: 15000,
+  missileCount: 6,
+  missileLockMs: 1500,
+  missileDamage: 62,
+  missileRadius: 92,
+  crawlerCount: 5,
+  crawlerDamage: 32,
+  crawlerArmMs: 1000,
+  crawlerExplosionRadius: 56,
+  crawlerSpeedMultiplier: 2,
+  suppressMs: 5000,
+  finalBeamHealthThreshold: 1000,
 };
 
 export const ENDGAME_ULTIMATE_DEFINITIONS: Record<MechFormId, EndgameUltimateDefinition> = {
@@ -56,9 +108,8 @@ export function getEndgameUltimateDefinition(formId: MechFormId): EndgameUltimat
   return ENDGAME_ULTIMATE_DEFINITIONS[formId];
 }
 
-export function getFinalBossPhase(health: number, maxHealth: number): 1 | 2 | 3 {
-  const ratio = maxHealth <= 0 ? 0 : health / maxHealth;
-  if (ratio <= 0.35) return 3;
-  if (ratio <= 0.7) return 2;
+export function getFinalBossPhase(health: number, _maxHealth = FINAL_BOSS_DEFINITION.maxHealth): 1 | 2 | 3 {
+  if (health <= 5000) return 3;
+  if (health <= 7000) return 2;
   return 1;
 }

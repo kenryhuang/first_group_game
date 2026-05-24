@@ -4,6 +4,7 @@ import {
   applyRunDamage,
   chooseRunMechForm,
   chooseRunSkillUpgrade,
+  createExperimentalRunState,
   createRunState,
   collectNode,
   gainRunExperience,
@@ -11,6 +12,7 @@ import {
   recordRunEnemyKill,
   useRunSkill,
 } from "./runState";
+import { isEndgameReady } from "./endgame";
 import { KILLS_PER_SKILL_CHOICE, getCompletedSkillUpgradeCount, getKillsRequiredForSkillChoice } from "./skillChoices";
 
 describe("run state", () => {
@@ -123,5 +125,18 @@ describe("run state", () => {
 
     expect(state.pendingSkillChoiceIds).toEqual([]);
     expect(state.pendingMechFormIds).toEqual(["laser", "missile", "blade"]);
+  });
+
+  it("can start in experimental endgame mode with every upgrade maxed", () => {
+    const state = createExperimentalRunState();
+
+    expect(state.level).toBe(50);
+    expect(state.pendingMechFormIds).toEqual(["laser", "missile", "blade"]);
+    expect(state.pendingSkillChoiceIds).toEqual([]);
+    expect(state.killsTowardSkillChoice).toBe(0);
+    for (const upgrade of SKILL_UPGRADES) {
+      expect(state.skillUpgradeRanks[upgrade.id]).toBe(upgrade.maxRank);
+    }
+    expect(isEndgameReady(chooseRunMechForm(state, "laser"))).toBe(true);
   });
 });

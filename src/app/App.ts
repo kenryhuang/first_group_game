@@ -31,6 +31,10 @@ export default defineComponent({
           store.syncRunState(runState);
           store.finishGame();
         },
+        onMissionSuccess: (runState) => {
+          store.syncRunState(runState);
+          store.completeMission();
+        },
       });
       await game.start();
     };
@@ -68,11 +72,20 @@ export default defineComponent({
         h("button", { class: "primary-action", type: "button", onClick: restartGame }, "重新开始"),
       ]);
 
+    const renderMissionSuccess = () =>
+      h("section", { class: "screen-panel mission-success-panel" }, [
+        h("div", { class: "screen-kicker success" }, "核心摧毁"),
+        h("h1", { class: "screen-title" }, "任务成功"),
+        h("p", { class: "screen-copy" }, `失控战争核心已摧毁。等级 ${store.runState.level}  HP ${store.runState.health}/${store.runState.maxHealth}`),
+        h("button", { class: "primary-action", type: "button", onClick: restartGame }, "再次挑战"),
+      ]);
+
     return () =>
       h("main", { class: "game-shell" }, [
         store.phase !== "menu" ? h("section", { class: "game-stage", ref: gameHost }) : null,
         store.phase === "menu" ? renderMenu() : null,
         store.phase === "gameOver" ? renderGameOver() : null,
+        store.phase === "missionSuccess" ? renderMissionSuccess() : null,
         store.phase !== "menu"
           ? h("aside", { class: "hud-panel" }, [
               h("div", { class: "hud-title" }, "末日废土幸存者"),

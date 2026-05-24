@@ -3,6 +3,9 @@ import type { RunState } from "../domain/types";
 import { createRunState } from "./runState";
 import {
   FINAL_BOSS_DEFINITION,
+  FINAL_BOSS_PHASE_ONE_SKILL,
+  FINAL_BOSS_PHASE_THREE_SKILL,
+  FINAL_BOSS_PHASE_TWO_SKILL,
   getEndgameUltimateDefinition,
   getFinalBossPhase,
   isEndgameReady,
@@ -39,10 +42,43 @@ describe("endgame", () => {
     expect(getEndgameUltimateDefinition("blade").radius).toBeGreaterThanOrEqual(380);
   });
 
-  it("tracks the mutated mech final boss phases by health ratio", () => {
-    expect(FINAL_BOSS_DEFINITION.name).toBe("失控战争核心");
-    expect(getFinalBossPhase(5000, 5000)).toBe(1);
-    expect(getFinalBossPhase(3000, 5000)).toBe(2);
-    expect(getFinalBossPhase(1200, 5000)).toBe(3);
+  it("tracks the city core final boss phases by absolute health", () => {
+    expect(FINAL_BOSS_DEFINITION.maxHealth).toBe(10000);
+    expect(getFinalBossPhase(9000)).toBe(1);
+    expect(getFinalBossPhase(7000)).toBe(2);
+    expect(getFinalBossPhase(5000)).toBe(3);
+  });
+
+  it("defines phase one as a city core turret with full-map interference and beam", () => {
+    expect(FINAL_BOSS_PHASE_ONE_SKILL.interferenceRadius).toBeGreaterThanOrEqual(10000);
+    expect(FINAL_BOSS_PHASE_ONE_SKILL.slowMultiplier).toBe(0.5);
+    expect(FINAL_BOSS_PHASE_ONE_SKILL.beamDelayMs).toBe(1000);
+    expect(FINAL_BOSS_PHASE_ONE_SKILL.beamDamage).toBe(18);
+    expect(FINAL_BOSS_PHASE_ONE_SKILL.coreSpeed).toBe(0);
+    expect(FINAL_BOSS_PHASE_ONE_SKILL.buildingCollisionDamage).toBe(10);
+    expect(FINAL_BOSS_PHASE_ONE_SKILL.buildingCollisionIntervalMs).toBe(1000);
+    expect(FINAL_BOSS_PHASE_ONE_SKILL.buildingChargeCooldownMs).toBe(5000);
+  });
+
+  it("defines phase two shield, bombing, and city wanted mechanics", () => {
+    expect(FINAL_BOSS_PHASE_TWO_SKILL.coreSpeed).toBe(0);
+    expect(FINAL_BOSS_PHASE_TWO_SKILL.onlyExplosiveDamage).toBe(true);
+    expect(FINAL_BOSS_PHASE_TWO_SKILL.bombWarningMs).toBe(2000);
+    expect(FINAL_BOSS_PHASE_TWO_SKILL.bombDamage).toBe(42);
+    expect(FINAL_BOSS_PHASE_TWO_SKILL.sniperBuildingCount).toBe(2);
+    expect(FINAL_BOSS_PHASE_TWO_SKILL.sniperDamage).toBe(32);
+  });
+
+  it("defines phase three mech skills and instant-fail final beam", () => {
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.mechSpeed).toBe(92);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.buildingWeaponDamage).toBe(20);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.orangeBeamDamage).toBe(80);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.missileCount).toBe(6);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.missileLockMs).toBe(1500);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.crawlerCount).toBe(5);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.crawlerArmMs).toBe(1000);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.crawlerExplosionRadius).toBe(56);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.suppressMs).toBe(5000);
+    expect(FINAL_BOSS_PHASE_THREE_SKILL.finalBeamHealthThreshold).toBe(1000);
   });
 });

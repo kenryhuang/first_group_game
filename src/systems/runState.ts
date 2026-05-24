@@ -1,4 +1,4 @@
-import { BOSS_ORDER, PLAYER_BASELINE } from "../data/prototypeData";
+import { BOSS_ORDER, PLAYER_BASELINE, SKILLS, SKILL_UPGRADES } from "../data/prototypeData";
 import type { BossId, RunState } from "../domain/types";
 import { processLevelMilestone, createBossPressureState, markBossKilled } from "./bossPressure";
 import { defeatBoss, useSkill } from "./combat";
@@ -36,6 +36,27 @@ export function createRunState(): RunState {
     selectedMechFormId: null,
     pendingMechFormIds: [],
     ...skillChoiceProgress,
+  };
+}
+
+export function createExperimentalRunState(): RunState {
+  const skillUpgradeRanks = Object.fromEntries(
+    SKILL_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxRank]),
+  );
+  const maxHealth = getRunMaxHealth(50, skillUpgradeRanks);
+  return {
+    ...createRunState(),
+    level: 50,
+    experience: 0,
+    health: maxHealth,
+    maxHealth,
+    baseDamage: Math.round(PLAYER_BASELINE.basicDamage * (1 + (50 - 1) * 0.03)),
+    activeSkillIds: SKILLS.map((skill) => skill.id),
+    skillUpgradeRanks,
+    pendingSkillChoiceIds: [],
+    killsTowardSkillChoice: 0,
+    pendingMechFormIds: ["laser", "missile", "blade"],
+    selectedMechFormId: null,
   };
 }
 

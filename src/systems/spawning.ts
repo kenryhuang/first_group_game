@@ -4,6 +4,7 @@ export const MAP_WIDTH = 10000;
 export const MAP_HEIGHT = 10000;
 export const PLAYER_START = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
 export const ENEMY_SPAWN_TICK_MS = 1000;
+export const EXPERIMENTAL_DISABLE_SMALL_ENEMIES = false;
 
 const ENEMY_MIN_SPAWN_DISTANCE = 380;
 const ENEMY_MAX_SPAWN_DISTANCE = 620;
@@ -58,6 +59,16 @@ export function getEnemySpawnBatchSize(level: number, elapsedMs: number): number
 export function getEnemyMaxAlive(level: number): number {
   const progress = getLevelProgress(level);
   return Math.round(MIN_ENEMY_MAX_ALIVE + (MAX_ENEMY_MAX_ALIVE - MIN_ENEMY_MAX_ALIVE) * progress);
+}
+
+export function shouldAllowSmallEnemySpawning({
+  experimentalDisabled,
+  finalBossActive,
+}: {
+  experimentalDisabled: boolean;
+  finalBossActive: boolean;
+}): boolean {
+  return !experimentalDisabled && !finalBossActive;
 }
 
 function clampToMap(point: Point): Point {

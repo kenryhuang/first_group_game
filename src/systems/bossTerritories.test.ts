@@ -5,6 +5,7 @@ import {
   getBossRoamTargetInTerritory,
   getBossTerritorySpawnPosition,
   isPointInBossTerritory,
+  shouldRoamingBossTargetPlayer,
 } from "./bossTerritories";
 
 describe("boss territories", () => {
@@ -22,5 +23,32 @@ describe("boss territories", () => {
       expect(isPointInBossTerritory(boss.id, spawn)).toBe(true);
       expect(isPointInBossTerritory(boss.id, roam)).toBe(true);
     }
+  });
+
+  it("forces roaming bosses to target the player during the final boss fight", () => {
+    expect(
+      shouldRoamingBossTargetPlayer({
+        finalBossActive: true,
+        sameZoneAsPlayer: false,
+        playerInTerritory: false,
+        distanceToPlayer: 8000,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRoamingBossTargetPlayer({
+        finalBossActive: false,
+        sameZoneAsPlayer: true,
+        playerInTerritory: true,
+        distanceToPlayer: 700,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRoamingBossTargetPlayer({
+        finalBossActive: false,
+        sameZoneAsPlayer: true,
+        playerInTerritory: false,
+        distanceToPlayer: 700,
+      }),
+    ).toBe(false);
   });
 });

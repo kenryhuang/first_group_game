@@ -5,7 +5,7 @@ import { MAP_HEIGHT, MAP_WIDTH } from "../systems/spawning";
 import { BUILDINGS } from "../systems/terrain";
 import { createHudLines } from "../ui/hud";
 
-export type GamePhase = "menu" | "playing" | "gameOver";
+export type GamePhase = "menu" | "playing" | "gameOver" | "missionSuccess";
 
 export interface GameMetrics {
   enemyCount: number;
@@ -71,6 +71,10 @@ export const useGameStore = defineStore("game", {
     finishGame(): void {
       this.phase = "gameOver";
       this.message = "机甲失联。任务失败。";
+    },
+    completeMission(): void {
+      this.phase = "missionSuccess";
+      this.message = "任务成功：失控战争核心已摧毁。";
     },
     returnToMenu(): void {
       this.phase = "menu";

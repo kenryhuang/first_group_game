@@ -21,6 +21,22 @@ export function isPointInBossTerritory(bossId: BossId, point: Point, margin = 0)
   return Math.hypot(point.x - territory.center.x, point.y - territory.center.y) <= territory.radius + margin;
 }
 
+export function shouldRoamingBossTargetPlayer({
+  finalBossActive,
+  sameZoneAsPlayer,
+  playerInTerritory,
+  distanceToPlayer,
+  aggroRange = 900,
+}: {
+  finalBossActive: boolean;
+  sameZoneAsPlayer: boolean;
+  playerInTerritory: boolean;
+  distanceToPlayer: number;
+  aggroRange?: number;
+}): boolean {
+  return finalBossActive || (sameZoneAsPlayer && playerInTerritory && distanceToPlayer < aggroRange);
+}
+
 export function getBossTerritorySpawnPosition(bossId: BossId): Point {
   const territory = BOSS_TERRITORIES[bossId];
   return {
