@@ -61,7 +61,14 @@ import {
   type EnergySkillDefinition,
   type EnergySkillId,
 } from "../systems/energyWeapons";
-import { getNextAdvancedBossSkill, type AdvancedBossSkill } from "../systems/bossSkills";
+import {
+  BIG_FIRE_PIT,
+  COURIER_LOCKED_CHARGE_SPEED,
+  JESTER_BOX_EFFECTS,
+  ROAMING_BOSS_RUNTIME_STATS,
+  getNextAdvancedBossSkill,
+  type AdvancedBossSkill,
+} from "../systems/bossSkills";
 import { getUltimateDefinition, type UltimateDefinition } from "../systems/mechForms";
 import {
   FINAL_BOSS_DEFINITION,
@@ -75,6 +82,9 @@ import {
 } from "../systems/endgame";
 import {
   HOSPITAL_KNIGHT_AGGRO_RADIUS,
+  BONE_CONTACT_DAMAGE,
+  BONE_SOLDIER_CONTACT_DAMAGE,
+  GIANT_SWORD_TRAP_MS,
   HOSPITAL_KNIGHT_DEFINITION,
   HOSPITAL_KNIGHT_SPAWN,
   getHospitalKnightGuardRoamTarget,
@@ -96,7 +106,7 @@ import type { GameMetrics } from "../app/gameStore";
 
 type AttackMode = "auto" | "manual";
 type BossMode = "roam" | "chase" | "charge" | "windup";
-type HazardKind = "bossProjectile" | "chiliOil" | "firePit" | "knife";
+type HazardKind = "bossProjectile" | "chiliOil" | "firePit" | "bigFirePit" | "knife" | "magicBox";
 type EnemyKind = "zombie" | "bone" | "boneSoldier";
 
 interface GameCallbacks {
@@ -137,6 +147,7 @@ interface BossActor extends Actor {
   chargeMs: number;
   chargeAngle: number;
   chargeDamage: number;
+  chargeSpeed?: number;
   windupMs: number;
   pendingChargeAngle: number;
   contactDamageElapsedMs: number;
@@ -235,6 +246,7 @@ interface HazardActor extends Actor {
   damage: number;
   tickElapsedMs: number;
   expiresIntoFire: boolean;
+  effect?: (typeof JESTER_BOX_EFFECTS)[number];
 }
 
 interface TelegraphActor {
@@ -344,6 +356,8 @@ export class PixiWastelandGame {
   private mechTransformMs = 0;
   private mechTransformDamageElapsedMs = 0;
   private playerSlowMs = 0;
+  private playerFreezeMs = 0;
+  private playerVisionNarrowMs = 0;
   private skillSuppressMs = 0;
   private finalBossBuildingCollisionElapsedMs = FINAL_BOSS_PHASE_ONE_SKILL.buildingCollisionIntervalMs;
   private screenShakeMs = 0;
@@ -719,6 +733,7 @@ export class PixiWastelandGame {
     if (dx !== 0 || dy !== 0) {
       this.movementDirection = { x: dx / length, y: dy / length };
     }
+    if (this.playerFreezeMs > 0) return;
     const moveSpeed = this.getPlayerMoveSpeed();
     const desired = {
       x: clamp(this.player.x + (dx / length) * moveSpeed * seconds, 24, MAP_WIDTH - 24),
@@ -773,7 +788,9 @@ export class PixiWastelandGame {
         distance(this.player, enemy) <= 28
       ) {
         enemy.contactDamageElapsedMs = 0;
-        this.applyPlayerDamage(enemy.kind === "boneSoldier" ? 9 : enemy.kind === "bone" ? 6 : 5);
+        this.applyPlayerDamage(
+          enemy.kind === "boneSoldier" ? BONE_SOLDIER_CONTACT_DAMAGE : enemy.kind === "bone" ? BONE_CONTACT_DAMAGE : 5,
+        );
       }
     }
   }
@@ -862,6 +879,7 @@ export class PixiWastelandGame {
       boss.chargeMs = Math.max(0, boss.chargeMs - deltaMs);
       if (boss.chargeMs === 0 && boss.mode === "charge") {
         boss.mode = shouldTargetPlayer ? "chase" : "roam";
+        boss.chargeSpeed = undefined;
       }
       if (distance(boss, boss.roamTarget) < 80) {
         boss.roamTarget = this.getNextRoamTarget(boss);
@@ -938,6 +956,7 @@ export class PixiWastelandGame {
   }
 
   private getBossChargeSpeed(boss: BossActor): number {
+    if (boss.chargeSpeed) return boss.chargeSpeed;
     return boss.bossId === "courier" ? 1120 : 360;
   }
 
@@ -1062,11 +1081,15 @@ export class PixiWastelandGame {
         this.isSameVisibilityZone(this.player, hazard) &&
         distance(this.player, hazard) <= hazard.radius + 16
       ) {
-        if (hazard.kind === "firePit") {
-          if (hazard.tickElapsedMs >= 450) {
+        if (hazard.kind === "firePit" || hazard.kind === "bigFirePit") {
+          const tickMs = hazard.kind === "bigFirePit" ? BIG_FIRE_PIT.tickMs : 450;
+          if (hazard.tickElapsedMs >= tickMs) {
             hazard.tickElapsedMs = 0;
             this.applyPlayerDamage(hazard.damage);
           }
+        } else if (hazard.kind === "magicBox") {
+          this.triggerMagicBoxEffect(hazard);
+          this.removeBossHazard(hazard);
         } else {
           this.applyPlayerDamage(hazard.damage);
           if (hazard.expiresIntoFire) {
@@ -1113,6 +1136,8 @@ export class PixiWastelandGame {
 
   private updatePlayerSlow(deltaMs: number): void {
     this.playerSlowMs = Math.max(0, this.playerSlowMs - deltaMs);
+    this.playerFreezeMs = Math.max(0, this.playerFreezeMs - deltaMs);
+    this.playerVisionNarrowMs = Math.max(0, this.playerVisionNarrowMs - deltaMs);
     this.skillSuppressMs = Math.max(0, this.skillSuppressMs - deltaMs);
   }
 
@@ -3282,7 +3307,7 @@ export class PixiWastelandGame {
       this.drawGiantSwordImpact(x, y, radius);
       if (this.player && distance(this.player, { x, y }) <= radius) {
         this.applyPlayerDamage(36);
-        this.startPlayerTrap(x, y, radius, 10000);
+        this.startPlayerTrap(x, y, radius, GIANT_SWORD_TRAP_MS);
       }
     }, 900);
     this.emitState("Hospital knight casts Giant Sword Shackle.");
@@ -3325,7 +3350,7 @@ export class PixiWastelandGame {
     view.position.set(x, y);
     this.world.addChild(view);
     this.playerTrap = { view, x, y, radius, lifeMs };
-    this.emitState("Giant Sword Shackle: player trapped for 10 seconds.");
+    this.emitState("Giant Sword Shackle: player trapped for 3 seconds.");
   }
 
   private updatePlayerTrap(deltaMs: number): void {
@@ -3444,7 +3469,8 @@ export class PixiWastelandGame {
     });
     label.position.set(position.x - 64, position.y - 62);
     this.world.addChild(label);
-    const maxHealth = Math.round(definition.maxHealth / 6);
+    const runtimeStats = ROAMING_BOSS_RUNTIME_STATS[bossId];
+    const maxHealth = runtimeStats.maxHealth;
     this.bosses.push({
       view,
       label,
@@ -3456,11 +3482,12 @@ export class PixiWastelandGame {
       mode: "roam",
       roamTarget: this.getNextRoamTarget({ bossId, x: position.x, y: position.y } as BossActor),
       skillElapsedMs: 0,
-      skillCooldownMs: bossId === "chef" ? 3200 : bossId === "clown" ? 4200 : 3600,
+      skillCooldownMs: runtimeStats.skillCooldownMs,
       advancedSkillCursor: 0,
       chargeMs: 0,
       chargeAngle: 0,
       chargeDamage: 22,
+      chargeSpeed: undefined,
       windupMs: 0,
       pendingChargeAngle: 0,
       contactDamageElapsedMs: 700,
@@ -3547,10 +3574,14 @@ export class PixiWastelandGame {
       this.spawnPressureCookerBomb(boss, skill);
     } else if (skill.id === "chopping-board-charge") {
       this.startBossCharge(boss, skill.warningMs, 520, skill.damage, 0xff9f1c);
+    } else if (skill.id === "cauldron-descend") {
+      this.spawnCauldronDescend(boss, skill);
     } else if (skill.id === "jack-in-the-box") {
       this.spawnJackInTheBox(boss, skill);
     } else if (skill.id === "clone-trick") {
       this.spawnClownClones(boss, skill);
+    } else if (skill.id === "knife-gala") {
+      this.spawnKnifeGala(boss, skill);
     } else if (skill.id === "drone-airdrop") {
       this.spawnCourierDroneAirdrop(skill);
     } else {
@@ -3561,15 +3592,16 @@ export class PixiWastelandGame {
 
   private spawnPressureCookerBomb(boss: BossActor, skill: AdvancedBossSkill): void {
     const target = this.player ?? boss;
+    const lowHealth = boss.health <= (skill.lowHealthThreshold ?? 0);
     this.spawnDelayedBossBlast(
       target.x,
       target.y,
       skill.radius,
-      skill.damage,
+      lowHealth ? (skill.lowHealthDamage ?? skill.damage) : skill.damage,
       skill.warningMs,
       0xc8d5d9,
       "高压锅",
-      () => this.spawnFirePit(target.x, target.y),
+      () => (lowHealth ? this.spawnBigFirePit(target.x, target.y) : this.spawnFirePit(target.x, target.y)),
     );
   }
 
@@ -3577,15 +3609,92 @@ export class PixiWastelandGame {
     const angle = Math.atan2((this.player?.y ?? boss.y) - boss.y, (this.player?.x ?? boss.x) - boss.x);
     const x = boss.x + Math.cos(angle) * 220;
     const y = boss.y + Math.sin(angle) * 220;
-    this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, 0xff4d6d, "魔盒");
+    this.spawnMagicBox(x, y, skill);
+  }
+
+  private spawnMagicBox(x: number, y: number, skill: AdvancedBossSkill): void {
+    const view = new Graphics();
+    view
+      .roundRect(-26, -26, 52, 52, 7)
+      .fill({ color: 0xff4d6d, alpha: 0.26 })
+      .stroke({ color: 0xfff3b0, alpha: 0.88, width: 3 })
+      .rect(-20, -4, 40, 8)
+      .fill({ color: 0x68e1fd, alpha: 0.75 })
+      .rect(-4, -20, 8, 40)
+      .fill({ color: 0x68e1fd, alpha: 0.75 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    const effect = JESTER_BOX_EFFECTS[this.spawnSeed % JESTER_BOX_EFFECTS.length];
+    this.spawnSeed += 1;
+    this.bossHazards.push({
+      view,
+      kind: "magicBox",
+      x,
+      y,
+      radius: skill.radius,
+      lifeMs: 7600,
+      damage: skill.damage,
+      tickElapsedMs: 0,
+      expiresIntoFire: false,
+      velocityX: 0,
+      velocityY: 0,
+      effect,
+    });
+  }
+
+  private triggerMagicBoxEffect(hazard: HazardActor): void {
+    if (!this.player) return;
+    const effect = hazard.effect ?? "blast";
+    if (effect === "blast") {
+      this.applyPlayerDamage(80);
+      this.spawnHitSparks(hazard.x, hazard.y, 0xff4d6d, 24);
+      this.emitState("魔盒爆炸：玩家受到重创。");
+      return;
+    }
+    if (effect === "freeze") {
+      this.playerFreezeMs = Math.max(this.playerFreezeMs, 3000);
+      this.emitState("魔盒冰冻：玩家无法移动。");
+      return;
+    }
+    this.playerVisionNarrowMs = Math.max(this.playerVisionNarrowMs, 5000);
+    this.emitState("魔盒幻术：玩家视野被压缩。");
+  }
+
+  private spawnCauldronDescend(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    this.spawnSeed += 1;
+    const angle = this.spawnSeed * 2.399963229728653;
+    const x = clamp(this.player.x + Math.cos(angle) * 160, 24, MAP_WIDTH - 24);
+    const y = clamp(this.player.y + Math.sin(angle) * 160, 24, MAP_HEIGHT - 24);
+    this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, 0xc8d5d9, "太锅", () => {
+      if (!this.bosses.includes(boss)) return;
+      this.setActorPosition(boss, x, y);
+      this.spawnHitSparks(x, y, 0xfff3b0, 20);
+    });
   }
 
   private spawnCourierDroneAirdrop(skill: AdvancedBossSkill): void {
     if (!this.player) return;
-    for (const offset of [-80, 95]) {
+    for (const [index, offset] of [-80, 95].entries()) {
       const x = clamp(this.player.x + offset + (Math.random() - 0.5) * 90, 24, MAP_WIDTH - 24);
       const y = clamp(this.player.y + (Math.random() - 0.5) * 150, 24, MAP_HEIGHT - 24);
-      this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, offset < 0 ? 0xff6b00 : 0x68e1fd, "无人机");
+      this.spawnDelayedBossBlast(
+        x,
+        y,
+        skill.radius,
+        skill.damage,
+        skill.warningMs,
+        offset < 0 ? 0xff6b00 : 0x68e1fd,
+        "无人机",
+        () => {
+          if (!this.player || distance(this.player, { x, y }) > skill.radius + 16) return;
+          if (index === 0) {
+            this.applyPlayerDamage(10);
+          } else {
+            this.playerSlowMs = Math.max(this.playerSlowMs, 5000);
+          }
+        },
+      );
     }
   }
 
@@ -3605,31 +3714,58 @@ export class PixiWastelandGame {
       this.world.removeChild(lock);
       lock.destroy();
       if (!this.player || !this.bosses.includes(boss)) return;
-      this.startBossCharge(boss, 320, 760, skill.damage, 0xd90429);
+      this.startBossCharge(boss, 320, 760, skill.damage, 0xd90429, COURIER_LOCKED_CHARGE_SPEED);
     }, skill.warningMs);
   }
 
   private spawnClownClones(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const candidates = [...this.enemies]
+      .sort((a, b) => distance(a, this.player!) - distance(b, this.player!))
+      .slice(0, 3);
     for (let index = 0; index < 3; index += 1) {
       const angle = (Math.PI * 2 * index) / 3 + this.spawnSeed;
-      const view = new Graphics();
-      this.drawBossSprite(view, "clown");
-      view.alpha = 0.52;
-      const x = clamp(boss.x + Math.cos(angle) * 115, 24, MAP_WIDTH - 24);
-      const y = clamp(boss.y + Math.sin(angle) * 115, 24, MAP_HEIGHT - 24);
-      view.position.set(x, y);
-      this.world.addChild(view);
-      this.enemies.push({
-        view,
-        kind: "zombie",
-        x,
-        y,
-        health: 16,
-        speed: 118,
-        contactDamageElapsedMs: 700,
-      });
+      const x = clamp(this.player.x + Math.cos(angle) * skill.radius, 24, MAP_WIDTH - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * skill.radius, 24, MAP_HEIGHT - 24);
+      const enemy = candidates[index];
+      if (enemy) {
+        this.setActorPosition(enemy, x, y);
+        enemy.health = 16;
+        enemy.speed = 118;
+        enemy.kind = "zombie";
+        this.drawBossSprite(enemy.view, "clown");
+        enemy.view.alpha = 1;
+      } else {
+        const view = new Graphics();
+        this.drawBossSprite(view, "clown");
+        view.alpha = 1;
+        view.position.set(x, y);
+        this.world.addChild(view);
+        this.enemies.push({
+          view,
+          kind: "zombie",
+          x,
+          y,
+          health: 16,
+          speed: 118,
+          contactDamageElapsedMs: 700,
+        });
+      }
     }
+    this.spawnSeed += 1;
     this.spawnHitSparks(boss.x, boss.y, 0xff4d6d, 14);
+  }
+
+  private spawnKnifeGala(boss: BossActor, skill: AdvancedBossSkill): void {
+    const count = 16;
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss)) return;
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count;
+        this.spawnKnifeHazard(boss.x, boss.y, angle, 224, skill.damage);
+      }
+      this.emitState(`${this.getBossName(boss.bossId)} 释放华丽飞刀。`);
+    }, skill.warningMs);
   }
 
   private startBossCharge(
@@ -3638,6 +3774,7 @@ export class PixiWastelandGame {
     distanceScale: number,
     damage: number,
     color: number,
+    speed?: number,
   ): void {
     if (!this.player) return;
     const angle = Math.atan2(this.player!.y - boss.y, this.player!.x - boss.x);
@@ -3645,6 +3782,7 @@ export class PixiWastelandGame {
     boss.windupMs = warningMs;
     boss.pendingChargeAngle = angle;
     boss.chargeDamage = damage;
+    boss.chargeSpeed = speed;
     this.spawnChargeTelegraph(boss, angle, distanceScale, color);
   }
 
@@ -3699,7 +3837,7 @@ export class PixiWastelandGame {
     this.spawnBossHazard(boss.x, boss.y, angle, 360, 0xff6b00, travelMs, 11, "chiliOil", 8, true);
   }
 
-  private spawnKnifeHazard(x: number, y: number, angle: number, speed: number): void {
+  private spawnKnifeHazard(x: number, y: number, angle: number, speed: number, damage = 7): void {
     const view = new Graphics();
     this.drawFlyingKnife(view);
     view.position.set(x, y);
@@ -3712,7 +3850,7 @@ export class PixiWastelandGame {
       y,
       radius: 13,
       lifeMs: 1800,
-      damage: 7,
+      damage,
       tickElapsedMs: 0,
       expiresIntoFire: false,
       velocityX: Math.cos(angle) * speed,
@@ -3751,6 +3889,34 @@ export class PixiWastelandGame {
       lifeMs: 4600,
       damage: 4,
       tickElapsedMs: 450,
+      expiresIntoFire: false,
+      velocityX: 0,
+      velocityY: 0,
+    });
+  }
+
+  private spawnBigFirePit(x: number, y: number): void {
+    const view = new Graphics();
+    view
+      .circle(0, 0, BIG_FIRE_PIT.radius)
+      .fill({ color: 0xff3d00, alpha: 0.18 })
+      .stroke({ color: 0xffd166, alpha: 0.78, width: 6 });
+    for (let index = 0; index < 18; index += 1) {
+      const angle = (Math.PI * 2 * index) / 18;
+      const ring = index % 2 === 0 ? 110 : 210;
+      view.circle(Math.cos(angle) * ring, Math.sin(angle) * ring, 18).fill({ color: 0xffba08, alpha: 0.5 });
+    }
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.bossHazards.push({
+      view,
+      kind: "bigFirePit",
+      x,
+      y,
+      radius: BIG_FIRE_PIT.radius,
+      lifeMs: BIG_FIRE_PIT.lifeMs,
+      damage: BIG_FIRE_PIT.damage,
+      tickElapsedMs: BIG_FIRE_PIT.tickMs,
       expiresIntoFire: false,
       velocityX: 0,
       velocityY: 0,
@@ -3907,8 +4073,24 @@ export class PixiWastelandGame {
 
   private updateInteriorVisibilityMask(currentBuildingId: string | null): void {
     this.interiorVisibilityMask.clear();
-    this.interiorVisibilityMask.visible = currentBuildingId !== null;
-    if (!currentBuildingId) return;
+    this.interiorVisibilityMask.visible = currentBuildingId !== null || this.playerVisionNarrowMs > 0;
+    if (!currentBuildingId) {
+      if (this.playerVisionNarrowMs <= 0 || !this.player) return;
+      const radius = 56;
+      const left = this.player.x - radius;
+      const right = this.player.x + radius;
+      const top = this.player.y - radius;
+      const bottom = this.player.y + radius;
+      this.interiorVisibilityMask
+        .rect(0, 0, MAP_WIDTH, top)
+        .rect(0, bottom, MAP_WIDTH, MAP_HEIGHT - bottom)
+        .rect(0, top, left, radius * 2)
+        .rect(right, top, MAP_WIDTH - right, radius * 2)
+        .fill({ color: 0x030403, alpha: 0.97 })
+        .circle(this.player.x, this.player.y, radius)
+        .stroke({ color: 0xff4d6d, alpha: 0.85, width: 3 });
+      return;
+    }
 
     const building = this.buildingVisuals.find((visual) => visual.id === currentBuildingId);
     if (!building) return;

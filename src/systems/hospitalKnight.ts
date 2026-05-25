@@ -5,6 +5,9 @@ export const HOSPITAL_KNIGHT_GUARD_RADIUS = 240;
 export const HOSPITAL_KNIGHT_AGGRO_RADIUS = 180;
 export const INITIAL_BONE_HORDE_COUNT = 20;
 export const HOLY_SHROUD_MAX_CASTS = 3;
+export const GIANT_SWORD_TRAP_MS = 3000;
+export const BONE_CONTACT_DAMAGE = 10;
+export const BONE_SOLDIER_CONTACT_DAMAGE = 19;
 const RUINED_HOSPITAL = { x: 1060, y: 3260, width: 520, height: 360 };
 
 export const HOSPITAL_KNIGHT_DEFINITION = {

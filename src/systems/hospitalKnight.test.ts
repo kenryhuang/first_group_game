@@ -4,6 +4,9 @@ import {
   HOSPITAL_KNIGHT_DEFINITION,
   HOSPITAL_KNIGHT_GUARD_RADIUS,
   HOSPITAL_KNIGHT_SPAWN,
+  BONE_CONTACT_DAMAGE,
+  BONE_SOLDIER_CONTACT_DAMAGE,
+  GIANT_SWORD_TRAP_MS,
   getHospitalKnightGuardRoamTarget,
   getHospitalKnightPhase,
   getInitialBoneHordeCount,
@@ -46,5 +49,11 @@ describe("hospital knight boss", () => {
     expect(shouldConvertZombieToBoneSoldier(0)).toBe(true);
     expect(shouldConvertZombieToBoneSoldier(2)).toBe(true);
     expect(shouldConvertZombieToBoneSoldier(3)).toBe(false);
+  });
+
+  it("uses the tuned shackle duration and bone contact damage", () => {
+    expect(GIANT_SWORD_TRAP_MS).toBe(3000);
+    expect(BONE_CONTACT_DAMAGE).toBe(10);
+    expect(BONE_SOLDIER_CONTACT_DAMAGE).toBe(19);
   });
 });
