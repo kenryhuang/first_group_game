@@ -70,3 +70,6 @@ Desktop.ini
 
 # Local git worktrees
 .worktrees/
+
+# Superpowers brainstorming companion output
+.superpowers/
