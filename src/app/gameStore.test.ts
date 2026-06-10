@@ -31,8 +31,26 @@ describe("game store phases", () => {
     store.startGame();
 
     expect(store.runState.level).toBe(1);
-    expect(store.runState.activeSkillIds).toEqual(["cleaver-dash"]);
+    expect(store.runState.activeSkillIds).toEqual([]);
     expect(store.runState.selectedMechFormId).toBeNull();
     expect(store.runState.pendingMechFormIds).toEqual([]);
+  });
+
+  it("starts story mode without changing classic mode behavior", () => {
+    const store = useGameStore();
+
+    store.openStoryIntro();
+    expect(store.phase).toBe("storyIntro");
+
+    store.openStoryMechSelect();
+    expect(store.phase).toBe("storyMechSelect");
+
+    store.startStoryMode("vanguard");
+
+    expect(store.phase).toBe("playing");
+    expect(store.mode).toBe("story");
+    expect(store.selectedStoryMechId).toBe("vanguard");
+    expect(store.bossRushScenarioId).toBeNull();
+    expect(store.runState.level).toBe(1);
   });
 });

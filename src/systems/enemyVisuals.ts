@@ -42,4 +42,34 @@ export const BOSS_VISUAL_THEMES: Record<BossId, BossVisualTheme> = {
     accentColor: 0xf77f00,
     weaponColor: 0xffba08,
   },
+  beastmaster: {
+    bodyColor: 0x3d5a35,
+    armorColor: 0x1f2f1b,
+    accentColor: 0xa7c957,
+    weaponColor: 0xe9c46a,
+  },
+  "plague-doctor": {
+    bodyColor: 0x244b4f,
+    armorColor: 0x12272a,
+    accentColor: 0x2ec4b6,
+    weaponColor: 0x7bd88f,
+  },
+  "tesla-engineer": {
+    bodyColor: 0x263859,
+    armorColor: 0x141c2e,
+    accentColor: 0x68e1fd,
+    weaponColor: 0xf7d774,
+  },
+  magician: {
+    bodyColor: 0x2d174d,
+    armorColor: 0x13091f,
+    accentColor: 0xff4d9d,
+    weaponColor: 0xfff3b0,
+  },
+  "war-convoy": {
+    bodyColor: 0x4a4f57,
+    armorColor: 0x1b1f24,
+    accentColor: 0xff6b35,
+    weaponColor: 0xc8d5d9,
+  },
 };

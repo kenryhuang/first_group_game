@@ -20,7 +20,7 @@ describe("hud", () => {
     expect(lines[0]).toContain("Lv 10");
     expect(lines[1]).toContain("污染 12");
     expect(lines[2]).toContain("追杀 变异厨师");
-    expect(lines[3]).toContain("技能 菜刀冲刺");
+    expect(lines[3]).toContain("技能 无");
   });
   it("shows pending and selected final mech forms", () => {
     const pendingLines = createHudLines({

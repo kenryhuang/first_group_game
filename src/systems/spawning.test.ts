@@ -35,6 +35,18 @@ describe("spawning", () => {
     expect(spawn.y).toBeLessThanOrEqual(MAP_HEIGHT);
   });
 
+  it("can spawn enemies inside larger story-mode map bounds", () => {
+    const spawn = getSpawnPositionAroundPlayer({ x: 19980, y: 19980 }, 0, {
+      width: 20000,
+      height: 20000,
+    });
+
+    expect(spawn.x).toBeLessThanOrEqual(20000);
+    expect(spawn.y).toBeLessThanOrEqual(20000);
+    expect(spawn.x).toBeGreaterThan(10000);
+    expect(spawn.y).toBeGreaterThan(10000);
+  });
+
   it("places Bosses near the player but inside the map", () => {
     const spawn = getBossSpawnPosition({ x: 120, y: 120 }, "chef");
 

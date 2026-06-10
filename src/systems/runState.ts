@@ -23,7 +23,7 @@ export function createRunState(): RunState {
     health: PLAYER_BASELINE.maxHealth,
     maxHealth: PLAYER_BASELINE.maxHealth,
     baseDamage: PLAYER_BASELINE.basicDamage,
-    activeSkillIds: ["cleaver-dash"],
+    activeSkillIds: [],
     passiveFragmentIds: [],
     specialItemIds: [],
     killedBossIds: [],
@@ -39,18 +39,19 @@ export function createRunState(): RunState {
   };
 }
 
-export function createExperimentalRunState(): RunState {
+export function createExperimentalRunState(level = 50): RunState {
   const skillUpgradeRanks = Object.fromEntries(
     SKILL_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxRank]),
   );
-  const maxHealth = getRunMaxHealth(50, skillUpgradeRanks);
+  const clampedLevel = Math.max(1, Math.round(level));
+  const maxHealth = getRunMaxHealth(clampedLevel, skillUpgradeRanks);
   return {
     ...createRunState(),
-    level: 50,
+    level: clampedLevel,
     experience: 0,
     health: maxHealth,
     maxHealth,
-    baseDamage: Math.round(PLAYER_BASELINE.basicDamage * (1 + (50 - 1) * 0.03)),
+    baseDamage: Math.round(PLAYER_BASELINE.basicDamage * (1 + (clampedLevel - 1) * 0.03)),
     activeSkillIds: SKILLS.map((skill) => skill.id),
     skillUpgradeRanks,
     pendingSkillChoiceIds: [],
@@ -58,6 +59,50 @@ export function createExperimentalRunState(): RunState {
     pendingMechFormIds: ["laser", "missile", "blade"],
     selectedMechFormId: null,
   };
+}
+
+export function createBossRushDuelRunState(level: number): RunState {
+  const clampedLevel = Math.max(1, Math.round(level));
+  const skillUpgradeRanks = createBossRushDuelSkillUpgradeRanks(clampedLevel);
+  const maxHealth = getRunMaxHealth(clampedLevel, skillUpgradeRanks);
+  return {
+    ...createRunState(),
+    level: clampedLevel,
+    experience: 0,
+    health: maxHealth,
+    maxHealth,
+    baseDamage: Math.round(PLAYER_BASELINE.basicDamage * (1 + (clampedLevel - 1) * 0.022)),
+    activeSkillIds: getBossRushDuelSkillIds(clampedLevel),
+    skillUpgradeRanks,
+    pendingSkillChoiceIds: [],
+    killsTowardSkillChoice: 0,
+    pendingMechFormIds: clampedLevel >= MECH_FORM_UNLOCK_LEVEL ? ["laser", "missile", "blade"] : [],
+    selectedMechFormId: null,
+  };
+}
+
+function getBossRushDuelSkillIds(level: number): string[] {
+  if (level < 10) return ["cleaver-dash"];
+  if (level < 15) return ["cleaver-dash", "balloon-barrage"];
+  if (level < 20) return ["cleaver-dash", "balloon-barrage", "explosive-parcel"];
+  return ["cleaver-dash", "balloon-barrage", "explosive-parcel", "oil-flame"];
+}
+
+function createBossRushDuelSkillUpgradeRanks(level: number): Record<string, number> {
+  if (level < 20) return {};
+  const rankCap = level >= 50 ? 2 : level >= 40 ? 2 : 1;
+  const allowedUpgradeIds = new Set(
+    level >= 40
+      ? ["firepower-core", "rapid-feeder", "armor-plating", "servo-legs", "skill-overclock", "missile-pod", "focus-laser", "micro-missiles"]
+      : level >= 30
+        ? ["firepower-core", "rapid-feeder", "armor-plating", "servo-legs", "skill-overclock"]
+        : ["firepower-core", "armor-plating", "servo-legs"],
+  );
+  return Object.fromEntries(
+    SKILL_UPGRADES
+      .filter((upgrade) => allowedUpgradeIds.has(upgrade.id))
+      .map((upgrade) => [upgrade.id, Math.min(rankCap, upgrade.maxRank)]),
+  );
 }
 
 export function gainRunExperience(state: RunState, amount: number): RunState {

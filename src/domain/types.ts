@@ -1,4 +1,12 @@
-export type BossId = "chef" | "clown" | "courier";
+export type BossId =
+  | "chef"
+  | "clown"
+  | "courier"
+  | "beastmaster"
+  | "plague-doctor"
+  | "tesla-engineer"
+  | "magician"
+  | "war-convoy";
 export type MechFormId = "laser" | "missile" | "blade";
 export type SkillTag =
   | "melee"

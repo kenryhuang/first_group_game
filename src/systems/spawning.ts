@@ -18,14 +18,23 @@ export interface Point {
   y: number;
 }
 
-export function getSpawnPositionAroundPlayer(player: Point, seed: number): Point {
+export interface MapBounds {
+  width: number;
+  height: number;
+}
+
+export function getSpawnPositionAroundPlayer(
+  player: Point,
+  seed: number,
+  bounds: MapBounds = { width: MAP_WIDTH, height: MAP_HEIGHT },
+): Point {
   const angle = seed * 2.399963229728653;
   const ring = seed % 2 === 0 ? ENEMY_MIN_SPAWN_DISTANCE : ENEMY_MAX_SPAWN_DISTANCE;
 
   return clampToMap({
     x: player.x + Math.cos(angle) * ring,
     y: player.y + Math.sin(angle) * ring,
-  });
+  }, bounds);
 }
 
 export function getBossSpawnPosition(player: Point, bossId: BossId): Point {
@@ -33,6 +42,11 @@ export function getBossSpawnPosition(player: Point, bossId: BossId): Point {
     chef: { x: 820, y: -520 },
     clown: { x: -940, y: -760 },
     courier: { x: 520, y: 960 },
+    beastmaster: { x: -760, y: 760 },
+    "plague-doctor": { x: 0, y: -920 },
+    "tesla-engineer": { x: 0, y: 1040 },
+    magician: { x: 980, y: 0 },
+    "war-convoy": { x: -1080, y: 0 },
   };
   const offset = offsets[bossId];
   return clampToMap({
@@ -71,10 +85,10 @@ export function shouldAllowSmallEnemySpawning({
   return !experimentalDisabled && !finalBossActive;
 }
 
-function clampToMap(point: Point): Point {
+function clampToMap(point: Point, bounds: MapBounds = { width: MAP_WIDTH, height: MAP_HEIGHT }): Point {
   return {
-    x: clamp(point.x, 24, MAP_WIDTH - 24),
-    y: clamp(point.y, 24, MAP_HEIGHT - 24),
+    x: clamp(point.x, 24, bounds.width - 24),
+    y: clamp(point.y, 24, bounds.height - 24),
   };
 }
 

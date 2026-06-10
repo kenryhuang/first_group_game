@@ -5,6 +5,7 @@ import {
   chooseRunMechForm,
   chooseRunSkillUpgrade,
   createExperimentalRunState,
+  createBossRushDuelRunState,
   createRunState,
   collectNode,
   gainRunExperience,
@@ -20,7 +21,7 @@ describe("run state", () => {
     const state = createRunState();
     expect(state.level).toBe(1);
     expect(state.health).toBe(100);
-    expect(state.activeSkillIds).toEqual(["cleaver-dash"]);
+    expect(state.activeSkillIds).toEqual([]);
     expect(state.killedBossIds).toEqual([]);
     expect(state.specialItemIds).toEqual([]);
   });
@@ -129,8 +130,12 @@ describe("run state", () => {
 
   it("can start in experimental endgame mode with every upgrade maxed", () => {
     const state = createExperimentalRunState();
+    const courierDuelState = createExperimentalRunState(15);
 
     expect(state.level).toBe(50);
+    expect(courierDuelState.level).toBe(15);
+    expect(courierDuelState.baseDamage).toBeLessThan(state.baseDamage);
+    expect(courierDuelState.maxHealth).toBeLessThan(state.maxHealth);
     expect(state.pendingMechFormIds).toEqual(["laser", "missile", "blade"]);
     expect(state.pendingSkillChoiceIds).toEqual([]);
     expect(state.killsTowardSkillChoice).toBe(0);
@@ -138,5 +143,26 @@ describe("run state", () => {
       expect(state.skillUpgradeRanks[upgrade.id]).toBe(upgrade.maxRank);
     }
     expect(isEndgameReady(chooseRunMechForm(state, "laser"))).toBe(true);
+  });
+
+  it("starts Boss Rush duels with only the skills and stats for that boss level", () => {
+    const chefDuel = createBossRushDuelRunState(5);
+    const courierDuel = createBossRushDuelRunState(15);
+    const knightDuel = createBossRushDuelRunState(20);
+    const coreDuel = createBossRushDuelRunState(50);
+    const maxed = createExperimentalRunState(50);
+
+    expect(chefDuel.level).toBe(5);
+    expect(chefDuel.activeSkillIds).toEqual(["cleaver-dash"]);
+    expect(courierDuel.activeSkillIds).toEqual(["cleaver-dash", "balloon-barrage", "explosive-parcel"]);
+    expect(knightDuel.activeSkillIds).toEqual(["cleaver-dash", "balloon-barrage", "explosive-parcel", "oil-flame"]);
+    expect(coreDuel.activeSkillIds).toEqual(["cleaver-dash", "balloon-barrage", "explosive-parcel", "oil-flame"]);
+
+    expect(chefDuel.baseDamage).toBeLessThan(courierDuel.baseDamage);
+    expect(courierDuel.maxHealth).toBeLessThan(coreDuel.maxHealth);
+    expect(getCompletedSkillUpgradeCount(chefDuel.skillUpgradeRanks)).toBe(0);
+    expect(getCompletedSkillUpgradeCount(coreDuel.skillUpgradeRanks)).toBeGreaterThan(0);
+    expect(getCompletedSkillUpgradeCount(coreDuel.skillUpgradeRanks)).toBeLessThan(getCompletedSkillUpgradeCount(maxed.skillUpgradeRanks));
+    expect(coreDuel.pendingMechFormIds).toEqual(["laser", "missile", "blade"]);
   });
 });

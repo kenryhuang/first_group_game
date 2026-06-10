@@ -65,6 +65,11 @@ body {
   font-size: 18px;
 }
 
+.hud-return-action {
+  width: 100%;
+  pointer-events: auto;
+}
+
 .screen-panel {
   position: fixed;
   inset: 0;
@@ -121,6 +126,100 @@ body {
   line-height: 1.5;
 }
 
+.screen-copy.compact {
+  max-width: 760px;
+  margin-top: -8px;
+  font-size: 17px;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.mode-grid {
+  display: grid;
+  width: min(860px, calc(100vw - 48px));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.scenario-grid {
+  display: grid;
+  width: min(980px, calc(100vw - 48px));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.story-mech-grid {
+  width: min(920px, calc(100vw - 48px));
+}
+
+.mode-card {
+  min-height: 150px;
+  border: 1px solid rgba(255, 243, 176, 0.42);
+  border-radius: 8px;
+  padding: 18px;
+  color: #f8f4e3;
+  background: rgba(17, 21, 16, 0.82);
+  text-align: left;
+  cursor: pointer;
+}
+
+.scenario-card {
+  min-height: 156px;
+  border: 1px solid rgba(104, 225, 253, 0.42);
+  border-radius: 8px;
+  padding: 16px;
+  color: #f8f4e3;
+  background: rgba(12, 19, 20, 0.84);
+  text-align: left;
+  cursor: pointer;
+}
+
+.scenario-card:hover {
+  border-color: rgba(104, 225, 253, 0.95);
+  background: rgba(18, 31, 33, 0.94);
+}
+
+.mode-card.available:hover {
+  border-color: rgba(255, 209, 102, 0.95);
+  background: rgba(31, 37, 25, 0.92);
+}
+
+.mode-card.locked {
+  color: rgba(248, 244, 227, 0.54);
+  cursor: not-allowed;
+}
+
+.mode-title,
+.mode-copy {
+  display: block;
+}
+
+.mode-title {
+  margin-bottom: 10px;
+  color: #ffd166;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.mode-card.locked .mode-title {
+  color: rgba(255, 209, 102, 0.58);
+}
+
+.mode-copy {
+  color: #d8dfd0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.mode-card.locked .mode-copy {
+  color: rgba(216, 223, 208, 0.56);
+}
+
 .primary-action {
   min-width: 168px;
   min-height: 48px;
@@ -136,4 +235,33 @@ body {
 
 .primary-action:hover {
   background: #fff3b0;
+}
+
+.secondary-action {
+  min-width: 132px;
+  min-height: 42px;
+  margin-top: 20px;
+  border: 1px solid rgba(216, 223, 208, 0.5);
+  border-radius: 6px;
+  padding: 9px 18px;
+  color: #f8f4e3;
+  background: rgba(17, 21, 16, 0.8);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary-action:hover {
+  border-color: rgba(255, 243, 176, 0.8);
+}
+
+@media (max-width: 720px) {
+  .mode-grid,
+  .scenario-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-card {
+    min-height: 108px;
+  }
 }

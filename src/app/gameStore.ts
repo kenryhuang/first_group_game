@@ -1,11 +1,14 @@
 import { defineStore } from "pinia";
 import type { RunState } from "../domain/types";
+import type { BossRushScenarioId } from "../systems/bossRush";
 import { createRunState } from "../systems/runState";
 import { MAP_HEIGHT, MAP_WIDTH } from "../systems/spawning";
 import { BUILDINGS } from "../systems/terrain";
 import { createHudLines } from "../ui/hud";
 
-export type GamePhase = "menu" | "playing" | "gameOver" | "missionSuccess";
+export type GamePhase = "menu" | "storyIntro" | "storyMechSelect" | "bossRushSelect" | "playing" | "gameOver" | "missionSuccess";
+export type GameMode = "classic" | "story" | "bossRush";
+export type StoryMechId = "vanguard" | "medic" | "engineer";
 
 export interface GameMetrics {
   enemyCount: number;
@@ -20,10 +23,17 @@ export interface GameMetrics {
   insideBuilding: boolean;
   currentBuildingId: string | null;
   playerHealth: number;
+  storyVisionRadius?: number;
+  storyLitLighthouseCount?: number;
+  storyMonsterPressureMultiplier?: number;
+  selectedStoryMechId?: StoryMechId | null;
 }
 
 interface GameStoreState extends GameMetrics {
   phase: GamePhase;
+  mode: GameMode;
+  selectedStoryMechId: StoryMechId | null;
+  bossRushScenarioId: BossRushScenarioId | null;
   runState: RunState;
   message: string;
 }
@@ -42,18 +52,38 @@ function createInitialMetrics(): GameMetrics {
     insideBuilding: false,
     currentBuildingId: null,
     playerHealth: createRunState().health,
+    storyVisionRadius: undefined,
+    storyLitLighthouseCount: undefined,
+    storyMonsterPressureMultiplier: undefined,
+    selectedStoryMechId: null,
   };
 }
+
+export const STORY_MECH_LABELS: Record<StoryMechId, string> = {
+  vanguard: "先锋机甲",
+  medic: "医疗机甲",
+  engineer: "工程机甲",
+};
 
 export const useGameStore = defineStore("game", {
   state: (): GameStoreState => ({
     phase: "menu",
+    mode: "classic",
+    selectedStoryMechId: null,
+    bossRushScenarioId: null,
     runState: createRunState(),
     message: "点击开始游戏，部署机甲进入城市废土。",
     ...createInitialMetrics(),
   }),
   getters: {
     hudLines: (state): string[] => [
+      `模式 ${state.mode === "story" ? "剧情模式" : state.mode === "bossRush" ? "Boss Rush" : "经典模式"}`,
+      ...(state.mode === "story"
+        ? [
+            `灯塔 ${state.storyLitLighthouseCount ?? 0}/1  视野 ${state.storyVisionRadius ?? 0}  怪物压力 x${state.storyMonsterPressureMultiplier ?? 1}`,
+            `剧情机甲 ${state.selectedStoryMechId ? STORY_MECH_LABELS[state.selectedStoryMechId] : "未选择"}  未解锁区城墙封锁  地图 20000x20000`,
+          ]
+        : []),
       ...createHudLines(state.runState),
       `地图 ${state.mapWidth}x${state.mapHeight}  怪物 ${state.enemyCount}  子弹 ${state.bulletCount}  楼房 ${state.buildingCount}  Boss ${state.bossCount}/${Math.max(3, state.bossCount, state.bossNames.length)}`,
       `位置 ${state.currentBuildingId ? `室内 ${state.currentBuildingId}` : "室外"}`,
@@ -64,9 +94,51 @@ export const useGameStore = defineStore("game", {
   actions: {
     startGame(): void {
       this.phase = "playing";
+      this.mode = "classic";
+      this.selectedStoryMechId = null;
+      this.bossRushScenarioId = null;
       this.runState = createRunState();
       Object.assign(this, createInitialMetrics());
       this.message = "机甲上线。城市废土开始刷新威胁。";
+    },
+    openStoryIntro(): void {
+      this.phase = "storyIntro";
+      this.mode = "story";
+      this.selectedStoryMechId = null;
+      this.bossRushScenarioId = null;
+      this.message = "剧情模式：任务简报载入中。";
+    },
+    openStoryMechSelect(): void {
+      this.phase = "storyMechSelect";
+      this.mode = "story";
+      this.message = "选择本次进入雾城的机甲类型。";
+    },
+    startStoryMode(mechId?: StoryMechId): void {
+      const selectedMechId = mechId ?? this.selectedStoryMechId ?? "vanguard";
+      this.phase = "playing";
+      this.mode = "story";
+      this.selectedStoryMechId = selectedMechId;
+      this.bossRushScenarioId = null;
+      this.runState = createRunState();
+      Object.assign(this, createInitialMetrics());
+      this.selectedStoryMechId = selectedMechId;
+      this.message = "剧情模式：进入雾城。先点亮中心灯塔，建立临时视野。";
+    },
+    openBossRushSelect(): void {
+      this.phase = "bossRushSelect";
+      this.mode = "bossRush";
+      this.selectedStoryMechId = null;
+      this.bossRushScenarioId = null;
+      this.message = "选择 Boss Rush 副本。";
+    },
+    startBossRush(scenarioId: BossRushScenarioId): void {
+      this.phase = "playing";
+      this.mode = "bossRush";
+      this.selectedStoryMechId = null;
+      this.bossRushScenarioId = scenarioId;
+      this.runState = createRunState();
+      Object.assign(this, createInitialMetrics());
+      this.message = "Boss Rush 已启动。";
     },
     finishGame(): void {
       this.phase = "gameOver";
@@ -78,6 +150,9 @@ export const useGameStore = defineStore("game", {
     },
     returnToMenu(): void {
       this.phase = "menu";
+      this.mode = "classic";
+      this.selectedStoryMechId = null;
+      this.bossRushScenarioId = null;
       this.runState = createRunState();
       Object.assign(this, createInitialMetrics());
       this.message = "点击开始游戏，部署机甲进入城市废土。";
@@ -98,6 +173,10 @@ export const useGameStore = defineStore("game", {
       this.insideBuilding = metrics.insideBuilding;
       this.currentBuildingId = metrics.currentBuildingId;
       this.playerHealth = metrics.playerHealth;
+      this.storyVisionRadius = metrics.storyVisionRadius;
+      this.storyLitLighthouseCount = metrics.storyLitLighthouseCount;
+      this.storyMonsterPressureMultiplier = metrics.storyMonsterPressureMultiplier;
+      this.selectedStoryMechId = metrics.selectedStoryMechId ?? this.selectedStoryMechId;
     },
     setMessage(message: string): void {
       this.message = message;

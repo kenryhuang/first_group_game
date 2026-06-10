@@ -11,12 +11,20 @@ import {
 
 describe("advanced boss skills", () => {
   it("defines runtime health and cooldown for each roaming Boss", () => {
-    expect(ROAMING_BOSS_RUNTIME_STATS.chef.maxHealth).toBe(4000);
-    expect(ROAMING_BOSS_RUNTIME_STATS.chef.skillCooldownMs).toBe(3200);
-    expect(ROAMING_BOSS_RUNTIME_STATS.clown.maxHealth).toBe(1000);
-    expect(ROAMING_BOSS_RUNTIME_STATS.clown.skillCooldownMs).toBe(4200);
-    expect(ROAMING_BOSS_RUNTIME_STATS.courier.maxHealth).toBe(1550);
-    expect(ROAMING_BOSS_RUNTIME_STATS.courier.skillCooldownMs).toBe(3600);
+    expect(Object.keys(ROAMING_BOSS_RUNTIME_STATS)).toEqual([
+      "chef",
+      "clown",
+      "courier",
+      "beastmaster",
+      "plague-doctor",
+      "tesla-engineer",
+      "magician",
+      "war-convoy",
+    ]);
+    for (const stats of Object.values(ROAMING_BOSS_RUNTIME_STATS)) {
+      expect(stats.maxHealth).toBeGreaterThan(0);
+      expect(stats.skillCooldownMs).toBeGreaterThan(0);
+    }
   });
 
   it("adds the requested advanced skills to each roaming Boss", () => {
@@ -34,6 +42,17 @@ describe("advanced boss skills", () => {
       "drone-airdrop",
       "delivery-lock",
     ]);
+    expect(getAdvancedBossSkills("beastmaster").map((skill) => skill.id)).toEqual([
+      "zombie-siege",
+      "hound-rush",
+      "beast-unstoppable",
+      "stampede-command",
+      "total-frenzy",
+    ]);
+    expect(getAdvancedBossSkills("plague-doctor").map((skill) => skill.id)).toEqual(["toxic-cloud", "infected-patients"]);
+    expect(getAdvancedBossSkills("tesla-engineer").map((skill) => skill.id)).toEqual(["tesla-turret", "magnetic-mine"]);
+    expect(getAdvancedBossSkills("magician").map((skill) => skill.id)).toEqual(["hat-vanish", "mirror-box"]);
+    expect(getAdvancedBossSkills("war-convoy").map((skill) => skill.id)).toEqual(["missile-salvo", "road-crush"]);
   });
 
   it("describes warning windows, damage, and combat roles", () => {

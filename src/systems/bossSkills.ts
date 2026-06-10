@@ -8,7 +8,20 @@ export type AdvancedBossSkillId =
   | "clone-trick"
   | "knife-gala"
   | "drone-airdrop"
-  | "delivery-lock";
+  | "delivery-lock"
+  | "zombie-siege"
+  | "hound-rush"
+  | "beast-unstoppable"
+  | "stampede-command"
+  | "total-frenzy"
+  | "toxic-cloud"
+  | "infected-patients"
+  | "tesla-turret"
+  | "magnetic-mine"
+  | "hat-vanish"
+  | "mirror-box"
+  | "missile-salvo"
+  | "road-crush";
 
 export type AdvancedBossSkillRole = "area" | "summon" | "charge" | "lock" | "projectile";
 
@@ -28,6 +41,11 @@ export const ROAMING_BOSS_RUNTIME_STATS = {
   chef: { maxHealth: 4000, skillCooldownMs: 3200 },
   clown: { maxHealth: 1000, skillCooldownMs: 4200 },
   courier: { maxHealth: 1550, skillCooldownMs: 3600 },
+  beastmaster: { maxHealth: 5200, skillCooldownMs: 3800 },
+  "plague-doctor": { maxHealth: 5600, skillCooldownMs: 4000 },
+  "tesla-engineer": { maxHealth: 6200, skillCooldownMs: 3600 },
+  magician: { maxHealth: 4800, skillCooldownMs: 3300 },
+  "war-convoy": { maxHealth: 11000, skillCooldownMs: 3000 },
 } as const;
 
 export const BIG_FIRE_PIT = {
@@ -114,6 +132,125 @@ export const ADVANCED_BOSS_SKILLS: AdvancedBossSkill[] = [
     warningMs: 1050,
     damage: 26,
     radius: 120,
+  },
+  {
+    id: "zombie-siege",
+    bossId: "beastmaster",
+    name: "尸潮来袭",
+    role: "summon",
+    warningMs: 650,
+    damage: 8,
+    radius: 520,
+  },
+  {
+    id: "hound-rush",
+    bossId: "beastmaster",
+    name: "猎狗奔袭",
+    role: "summon",
+    warningMs: 520,
+    damage: 6,
+    radius: 460,
+  },
+  {
+    id: "beast-unstoppable",
+    bossId: "beastmaster",
+    name: "全体霸体",
+    role: "lock",
+    warningMs: 450,
+    damage: 1,
+    radius: 900,
+  },
+  {
+    id: "stampede-command",
+    bossId: "beastmaster",
+    name: "冲冲冲",
+    role: "charge",
+    warningMs: 620,
+    damage: 16,
+    radius: 820,
+  },
+  {
+    id: "total-frenzy",
+    bossId: "beastmaster",
+    name: "彻底暴走",
+    role: "summon",
+    warningMs: 900,
+    damage: 12,
+    radius: 760,
+  },
+  {
+    id: "toxic-cloud",
+    bossId: "plague-doctor",
+    name: "毒雾扩散",
+    role: "area",
+    warningMs: 900,
+    damage: 12,
+    radius: 170,
+    lowHealthThreshold: 1800,
+    lowHealthDamage: 18,
+  },
+  {
+    id: "infected-patients",
+    bossId: "plague-doctor",
+    name: "感染病患",
+    role: "summon",
+    warningMs: 620,
+    damage: 7,
+    radius: 160,
+  },
+  {
+    id: "tesla-turret",
+    bossId: "tesla-engineer",
+    name: "磁暴炮塔",
+    role: "projectile",
+    warningMs: 540,
+    damage: 26,
+    radius: 9999,
+  },
+  {
+    id: "magnetic-mine",
+    bossId: "tesla-engineer",
+    name: "磁吸地雷",
+    role: "area",
+    warningMs: 780,
+    damage: 20,
+    radius: 130,
+  },
+  {
+    id: "hat-vanish",
+    bossId: "magician",
+    name: "礼帽消失",
+    role: "lock",
+    warningMs: 700,
+    damage: 18,
+    radius: 120,
+  },
+  {
+    id: "mirror-box",
+    bossId: "magician",
+    name: "镜像魔盒",
+    role: "area",
+    warningMs: 760,
+    damage: 16,
+    radius: 110,
+  },
+  {
+    id: "missile-salvo",
+    bossId: "war-convoy",
+    name: "导弹齐射",
+    role: "area",
+    warningMs: 650,
+    damage: 24,
+    radius: 150,
+  },
+  {
+    id: "road-crush",
+    bossId: "war-convoy",
+    name: "装甲碾压",
+    role: "charge",
+    warningMs: 850,
+    damage: 34,
+    radius: 130,
   },
 ];
 
