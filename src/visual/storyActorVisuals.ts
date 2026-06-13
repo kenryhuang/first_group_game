@@ -1,0 +1,111 @@
+import { AnimatedSprite, Graphics, Texture } from "pixi.js";
+import {
+  STORY_SLICE_ASSETS,
+  type StoryAnimationName,
+  type StoryDirection,
+} from "./storyAssetManifest";
+import { STORY_ART_PALETTE } from "./storyArtDirection";
+
+export type StoryActorCharacter = "vanguard" | "zombie";
+
+export interface StoryActorVisual {
+  character: StoryActorCharacter;
+  animation: StoryAnimationName;
+  direction: StoryDirection;
+  sprite: AnimatedSprite;
+  play(animation: StoryAnimationName, direction: StoryDirection): void;
+  flash(tint?: number): void;
+  destroy(): void;
+}
+
+export function getStoryActorDirection(vector: {
+  x: number;
+  y: number;
+}): StoryDirection {
+  if (Math.abs(vector.x) > Math.abs(vector.y)) {
+    return vector.x >= 0 ? "right" : "left";
+  }
+  return vector.y >= 0 ? "down" : "up";
+}
+
+function getTextures(
+  character: StoryActorCharacter,
+  animation: StoryAnimationName,
+  direction: StoryDirection,
+): Texture[] {
+  const definition =
+    STORY_SLICE_ASSETS.characters[character].animations[animation]?.[direction];
+  if (!definition) {
+    return [Texture.WHITE];
+  }
+  return definition.frames.map((frame) => Texture.from(frame));
+}
+
+function getFrameMs(
+  character: StoryActorCharacter,
+  animation: StoryAnimationName,
+  direction: StoryDirection,
+): number {
+  return (
+    STORY_SLICE_ASSETS.characters[character].animations[animation]?.[direction]
+      ?.frameMs ?? 120
+  );
+}
+
+function shouldLoop(
+  character: StoryActorCharacter,
+  animation: StoryAnimationName,
+  direction: StoryDirection,
+): boolean {
+  return (
+    STORY_SLICE_ASSETS.characters[character].animations[animation]?.[direction]
+      ?.loop ?? true
+  );
+}
+
+export function attachStoryActorVisual(
+  view: Graphics,
+  character: StoryActorCharacter,
+  animation: StoryAnimationName,
+  direction: StoryDirection,
+): StoryActorVisual {
+  view.clear();
+  view.allowChildren = true;
+
+  const sprite = new AnimatedSprite(getTextures(character, animation, direction));
+  sprite.anchor.set(0.5);
+  sprite.scale.set(character === "vanguard" ? 0.44 : 0.34);
+  sprite.animationSpeed = 1000 / getFrameMs(character, animation, direction) / 60;
+  sprite.loop = shouldLoop(character, animation, direction);
+  sprite.play();
+  view.addChild(sprite);
+
+  const visual: StoryActorVisual = {
+    character,
+    animation,
+    direction,
+    sprite,
+    play(nextAnimation: StoryAnimationName, nextDirection: StoryDirection): void {
+      visual.animation = nextAnimation;
+      visual.direction = nextDirection;
+      sprite.textures = getTextures(character, nextAnimation, nextDirection);
+      sprite.animationSpeed =
+        1000 / getFrameMs(character, nextAnimation, nextDirection) / 60;
+      sprite.loop = shouldLoop(character, nextAnimation, nextDirection);
+      sprite.gotoAndPlay(0);
+    },
+    flash(tint = STORY_ART_PALETTE.hitRed): void {
+      const previousTint = sprite.tint;
+      sprite.tint = tint;
+      window.setTimeout(() => {
+        if (sprite.destroyed) return;
+        sprite.tint = previousTint;
+      }, 80);
+    },
+    destroy(): void {
+      sprite.destroy();
+    },
+  };
+
+  return visual;
+}
