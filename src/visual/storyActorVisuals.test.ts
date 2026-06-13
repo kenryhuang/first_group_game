@@ -3,7 +3,10 @@ import type { Texture as PixiTexture } from "pixi.js";
 import {
   getStorySliceAssetPaths,
   STORY_SLICE_ASSETS,
+  type StoryAnimationName,
+  type StoryDirection,
 } from "./storyAssetManifest";
+import type { StoryActorCharacter } from "./storyActorVisuals";
 
 const canvasContextStub = {
   drawImage: vi.fn(),
@@ -44,6 +47,45 @@ function expectNoConsoleNoise(): void {
   expect(consoleWarnSpy).not.toHaveBeenCalled();
 }
 
+function getExpectedTextures(
+  character: StoryActorCharacter,
+  animation: StoryAnimationName,
+  direction: StoryDirection,
+): PixiTexture[] {
+  const definition =
+    STORY_SLICE_ASSETS.characters[character].animations[animation]?.[direction];
+  if (!definition) {
+    return [Texture.WHITE];
+  }
+  return definition.frames.map((frame) => {
+    const texture = cachedTextures.get(frame);
+    expect(texture).toBeDefined();
+    return texture as PixiTexture;
+  });
+}
+
+function getExpectedAnimationSpeed(
+  character: StoryActorCharacter,
+  animation: StoryAnimationName,
+  direction: StoryDirection,
+): number {
+  const frameMs =
+    STORY_SLICE_ASSETS.characters[character].animations[animation]?.[direction]
+      ?.frameMs ?? 120;
+  return 1000 / frameMs / 60;
+}
+
+function getExpectedLoop(
+  character: StoryActorCharacter,
+  animation: StoryAnimationName,
+  direction: StoryDirection,
+): boolean {
+  return (
+    STORY_SLICE_ASSETS.characters[character].animations[animation]?.[direction]
+      ?.loop ?? true
+  );
+}
+
 describe("story actor visuals", () => {
   beforeEach(() => {
     seedStoryTextures();
@@ -55,6 +97,9 @@ describe("story actor visuals", () => {
     expectNoConsoleNoise();
     consoleErrorSpy.mockRestore();
     consoleWarnSpy.mockRestore();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     Cache.reset();
   });
 
@@ -86,5 +131,91 @@ describe("story actor visuals", () => {
     expect(visual.animation).toBe("hit");
     expect(visual.direction).toBe("left");
     expect(view.destroyed).toBe(false);
+  });
+
+  it("updates sprite playback metadata from manifest definitions", () => {
+    const view = new Graphics();
+    const visual = attachStoryActorVisual(view, "vanguard", "idle", "down");
+
+    visual.play("attack", "right");
+
+    expect(visual.sprite.textures).toEqual(
+      getExpectedTextures("vanguard", "attack", "right"),
+    );
+    expect(visual.sprite.animationSpeed).toBeCloseTo(
+      getExpectedAnimationSpeed("vanguard", "attack", "right"),
+    );
+    expect(visual.sprite.loop).toBe(
+      getExpectedLoop("vanguard", "attack", "right"),
+    );
+  });
+
+  it("uses the white texture fallback for a missing animation definition", () => {
+    const view = new Graphics();
+    const visual = attachStoryActorVisual(view, "vanguard", "death", "down");
+
+    expect(visual.sprite.textures).toEqual([Texture.WHITE]);
+    expect(visual.sprite.animationSpeed).toBeCloseTo(1000 / 120 / 60);
+    expect(visual.sprite.loop).toBe(true);
+  });
+
+  it("restores a flash tint after the flash timer completes", () => {
+    vi.useFakeTimers();
+    const view = new Graphics();
+    const visual = attachStoryActorVisual(view, "vanguard", "idle", "down");
+    visual.sprite.tint = 0x123456;
+
+    visual.flash(0xff5b5b);
+
+    expect(visual.sprite.tint).toBe(0xff5b5b);
+    vi.advanceTimersByTime(79);
+    expect(visual.sprite.tint).toBe(0xff5b5b);
+    vi.advanceTimersByTime(1);
+    expect(visual.sprite.tint).toBe(0x123456);
+  });
+
+  it("keeps overlapping flashes tied to the stable base tint", () => {
+    vi.useFakeTimers();
+    const view = new Graphics();
+    const visual = attachStoryActorVisual(view, "vanguard", "idle", "down");
+    visual.sprite.tint = 0x123456;
+
+    visual.flash(0xff5b5b);
+    vi.advanceTimersByTime(40);
+    visual.flash(0x68e1fd);
+    vi.advanceTimersByTime(40);
+
+    expect(visual.sprite.tint).toBe(0x68e1fd);
+    vi.advanceTimersByTime(40);
+    expect(visual.sprite.tint).toBe(0x123456);
+  });
+
+  it("destroys the sprite idempotently and clears a pending flash timeout", () => {
+    vi.useFakeTimers();
+    const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
+    const view = new Graphics();
+    const visual = attachStoryActorVisual(view, "zombie", "run", "left");
+
+    visual.flash(0xff5b5b);
+    visual.destroy();
+
+    expect(visual.sprite.destroyed).toBe(true);
+    expect(visual.sprite.playing).toBe(false);
+    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
+    expect(() => visual.destroy()).not.toThrow();
+    vi.advanceTimersByTime(80);
+    expect(visual.sprite.destroyed).toBe(true);
+  });
+
+  it("destroys the attached sprite when the parent graphics view is destroyed", () => {
+    const view = new Graphics();
+    const visual = attachStoryActorVisual(view, "zombie", "run", "left");
+
+    expect(visual.sprite.playing).toBe(true);
+    view.destroy();
+
+    expect(view.destroyed).toBe(true);
+    expect(visual.sprite.destroyed).toBe(true);
+    expect(visual.sprite.playing).toBe(false);
   });
 });

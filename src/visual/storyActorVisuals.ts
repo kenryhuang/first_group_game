@@ -80,12 +80,37 @@ export function attachStoryActorVisual(
   sprite.play();
   view.addChild(sprite);
 
+  let destroyed = false;
+  let flashBaseTint = sprite.tint;
+  let flashTimeout: number | undefined;
+  let flashToken = 0;
+
+  function clearFlashTimeout(): void {
+    if (flashTimeout === undefined) return;
+    window.clearTimeout(flashTimeout);
+    flashTimeout = undefined;
+  }
+
+  function destroy(): void {
+    if (destroyed) return;
+    destroyed = true;
+    flashToken += 1;
+    clearFlashTimeout();
+    view.off("destroyed", destroy);
+    if (sprite.destroyed) return;
+    sprite.stop();
+    sprite.destroy();
+  }
+
+  view.on("destroyed", destroy);
+
   const visual: StoryActorVisual = {
     character,
     animation,
     direction,
     sprite,
     play(nextAnimation: StoryAnimationName, nextDirection: StoryDirection): void {
+      if (destroyed || sprite.destroyed) return;
       visual.animation = nextAnimation;
       visual.direction = nextDirection;
       sprite.textures = getTextures(character, nextAnimation, nextDirection);
@@ -95,16 +120,21 @@ export function attachStoryActorVisual(
       sprite.gotoAndPlay(0);
     },
     flash(tint = STORY_ART_PALETTE.hitRed): void {
-      const previousTint = sprite.tint;
+      if (destroyed || sprite.destroyed) return;
+      const hasActiveFlash = flashTimeout !== undefined;
+      if (!hasActiveFlash) {
+        flashBaseTint = sprite.tint;
+      }
+      clearFlashTimeout();
+      const token = (flashToken += 1);
       sprite.tint = tint;
-      window.setTimeout(() => {
-        if (sprite.destroyed) return;
-        sprite.tint = previousTint;
+      flashTimeout = window.setTimeout(() => {
+        if (destroyed || sprite.destroyed || token !== flashToken) return;
+        flashTimeout = undefined;
+        sprite.tint = flashBaseTint;
       }, 80);
     },
-    destroy(): void {
-      sprite.destroy();
-    },
+    destroy,
   };
 
   return visual;
