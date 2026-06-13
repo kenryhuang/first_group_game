@@ -27,6 +27,9 @@ export interface GameMetrics {
   storyLitLighthouseCount?: number;
   storyMonsterPressureMultiplier?: number;
   selectedStoryMechId?: StoryMechId | null;
+  storyArtSliceEnabled?: boolean;
+  storyLighthouseVisualState?: "off" | "charging" | "on";
+  storyArtSpriteCount?: number;
 }
 
 interface GameStoreState extends GameMetrics {
@@ -56,6 +59,9 @@ function createInitialMetrics(): GameMetrics {
     storyLitLighthouseCount: undefined,
     storyMonsterPressureMultiplier: undefined,
     selectedStoryMechId: null,
+    storyArtSliceEnabled: false,
+    storyLighthouseVisualState: undefined,
+    storyArtSpriteCount: undefined,
   };
 }
 
@@ -177,6 +183,9 @@ export const useGameStore = defineStore("game", {
       this.storyLitLighthouseCount = metrics.storyLitLighthouseCount;
       this.storyMonsterPressureMultiplier = metrics.storyMonsterPressureMultiplier;
       this.selectedStoryMechId = metrics.selectedStoryMechId ?? this.selectedStoryMechId;
+      this.storyArtSliceEnabled = metrics.storyArtSliceEnabled;
+      this.storyLighthouseVisualState = metrics.storyLighthouseVisualState;
+      this.storyArtSpriteCount = metrics.storyArtSpriteCount;
     },
     setMessage(message: string): void {
       this.message = message;

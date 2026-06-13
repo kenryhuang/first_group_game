@@ -53,4 +53,34 @@ describe("game store phases", () => {
     expect(store.bossRushScenarioId).toBeNull();
     expect(store.runState.level).toBe(1);
   });
+
+  it("defaults and syncs story art slice metrics", () => {
+    const store = useGameStore();
+
+    expect(store.storyArtSliceEnabled).toBe(false);
+    expect(store.storyLighthouseVisualState).toBeUndefined();
+    expect(store.storyArtSpriteCount).toBeUndefined();
+
+    store.syncMetrics({
+      enemyCount: 3,
+      bossCount: 1,
+      bulletCount: 2,
+      buildingCount: 5,
+      mapWidth: 20000,
+      mapHeight: 20000,
+      attackMode: "auto",
+      bossName: "Signal Tyrant",
+      bossNames: ["Signal Tyrant"],
+      insideBuilding: false,
+      currentBuildingId: null,
+      playerHealth: 87,
+      storyArtSliceEnabled: true,
+      storyLighthouseVisualState: "charging",
+      storyArtSpriteCount: 42,
+    });
+
+    expect(store.storyArtSliceEnabled).toBe(true);
+    expect(store.storyLighthouseVisualState).toBe("charging");
+    expect(store.storyArtSpriteCount).toBe(42);
+  });
 });
