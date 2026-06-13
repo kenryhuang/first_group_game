@@ -4330,8 +4330,8 @@ export class PixiWastelandGame {
     for (let index = 0; index < count; index += 1) {
       const row = Math.floor(index / 3);
       const col = index % 3;
-      const x = clamp(this.player.x - lineSpacing + col * lineSpacing + (boss.x < this.player.x ? -190 : 190), 24, MAP_WIDTH - 24);
-      const y = clamp(this.player.y - 70 + row * lineSpacing, 24, MAP_HEIGHT - 24);
+      const x = clamp(this.player.x - lineSpacing + col * lineSpacing + (boss.x < this.player.x ? -190 : 190), 24, this.getMapWidth() - 24);
+      const y = clamp(this.player.y - 70 + row * lineSpacing, 24, this.getMapHeight() - 24);
       this.spawnEnemyActor(
         x,
         y,
