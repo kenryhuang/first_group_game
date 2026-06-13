@@ -2,6 +2,8 @@
 
 This folder contains the first art-slice assets for the story-mode fog city lighthouse scene.
 
+Current committed PNGs are deterministic placeholder assets for pipeline validation and should be replaced with polished production art in a later pass.
+
 ## Style
 
 - Top-down or slightly top-down 2D game asset.
