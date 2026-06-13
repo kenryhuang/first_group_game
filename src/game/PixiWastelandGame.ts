@@ -429,6 +429,12 @@ export class PixiWastelandGame {
   private screenShakeMs = 0;
   private screenShakeMagnitude = 0;
   private gameOver = false;
+  private destroyed = false;
+  private appInitialized = false;
+  private appDestroyed = false;
+  private inputBound = false;
+  private tickerBound = false;
+  private startupToken = 0;
   private spawnSeed = 1;
   private readonly shotSound = new Howl({ src: [BULLET_SOUND], volume: 0.035 });
 
@@ -471,12 +477,19 @@ export class PixiWastelandGame {
   ) {}
 
   async start(): Promise<void> {
+    const startupToken = (this.startupToken += 1);
+    this.destroyed = false;
     await this.app.init({
       backgroundColor: 0x171a16,
       resizeTo: this.host,
       antialias: true,
       preserveDrawingBuffer: true,
     });
+    this.appInitialized = true;
+    if (!this.isActiveStartup(startupToken)) {
+      this.destroyApp();
+      return;
+    }
 
     this.host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.world);
@@ -486,6 +499,9 @@ export class PixiWastelandGame {
     }
     if (this.isStoryMode()) {
       await Assets.load(getStorySliceAssetPaths(STORY_SLICE_ASSETS));
+      if (!this.isActiveStartup(startupToken)) {
+        return;
+      }
     }
     this.drawWorld();
     this.createPlayer();
@@ -502,6 +518,7 @@ export class PixiWastelandGame {
       this.spawnEnemyWave(getEnemySpawnBatchSize(this.state.level, 1000));
     }
     this.app.ticker.add(this.update);
+    this.tickerBound = true;
     this.emitState(
       this.isBossRushMode()
         ? "Boss Rush 副本已展开，选择最终形态后开战。"
@@ -512,12 +529,31 @@ export class PixiWastelandGame {
   }
 
   destroy(): void {
-    this.unbindInput();
-    this.app.ticker.remove(this.update);
+    this.destroyed = true;
+    this.startupToken += 1;
+    if (this.inputBound) {
+      this.unbindInput();
+    }
+    if (this.tickerBound) {
+      this.app.ticker.remove(this.update);
+      this.tickerBound = false;
+    }
     this.clearSkillChoiceOverlay();
     this.clearFormChoiceOverlay();
     this.destroyStoryVisuals();
+    if (this.appInitialized) {
+      this.destroyApp();
+    }
+  }
+
+  private isActiveStartup(startupToken: number): boolean {
+    return !this.destroyed && this.startupToken === startupToken;
+  }
+
+  private destroyApp(): void {
+    if (this.appDestroyed) return;
     this.app.destroy(true, { children: true });
+    this.appDestroyed = true;
   }
 
   private destroyStoryVisuals(): void {
@@ -948,6 +984,7 @@ export class PixiWastelandGame {
     window.addEventListener("keyup", this.handleKeyUp);
     this.app.canvas.addEventListener("pointermove", this.handlePointerMove);
     this.app.canvas.addEventListener("pointerdown", this.handlePointerMove);
+    this.inputBound = true;
   }
 
   private unbindInput(): void {
@@ -955,6 +992,7 @@ export class PixiWastelandGame {
     window.removeEventListener("keyup", this.handleKeyUp);
     this.app.canvas.removeEventListener("pointermove", this.handlePointerMove);
     this.app.canvas.removeEventListener("pointerdown", this.handlePointerMove);
+    this.inputBound = false;
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -4294,19 +4332,13 @@ export class PixiWastelandGame {
       const col = index % 3;
       const x = clamp(this.player.x - lineSpacing + col * lineSpacing + (boss.x < this.player.x ? -190 : 190), 24, MAP_WIDTH - 24);
       const y = clamp(this.player.y - 70 + row * lineSpacing, 24, MAP_HEIGHT - 24);
-      const view = new Graphics();
-      this.drawZombieEnemy(view);
-      view.position.set(x, y);
-      this.world.addChild(view);
-      this.enemies.push({
-        view,
-        kind: "zombie",
+      this.spawnEnemyActor(
         x,
         y,
-        health: 34 + Math.round(skill.damage),
-        speed: boss.bossId === "beastmaster" ? 132 : 82,
-        contactDamageElapsedMs: 700,
-      });
+        "zombie",
+        34 + Math.round(skill.damage),
+        boss.bossId === "beastmaster" ? 132 : 82,
+      );
     }
     this.spawnHitSparks(boss.x, boss.y, BOSS_VISUAL_THEMES[boss.bossId].accentColor, 18);
   }
