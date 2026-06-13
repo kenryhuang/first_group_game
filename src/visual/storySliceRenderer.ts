@@ -1,4 +1,4 @@
-import { Container, Sprite } from "pixi.js";
+import { Container, Sprite, Texture } from "pixi.js";
 import { gsap } from "gsap";
 import {
   STORY_ART_PALETTE,
@@ -26,6 +26,11 @@ export interface StorySliceRenderer {
   destroy(): void;
 }
 
+interface ActivePulse {
+  sprite: Sprite;
+  tweens: ReturnType<typeof gsap.to>[];
+}
+
 function createLayers(root: Container): Record<StorySliceLayerName, Container> {
   const entries = STORY_SLICE_LAYER_NAMES.map((name) => {
     const layer = new Container();
@@ -38,7 +43,20 @@ function createLayers(root: Container): Record<StorySliceLayerName, Container> {
 }
 
 function makeSprite(path: string, x: number, y: number, scale = 1): Sprite {
-  const sprite = Sprite.from(path);
+  const sprite = new Sprite(Texture.from(path));
+  sprite.anchor.set(0.5);
+  sprite.position.set(x, y);
+  sprite.scale.set(scale);
+  return sprite;
+}
+
+function makeTexturedSprite(
+  texture: Texture,
+  x: number,
+  y: number,
+  scale = 1,
+): Sprite {
+  const sprite = new Sprite(texture);
   sprite.anchor.set(0.5);
   sprite.position.set(x, y);
   sprite.scale.set(scale);
@@ -122,9 +140,16 @@ export function createStorySliceRenderer(
   addGround(layers, options.center);
   addProps(layers, options.center);
 
+  const lighthouseTextures = Object.fromEntries(
+    STORY_LIGHTHOUSE_VISUAL_STATES.map((state) => [
+      state,
+      Texture.from(STORY_SLICE_ASSETS.lighthouse.states[state]),
+    ]),
+  ) as Record<StoryLighthouseVisualState, Texture>;
+  const activePulses = new Set<ActivePulse>();
   let lighthouseState: StoryLighthouseVisualState = options.lit ? "on" : "off";
-  const lighthouse = makeSprite(
-    STORY_SLICE_ASSETS.lighthouse.states[lighthouseState],
+  const lighthouse = makeTexturedSprite(
+    lighthouseTextures[lighthouseState],
     options.center.x,
     options.center.y,
     0.82,
@@ -144,11 +169,19 @@ export function createStorySliceRenderer(
 
   const setState = (state: StoryLighthouseVisualState): void => {
     lighthouseState = state;
-    lighthouse.texture = Sprite.from(
-      STORY_SLICE_ASSETS.lighthouse.states[state],
-    ).texture;
+    lighthouse.texture = lighthouseTextures[state];
     coreGlow.alpha =
       state === "on" ? 0.82 : state === "charging" ? 0.46 : 0.16;
+  };
+
+  const destroyPulse = (activePulse: ActivePulse): void => {
+    activePulses.delete(activePulse);
+    for (const tween of activePulse.tweens) {
+      tween.kill();
+    }
+    if (!activePulse.sprite.destroyed) {
+      activePulse.sprite.destroy();
+    }
   };
 
   return {
@@ -167,18 +200,22 @@ export function createStorySliceRenderer(
       pulse.tint = STORY_ART_PALETTE.mechCyan;
       pulse.alpha = 0.82;
       layers.effect.addChild(pulse);
-      gsap.to(pulse.scale, {
-        x: 3.4,
-        y: 3.4,
-        duration: 0.72,
-        ease: "power2.out",
-      });
-      gsap.to(pulse, {
-        alpha: 0,
-        duration: 0.72,
-        ease: "power2.out",
-        onComplete: () => pulse.destroy(),
-      });
+      const activePulse: ActivePulse = { sprite: pulse, tweens: [] };
+      activePulses.add(activePulse);
+      activePulse.tweens.push(
+        gsap.to(pulse.scale, {
+          x: 3.4,
+          y: 3.4,
+          duration: 0.72,
+          ease: "power2.out",
+        }),
+        gsap.to(pulse, {
+          alpha: 0,
+          duration: 0.72,
+          ease: "power2.out",
+          onComplete: () => destroyPulse(activePulse),
+        }),
+      );
     },
     debugSpriteCount(): number {
       let count = 0;
@@ -188,6 +225,9 @@ export function createStorySliceRenderer(
       return count;
     },
     destroy(): void {
+      for (const activePulse of [...activePulses]) {
+        destroyPulse(activePulse);
+      }
       root.destroy({ children: true });
     },
   };
