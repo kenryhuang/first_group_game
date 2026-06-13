@@ -171,7 +171,7 @@ test("story mode first phase starts through intro, mech select, and fog lighthou
 
   const canvas = page.locator("canvas").first();
   await expect(canvas).toBeVisible();
-  await expect(page.getByText(/灯塔/)).toBeVisible();
+  await expect(page.locator(".hud-line").filter({ hasText: /^灯塔/ })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.mapWidth ?? 0))
     .toBe(20000);
@@ -190,6 +190,15 @@ test("story mode first phase starts through intro, mech select, and fog lighthou
   await expect
     .poll(async () => canvasHasVisiblePixels(await canvas.elementHandle()))
     .toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyArtSliceEnabled ?? false))
+    .toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyLighthouseVisualState ?? null))
+    .toBe("off");
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyArtSpriteCount ?? 0))
+    .toBeGreaterThanOrEqual(18);
 
   await page.keyboard.press("E");
   await expect
@@ -198,6 +207,9 @@ test("story mode first phase starts through intro, mech select, and fog lighthou
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyMonsterPressureMultiplier ?? 1))
     .toBeGreaterThan(1);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyLighthouseVisualState ?? null))
+    .toBe("on");
 });
 
 test("boss rush selection starts a dungeon without normal enemy waves", async ({ page }) => {
