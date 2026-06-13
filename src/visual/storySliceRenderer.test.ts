@@ -72,10 +72,11 @@ describe("story slice renderer", () => {
     expect(renderer.layers.ground.children).toHaveLength(63);
     expect(renderer.layers.decal.children).toHaveLength(2);
     expect(renderer.layers.prop.children).toHaveLength(7);
+    expect(renderer.layers.fog.children).toHaveLength(4);
     expect(renderer.layers.lighthouse.children).toHaveLength(1);
     expect(renderer.layers.effect.children).toHaveLength(1);
     expect(renderer.layers.worldUi.children).toHaveLength(0);
-    expect(renderer.debugSpriteCount()).toBe(74);
+    expect(renderer.debugSpriteCount()).toBe(78);
 
     const lighthouse = renderer.layers.lighthouse.children[0] as PixiSprite;
     const coreGlow = renderer.layers.effect.children[0] as PixiSprite;
@@ -85,6 +86,31 @@ describe("story slice renderer", () => {
     expect(coreGlow.texture).toBe(
       cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.coreGlow),
     );
+  });
+
+  it("adds textured fog that thins as the lighthouse turns on", () => {
+    const renderer = createStorySliceRenderer({
+      world: new Container(),
+      center: STORY_CENTER_LIGHTHOUSE.position,
+      lit: false,
+    });
+    const fogSprites = renderer.layers.fog.children as PixiSprite[];
+
+    expect(fogSprites).toHaveLength(4);
+    for (const fog of fogSprites) {
+      expect(fog.texture).toBe(cachedTextures.get(STORY_SLICE_ASSETS.effects.fogNoise));
+      expect(fog.alpha).toBe(0.38);
+      expect(fog.tint).toBe(0xb9fff0);
+    }
+
+    renderer.setLighthouseCharging();
+    expect(fogSprites[0].alpha).toBe(0.24);
+
+    renderer.setLighthouseLit(true);
+    expect(fogSprites[0].alpha).toBe(0.12);
+
+    renderer.setLighthouseLit(false);
+    expect(fogSprites[0].alpha).toBe(0.38);
   });
 
   it("updates lighthouse visual state", () => {

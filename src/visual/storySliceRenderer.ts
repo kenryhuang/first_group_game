@@ -31,6 +31,12 @@ interface ActivePulse {
   tweens: ReturnType<typeof gsap.to>[];
 }
 
+const STORY_FOG_ALPHA_BY_STATE: Record<StoryLighthouseVisualState, number> = {
+  off: 0.38,
+  charging: 0.24,
+  on: 0.12,
+};
+
 function createLayers(root: Container): Record<StorySliceLayerName, Container> {
   const entries = STORY_SLICE_LAYER_NAMES.map((name) => {
     const layer = new Container();
@@ -129,6 +135,34 @@ function addProps(
   );
 }
 
+function addTexturedFog(
+  layers: Record<StorySliceLayerName, Container>,
+  center: { x: number; y: number },
+  state: StoryLighthouseVisualState,
+): Sprite[] {
+  const offsets = [
+    { x: -520, y: -430, scale: 2.2, rotation: -0.08 },
+    { x: 520, y: -430, scale: 2.2, rotation: 0.07 },
+    { x: -520, y: 430, scale: 2.2, rotation: 0.05 },
+    { x: 520, y: 430, scale: 2.2, rotation: -0.06 },
+  ];
+
+  return offsets.map((offset, index) => {
+    const fog = makeSprite(
+      STORY_SLICE_ASSETS.effects.fogNoise,
+      center.x + offset.x,
+      center.y + offset.y,
+      offset.scale,
+    );
+    fog.label = `story-textured-fog-${index}`;
+    fog.tint = STORY_ART_PALETTE.beaconHighlight;
+    fog.alpha = STORY_FOG_ALPHA_BY_STATE[state];
+    fog.rotation = offset.rotation;
+    layers.fog.addChild(fog);
+    return fog;
+  });
+}
+
 export function createStorySliceRenderer(
   options: StorySliceRendererOptions,
 ): StorySliceRenderer {
@@ -148,6 +182,7 @@ export function createStorySliceRenderer(
   ) as Record<StoryLighthouseVisualState, Texture>;
   const activePulses = new Set<ActivePulse>();
   let lighthouseState: StoryLighthouseVisualState = options.lit ? "on" : "off";
+  const fogSprites = addTexturedFog(layers, options.center, lighthouseState);
   const lighthouse = makeTexturedSprite(
     lighthouseTextures[lighthouseState],
     options.center.x,
@@ -172,6 +207,9 @@ export function createStorySliceRenderer(
     lighthouse.texture = lighthouseTextures[state];
     coreGlow.alpha =
       state === "on" ? 0.82 : state === "charging" ? 0.46 : 0.16;
+    for (const fog of fogSprites) {
+      fog.alpha = STORY_FOG_ALPHA_BY_STATE[state];
+    }
   };
 
   const destroyPulse = (activePulse: ActivePulse): void => {

@@ -15,6 +15,7 @@ export const STORY_SLICE_LAYER_NAMES = [
   "ground",
   "decal",
   "prop",
+  "fog",
   "lighthouse",
   "effect",
   "worldUi",

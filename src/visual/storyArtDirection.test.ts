@@ -19,6 +19,7 @@ describe("story art direction", () => {
       "ground",
       "decal",
       "prop",
+      "fog",
       "lighthouse",
       "effect",
       "worldUi",
