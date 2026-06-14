@@ -77,15 +77,15 @@ describe("story isometric preview map", () => {
     expect(blockedRects).toHaveLength(6);
     expect(blockedRects[0]).toEqual({
       id: "story-a2-blocking-story-a2-building-green",
-      x: 19488,
-      y: 20056,
+      x: 19232,
+      y: 19800,
       width: 348,
       height: 348,
     });
     expect(blockedRects.find((rect) => rect.id.endsWith("lighthouse"))).toEqual({
       id: "story-a2-blocking-story-a2-lighthouse",
-      x: 20000,
-      y: 19800,
+      x: 19744,
+      y: 19544,
       width: 348,
       height: 348,
     });

@@ -149,7 +149,7 @@ export const STORY_A2_PREVIEW_MAP: StoryIsoMapDefinition = {
       label: "story-a2-building-ochre",
       role: "building",
       tile: { x: 2, y: -1 },
-      footprint: { x: 1, y: -2, width: 2, height: 2 },
+      footprint: { x: 1, y: -1, width: 2, height: 2 },
       texturePath: buildingOchre,
       scale: 0.46,
       visualHeight: 126,
@@ -276,8 +276,8 @@ export function getStoryIsoBlockedRects(
     .filter((prop) => prop.blocksMovement)
     .map((prop) => ({
       id: `story-a2-blocking-${prop.label}`,
-      x: center.x + prop.tile.x * map.tileSize,
-      y: center.y + prop.tile.y * map.tileSize,
+      x: center.x + prop.footprint.x * map.tileSize,
+      y: center.y + prop.footprint.y * map.tileSize,
       width: Math.round(
         prop.footprint.width * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
       ),
