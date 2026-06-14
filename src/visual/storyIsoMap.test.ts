@@ -22,7 +22,7 @@ describe("story isometric preview map", () => {
     expect(stats).toEqual({
       mode: "a2-preview",
       tileCount: 143,
-      roadTileCount: 25,
+      roadTileCount: 29,
       propCount: 8,
       blockedFootprintCount: 6,
     });
@@ -48,15 +48,49 @@ describe("story isometric preview map", () => {
     });
   });
 
-  it("marks diagonal roads and blocked footprints for the preview slice", () => {
+  it("builds continuous A2 street corridors with road axis metadata", () => {
+    const roadTiles = STORY_A2_PREVIEW_MAP.tiles.filter(isStoryIsoRoadTile);
+
+    const mainStreet = roadTiles.filter((tile) => tile.y === 1);
+    const crossStreet = roadTiles.filter((tile) => tile.x === 1);
+    const frontageStreet = roadTiles.filter((tile) => tile.y === -2);
+
+    expect(roadTiles).toHaveLength(29);
+    expect(mainStreet.map((tile) => tile.x)).toEqual([
+      -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
+    ]);
+    expect(crossStreet.map((tile) => tile.y)).toEqual([
+      -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5,
+    ]);
+    expect(frontageStreet.map((tile) => tile.x)).toEqual([
+      -3, -2, -1, 0, 1, 2, 3,
+    ]);
+    expect(roadTiles).toContainEqual({
+      x: -6,
+      y: 1,
+      kind: "road",
+      roadAxis: "x",
+    });
+    expect(roadTiles).toContainEqual({
+      x: 1,
+      y: -5,
+      kind: "roadCracked",
+      roadAxis: "y",
+    });
+    expect(roadTiles).toContainEqual({
+      x: -3,
+      y: -2,
+      kind: "road",
+      roadAxis: "x",
+    });
+  });
+
+  it("marks blocked footprints for the preview slice", () => {
     const roadTiles = STORY_A2_PREVIEW_MAP.tiles.filter(isStoryIsoRoadTile);
     const blockedFootprints = getStoryIsoBlockedFootprints(STORY_A2_PREVIEW_MAP);
     const firstBuilding = STORY_A2_PREVIEW_MAP.props[0];
 
-    expect(roadTiles).toHaveLength(25);
-    expect(roadTiles).toContainEqual({ x: -5, y: -5, kind: "road" });
-    expect(roadTiles).toContainEqual({ x: 5, y: -5, kind: "road" });
-    expect(roadTiles).toContainEqual({ x: 1, y: 0, kind: "roadCracked" });
+    expect(roadTiles).toHaveLength(29);
     expect(blockedFootprints).toHaveLength(6);
     expect(blockedFootprints).toContainEqual({
       x: -3,
@@ -89,5 +123,29 @@ describe("story isometric preview map", () => {
       width: 348,
       height: 348,
     });
+  });
+
+  it("keeps the upper center movement lane clear of A2 prop footprints", () => {
+    const blockedRects = getStoryIsoBlockedRects(
+      STORY_A2_PREVIEW_MAP,
+      STORY_CENTER_LIGHTHOUSE.position,
+    );
+    const playerRadius = 16;
+    const lane = {
+      left: STORY_CENTER_LIGHTHOUSE.position.x,
+      right: STORY_CENTER_LIGHTHOUSE.position.x + 1500,
+      y: STORY_CENTER_LIGHTHOUSE.position.y - 445,
+    };
+
+    const laneBlockers = blockedRects.filter((rect) => {
+      const left = rect.x - rect.width / 2 - playerRadius;
+      const right = rect.x + rect.width / 2 + playerRadius;
+      const top = rect.y - rect.height / 2 - playerRadius;
+      const bottom = rect.y + rect.height / 2 + playerRadius;
+
+      return lane.right >= left && lane.left <= right && lane.y >= top && lane.y <= bottom;
+    });
+
+    expect(laneBlockers).toEqual([]);
   });
 });

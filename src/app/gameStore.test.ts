@@ -111,7 +111,7 @@ describe("game store phases", () => {
       story2_5dPlayerScreenX: 19900,
       storyIsoMapMode: "a2-preview",
       storyIsoMapTileCount: 143,
-      storyIsoMapRoadTileCount: 25,
+      storyIsoMapRoadTileCount: 29,
       storyIsoMapPropCount: 8,
       storyIsoMapDepthSortedPropCount: 8,
       storyIsoMapBlockedFootprintCount: 6,
@@ -135,7 +135,7 @@ describe("game store phases", () => {
     expect(store.story2_5dPlayerScreenX).toBe(19900);
     expect(store.storyIsoMapMode).toBe("a2-preview");
     expect(store.storyIsoMapTileCount).toBe(143);
-    expect(store.storyIsoMapRoadTileCount).toBe(25);
+    expect(store.storyIsoMapRoadTileCount).toBe(29);
     expect(store.storyIsoMapPropCount).toBe(8);
     expect(store.storyIsoMapDepthSortedPropCount).toBe(8);
     expect(store.storyIsoMapBlockedFootprintCount).toBe(6);

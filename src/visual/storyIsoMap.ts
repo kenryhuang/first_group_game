@@ -19,8 +19,11 @@ export interface StoryIsoTileCoord {
   y: number;
 }
 
+export type StoryIsoRoadAxis = "x" | "y";
+
 export interface StoryIsoTileDefinition extends StoryIsoTileCoord {
   kind: StoryIsoTileKind;
+  roadAxis?: StoryIsoRoadAxis;
 }
 
 export type StoryIsoPropRole =
@@ -77,13 +80,24 @@ export interface StoryIsoBlockingRect {
 
 export const STORY_A2_BLOCKING_FOOTPRINT_SCALE = 0.68;
 
-function getPreviewTileKind(x: number, y: number): StoryIsoTileKind {
-  const isDiagonalRoad =
-    x === y || x === -y || (Math.abs(x) <= 1 && Math.abs(y) <= 1);
-  if (isDiagonalRoad) {
-    return Math.abs(x + y) % 2 === 0 ? "road" : "roadCracked";
-  }
+function getPreviewRoadAxis(
+  x: number,
+  y: number,
+): StoryIsoRoadAxis | undefined {
+  const isMainStreet = y === 1 && x >= -6 && x <= 6;
+  const isCrossStreet = x === 1 && y >= -5 && y <= 5;
+  const isFrontageStreet = y === -2 && x >= -3 && x <= 3;
 
+  if (isCrossStreet) return "y";
+  if (isMainStreet || isFrontageStreet) return "x";
+  return undefined;
+}
+
+function getPreviewRoadKind(x: number, y: number): StoryIsoTileKind {
+  return Math.abs(x + y) % 2 === 1 ? "road" : "roadCracked";
+}
+
+function getPreviewTileKind(x: number, y: number): StoryIsoTileKind {
   const isCurb =
     Math.abs(x - y) === 1 ||
     Math.abs(x + y) === 1 ||
@@ -110,12 +124,24 @@ function getPreviewTileKind(x: number, y: number): StoryIsoTileKind {
   return Math.abs(x + y) % 3 === 0 ? "plaza" : "concrete";
 }
 
+function createStoryIsoPreviewTile(
+  x: number,
+  y: number,
+): StoryIsoTileDefinition {
+  const roadAxis = getPreviewRoadAxis(x, y);
+  if (roadAxis) {
+    return { x, y, kind: getPreviewRoadKind(x, y), roadAxis };
+  }
+
+  return { x, y, kind: getPreviewTileKind(x, y) };
+}
+
 function createStoryIsoPreviewTiles(): StoryIsoTileDefinition[] {
   const tiles: StoryIsoTileDefinition[] = [];
 
   for (let x = -6; x <= 6; x += 1) {
     for (let y = -5; y <= 5; y += 1) {
-      tiles.push({ x, y, kind: getPreviewTileKind(x, y) });
+      tiles.push(createStoryIsoPreviewTile(x, y));
     }
   }
 
@@ -149,7 +175,7 @@ export const STORY_A2_PREVIEW_MAP: StoryIsoMapDefinition = {
       label: "story-a2-building-ochre",
       role: "building",
       tile: { x: 2, y: -1 },
-      footprint: { x: 1, y: -1, width: 2, height: 2 },
+      footprint: { x: 1, y: 0, width: 2, height: 2 },
       texturePath: buildingOchre,
       scale: 0.46,
       visualHeight: 126,

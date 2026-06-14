@@ -17,6 +17,7 @@ import {
   getStoryIsoMapStats,
   getStoryIsoTileWorldPoint,
   type StoryIsoMapDefinition,
+  type StoryIsoTileDefinition,
 } from "./storyIsoMap";
 
 const canvasContextStub = {
@@ -121,11 +122,16 @@ describe("story slice renderer", () => {
     expect(renderer.layers.ground.children[0].label).toBe(firstGroundTile.label);
     const firstGroundTileContainer = renderer.layers.ground
       .children[0] as InstanceType<typeof Container>;
+    expect(firstGroundTileContainer.children).toHaveLength(1);
     const firstGroundTileSprite = firstGroundTileContainer.children.find(
       (child) => child.label === "story-a2-ground-curb-0-sprite",
     ) as PixiSprite;
     expect(firstGroundTileSprite.texture).toBe(
       cachedTextures.get(STORY_SLICE_ASSETS.map.groundTiles[3]),
+    );
+    expect(firstGroundTileSprite.width).toBe(STORY_2_5D_CONFIG.isoTileWidth);
+    expect(firstGroundTileSprite.height).toBe(
+      STORY_2_5D_CONFIG.isoTileWidth,
     );
 
     const firstFogSprite = renderer.layers.fog.children[0] as PixiSprite;
@@ -341,6 +347,39 @@ describe("story slice renderer", () => {
       STORY_SLICE_ASSETS.map.groundTiles[3],
       STORY_SLICE_ASSETS.map.groundTiles[3],
     ]);
+  });
+
+  it("rotates A2 road sprites to match their street corridor axis", () => {
+    const center = STORY_CENTER_LIGHTHOUSE.position;
+    const customIsoMap: StoryIsoMapDefinition = {
+      mode: "a2-preview",
+      tileSize: STORY_2_5D_CONFIG.isoLogicalTileSize,
+      tiles: [
+        { x: 0, y: 0, kind: "road", roadAxis: "x" } as StoryIsoTileDefinition,
+        {
+          x: 0,
+          y: 1,
+          kind: "roadCracked",
+          roadAxis: "y",
+        } as StoryIsoTileDefinition,
+      ],
+      props: [],
+    };
+    const renderer = createStorySliceRenderer({
+      world: new Container(),
+      center,
+      lit: false,
+      projectPoint: (point) => projectStoryPoint(point, center),
+      isoMap: customIsoMap,
+    });
+
+    const [xRoadTile, yRoadTile] = renderer.layers.ground
+      .children as InstanceType<typeof Container>[];
+    const xRoadSprite = xRoadTile.children[0] as PixiSprite;
+    const yRoadSprite = yRoadTile.children[0] as PixiSprite;
+
+    expect(xRoadSprite.rotation).toBe(0);
+    expect(yRoadSprite.rotation).toBeCloseTo(Math.PI / 2);
   });
 
   it("adds textured fog that thins as the lighthouse turns on", () => {

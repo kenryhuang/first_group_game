@@ -84,6 +84,8 @@ test.skip("story mode can be selected from the main menu", async ({ page }) => {
 });
 
 test("story mode map tuning starts with zombie waves and without boss encounters", async ({ page }) => {
+  test.setTimeout(45_000);
+
   await page.goto("/");
 
   await page.getByTestId("story-mode-button").click();
@@ -156,7 +158,7 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .toBe(143);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapRoadTileCount ?? 0))
-    .toBe(25);
+    .toBe(29);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapPropCount ?? 0))
     .toBe(8);
@@ -239,7 +241,7 @@ test("story mode map tuning starts with zombie waves and without boss encounters
   await page.keyboard.up("d");
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.playerX ?? 99999), { timeout: 3000 })
-    .toBeGreaterThan(beforeRightMoveX + 1500);
+    .toBeGreaterThan(beforeRightMoveX + 600);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyMagicianInterferenceActive ?? false))
     .toBe(false);

@@ -327,33 +327,21 @@ function makeA2GroundTile(
   const diamondScale = getIsoMapTileScale(isoMap);
   const diamondWidth = STORY_2_5D_CONFIG.isoTileWidth * diamondScale;
   const diamondHeight = STORY_2_5D_CONFIG.isoTileHeight * diamondScale;
+  const spriteSize = STORY_2_5D_CONFIG.isoTileWidth * diamondScale;
   const texturePath = getA2GroundTexturePath(tile.kind);
   const label = `story-a2-ground-${tile.kind}-${tileIndex}`;
   const view = new Container();
   view.label = label;
   view.position.set(projectedPoint.x, projectedPoint.y);
+  view.zIndex = (tile.x + tile.y) * 100 + tile.x;
 
   const sprite = new Sprite(Texture.from(texturePath));
   sprite.label = `${label}-sprite`;
   sprite.anchor.set(0.5);
-  sprite.width = diamondWidth;
-  sprite.height = diamondHeight;
+  sprite.width = spriteSize;
+  sprite.height = spriteSize;
+  sprite.rotation = tile.roadAxis === "y" ? Math.PI / 2 : 0;
   view.addChild(sprite);
-
-  const outline = new Graphics();
-  outline
-    .poly([
-      0,
-      -diamondHeight / 2,
-      diamondWidth / 2,
-      0,
-      0,
-      diamondHeight / 2,
-      -diamondWidth / 2,
-      0,
-    ])
-    .stroke({ color: 0x050706, alpha: 0.22, width: 2 });
-  view.addChild(outline);
 
   return {
     view,
@@ -376,7 +364,8 @@ function addGround(
   isoMap: StoryIsoMapDefinition | undefined,
 ): StoryGroundTileDebug[] {
   if (options.projectPoint && isoMap) {
-    return isoMap.tiles.map((tile, tileIndex) => {
+    layers.ground.sortableChildren = true;
+    const debugTiles = isoMap.tiles.map((tile, tileIndex) => {
       const groundTile = makeA2GroundTile(
         tile,
         center,
@@ -387,6 +376,8 @@ function addGround(
       layers.ground.addChild(groundTile.view);
       return groundTile.debug;
     });
+    layers.ground.sortChildren();
+    return debugTiles;
   }
 
   const tileSize = STORY_2_5D_CONFIG.isoLogicalTileSize;
