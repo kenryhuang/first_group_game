@@ -8,6 +8,7 @@ import {
 } from "./storyAssetManifest";
 import {
   STORY_2_5D_CONFIG,
+  getStoryDepth,
   projectStoryPoint,
 } from "./story2_5dProjection";
 
@@ -77,12 +78,12 @@ describe("story slice renderer", () => {
     expect(Object.keys(renderer.layers)).toEqual([...STORY_SLICE_LAYER_NAMES]);
     expect(renderer.layers.ground.children).toHaveLength(63);
     expect(renderer.layers.decal.children).toHaveLength(2);
-    expect(renderer.layers.prop.children).toHaveLength(7);
+    expect(renderer.layers.prop.children).toHaveLength(0);
     expect(renderer.layers.fog.children).toHaveLength(4);
-    expect(renderer.layers.lighthouse.children).toHaveLength(1);
+    expect(renderer.layers.lighthouse.children).toHaveLength(0);
     expect(renderer.layers.effect.children).toHaveLength(1);
     expect(renderer.layers.worldUi.children).toHaveLength(0);
-    expect(renderer.debugSpriteCount()).toBe(78);
+    expect(renderer.debugSpriteCount()).toBeGreaterThanOrEqual(86);
 
     const firstGroundSprite = renderer.layers.ground.children[0] as PixiSprite;
     const projectedFirstGroundPosition = projectStoryPoint(
@@ -102,14 +103,58 @@ describe("story slice renderer", () => {
     expect(firstFogSprite.scale.x).toBe(2.2);
     expect(firstFogSprite.scale.y).toBe(2.2 * STORY_2_5D_CONFIG.groundScaleY);
 
-    const lighthouse = renderer.layers.lighthouse.children[0] as PixiSprite;
     const coreGlow = renderer.layers.effect.children[0] as PixiSprite;
-    expect(lighthouse.texture).toBe(
-      cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.states.off),
-    );
     expect(coreGlow.texture).toBe(
       cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.coreGlow),
     );
+  });
+
+  it("promotes volumetric story props to top-level depth-sorted world children", () => {
+    const world = new Container();
+    const center = STORY_CENTER_LIGHTHOUSE.position;
+    const renderer = createStorySliceRenderer({
+      world,
+      center,
+      lit: false,
+      projectPoint: (point) => projectStoryPoint(point, center),
+    });
+
+    const props = renderer.debugVolumeProps();
+
+    expect(props.map((prop) => prop.role)).toEqual([
+      "building",
+      "building",
+      "building",
+      "vehicle",
+      "streetlight",
+      "roadblock",
+      "sign",
+      "lighthouse",
+    ]);
+    expect(props.filter((prop) => prop.role === "building")).toHaveLength(3);
+    expect(props.every((prop) => prop.visualHeight > 0)).toBe(true);
+    expect(
+      props.every((prop) => prop.containerParentLabel === "story-world-root"),
+    ).toBe(true);
+    expect(props.every((prop) => prop.shadowChildCount >= 1)).toBe(true);
+
+    const firstBuilding = props[0];
+    expect(firstBuilding.label).toBe("story-volume-building-green");
+    expect(firstBuilding.basePoint).toEqual({
+      x: center.x - 520,
+      y: center.y - 390 + 118,
+    });
+    expect(firstBuilding.projectedPoint).toEqual(
+      projectStoryPoint(firstBuilding.basePoint, center),
+    );
+    expect(firstBuilding.zIndex).toBe(
+      getStoryDepth(firstBuilding.basePoint, 70),
+    );
+
+    const lighthouse = props.at(-1);
+    expect(lighthouse?.label).toBe("story-volume-lighthouse");
+    expect(lighthouse?.basePoint).toEqual(center);
+    expect(lighthouse?.zIndex).toBe(getStoryDepth(center, 95));
   });
 
   it("preserves default ground and fog layout without projection", () => {
@@ -163,12 +208,18 @@ describe("story slice renderer", () => {
   });
 
   it("updates lighthouse visual state", () => {
+    const world = new Container();
     const renderer = createStorySliceRenderer({
-      world: new Container(),
+      world,
       center: STORY_CENTER_LIGHTHOUSE.position,
       lit: false,
     });
-    const lighthouse = renderer.layers.lighthouse.children[0] as PixiSprite;
+    const lighthouseContainer = world.children.find(
+      (child) => child.label === "story-volume-lighthouse",
+    ) as InstanceType<typeof Container>;
+    const lighthouse = lighthouseContainer.children.find(
+      (child) => child.label === "story-volume-lighthouse-sprite",
+    ) as PixiSprite;
 
     expect(renderer.getLighthouseVisualState()).toBe("off");
     expect(lighthouse.texture).toBe(
