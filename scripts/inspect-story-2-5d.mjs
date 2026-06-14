@@ -1,7 +1,7 @@
 import { chromium } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5317";
-const outputPath = process.env.STORY_2_5D_SCREENSHOT ?? "/tmp/story-isometric-a2-preview.png";
+const outputPath = process.env.STORY_2_5D_SCREENSHOT ?? "/tmp/story-a2-city-art-refresh.png";
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

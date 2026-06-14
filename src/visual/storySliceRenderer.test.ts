@@ -96,7 +96,7 @@ describe("story slice renderer", () => {
     expect(renderer.layers.lighthouse.children).toHaveLength(0);
     expect(renderer.layers.effect.children).toHaveLength(1);
     expect(renderer.layers.worldUi.children).toHaveLength(0);
-    expect(renderer.debugSpriteCount()).toBeGreaterThanOrEqual(165);
+    expect(renderer.debugSpriteCount()).toBeGreaterThanOrEqual(300);
 
     const firstMapTile = STORY_A2_PREVIEW_MAP.tiles[0];
     const firstGroundTile = renderer.debugGroundTiles()[0];
@@ -175,16 +175,16 @@ describe("story slice renderer", () => {
 
     const firstBuilding = props[0];
     expect(firstBuilding.label).toBe("story-a2-building-green");
-    expect(firstBuilding.tile).toEqual({ x: -3, y: -3 });
+    expect(firstBuilding.tile).toEqual({ x: -2, y: 1 });
     expect(firstBuilding.footprint).toEqual({
-      x: -4,
-      y: -4,
+      x: -3,
+      y: 0,
       width: 2,
       height: 2,
     });
     expect(firstBuilding.basePoint).toEqual({
-      x: center.x - 768,
-      y: center.y - 768,
+      x: center.x - 512,
+      y: center.y + 256,
     });
     expect(firstBuilding.projectedPoint).toEqual(
       projectStoryPoint(firstBuilding.basePoint, center),
@@ -302,6 +302,45 @@ describe("story slice renderer", () => {
     expect(renderer.debugGroundTiles()[0].texturePath).toBe(
       STORY_SLICE_ASSETS.map.groundTiles[0],
     );
+  });
+
+  it("maps A2 tile kinds to generated ground textures", () => {
+    const center = STORY_CENTER_LIGHTHOUSE.position;
+    const customIsoMap: StoryIsoMapDefinition = {
+      mode: "a2-preview",
+      tileSize: STORY_2_5D_CONFIG.isoLogicalTileSize,
+      tiles: [
+        { x: 0, y: 0, kind: "road" },
+        { x: 1, y: 0, kind: "roadCracked" },
+        { x: 2, y: 0, kind: "concrete" },
+        { x: 3, y: 0, kind: "plaza" },
+        { x: 4, y: 0, kind: "blocked" },
+        { x: 5, y: 0, kind: "curb" },
+        { x: 6, y: 0, kind: "rubble" },
+        { x: 7, y: 0, kind: "stain" },
+      ],
+      props: [],
+    };
+    const renderer = createStorySliceRenderer({
+      world: new Container(),
+      center,
+      lit: false,
+      projectPoint: (point) => projectStoryPoint(point, center),
+      isoMap: customIsoMap,
+    });
+
+    expect(
+      renderer.debugGroundTiles().map((tile) => tile.texturePath),
+    ).toEqual([
+      STORY_SLICE_ASSETS.map.groundTiles[0],
+      STORY_SLICE_ASSETS.map.groundTiles[1],
+      STORY_SLICE_ASSETS.map.groundTiles[2],
+      STORY_SLICE_ASSETS.map.groundTiles[2],
+      STORY_SLICE_ASSETS.map.groundTiles[2],
+      STORY_SLICE_ASSETS.map.groundTiles[3],
+      STORY_SLICE_ASSETS.map.groundTiles[3],
+      STORY_SLICE_ASSETS.map.groundTiles[3],
+    ]);
   });
 
   it("adds textured fog that thins as the lighthouse turns on", () => {

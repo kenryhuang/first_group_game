@@ -59,13 +59,13 @@ describe("story isometric preview map", () => {
     expect(roadTiles).toContainEqual({ x: 1, y: 0, kind: "roadCracked" });
     expect(blockedFootprints).toHaveLength(6);
     expect(blockedFootprints).toContainEqual({
-      x: -4,
-      y: -4,
+      x: -3,
+      y: 0,
       width: 2,
       height: 2,
     });
     expect(getStoryIsoPropBasePoint(firstBuilding, STORY_CENTER_LIGHTHOUSE.position))
-      .toEqual({ x: 19232, y: 19032 });
+      .toEqual({ x: 19488, y: 20056 });
   });
 
   it("converts blocked footprints into world collision rectangles around prop bases", () => {
@@ -77,8 +77,8 @@ describe("story isometric preview map", () => {
     expect(blockedRects).toHaveLength(6);
     expect(blockedRects[0]).toEqual({
       id: "story-a2-blocking-story-a2-building-green",
-      x: 19232,
-      y: 19032,
+      x: 19488,
+      y: 20056,
       width: 348,
       height: 348,
     });

@@ -99,6 +99,16 @@ interface ActivePulse {
   tweens: ReturnType<typeof gsap.to>[];
 }
 
+function countDescendants(container: Container): number {
+  let count = container.children.length;
+  for (const child of container.children) {
+    if (child instanceof Container) {
+      count += countDescendants(child);
+    }
+  }
+  return count;
+}
+
 const STORY_FOG_ALPHA_BY_STATE: Record<StoryLighthouseVisualState, number> = {
   off: 0.38,
   charging: 0.24,
@@ -814,14 +824,7 @@ export function createStorySliceRenderer(
       );
     },
     debugSpriteCount(): number {
-      let count = volumeProps.length;
-      for (const prop of volumeProps) {
-        count += prop.container.children.length;
-      }
-      for (const layer of Object.values(layers)) {
-        count += layer.children.length;
-      }
-      return count;
+      return countDescendants(root);
     },
     destroy(): void {
       for (const activePulse of [...activePulses]) {
