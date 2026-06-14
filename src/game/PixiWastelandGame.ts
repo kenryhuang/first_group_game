@@ -8114,7 +8114,8 @@ export class PixiWastelandGame {
       }),
     });
     view.anchor.set(0.5);
-    this.setViewPosition(view, x, y, visualYOffset);
+    const projected = this.projectPoint({ x, y });
+    view.position.set(projected.x, projected.y + visualYOffset);
     view.zIndex = this.getStoryVisualDepth({ x, y }, 60);
     this.world.addChild(view);
     this.damageNumbers.push({ view, lifeMs: 650, velocityY: -44 });
