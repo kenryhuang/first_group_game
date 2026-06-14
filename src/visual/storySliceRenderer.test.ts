@@ -69,6 +69,8 @@ describe("story slice renderer", () => {
       world,
       center: STORY_CENTER_LIGHTHOUSE.position,
       lit: false,
+      projectPoint: (point) =>
+        projectStoryPoint(point, STORY_CENTER_LIGHTHOUSE.position),
     });
 
     expect(world.children).toContain(renderer.root);
@@ -81,36 +83,6 @@ describe("story slice renderer", () => {
     expect(renderer.layers.effect.children).toHaveLength(1);
     expect(renderer.layers.worldUi.children).toHaveLength(0);
     expect(renderer.debugSpriteCount()).toBe(78);
-
-    const firstGroundSprite = renderer.layers.ground.children[0] as PixiSprite;
-    const firstGroundPosition = {
-      x: STORY_CENTER_LIGHTHOUSE.position.x - 4 * 256,
-      y: STORY_CENTER_LIGHTHOUSE.position.y - 3 * 256,
-    };
-
-    expect(firstGroundSprite.position.x).toBe(firstGroundPosition.x);
-    expect(firstGroundSprite.position.y).toBe(firstGroundPosition.y);
-    expect(firstGroundSprite.scale.x).toBe(1);
-    expect(firstGroundSprite.scale.y).toBe(1);
-
-    const lighthouse = renderer.layers.lighthouse.children[0] as PixiSprite;
-    const coreGlow = renderer.layers.effect.children[0] as PixiSprite;
-    expect(lighthouse.texture).toBe(
-      cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.states.off),
-    );
-    expect(coreGlow.texture).toBe(
-      cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.coreGlow),
-    );
-  });
-
-  it("projects ground and fog sprites when a story projection is provided", () => {
-    const renderer = createStorySliceRenderer({
-      world: new Container(),
-      center: STORY_CENTER_LIGHTHOUSE.position,
-      lit: false,
-      projectPoint: (point) =>
-        projectStoryPoint(point, STORY_CENTER_LIGHTHOUSE.position),
-    });
 
     const firstGroundSprite = renderer.layers.ground.children[0] as PixiSprite;
     const projectedFirstGroundPosition = projectStoryPoint(
@@ -129,6 +101,38 @@ describe("story slice renderer", () => {
     const firstFogSprite = renderer.layers.fog.children[0] as PixiSprite;
     expect(firstFogSprite.scale.x).toBe(2.2);
     expect(firstFogSprite.scale.y).toBe(2.2 * STORY_2_5D_CONFIG.groundScaleY);
+
+    const lighthouse = renderer.layers.lighthouse.children[0] as PixiSprite;
+    const coreGlow = renderer.layers.effect.children[0] as PixiSprite;
+    expect(lighthouse.texture).toBe(
+      cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.states.off),
+    );
+    expect(coreGlow.texture).toBe(
+      cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.coreGlow),
+    );
+  });
+
+  it("preserves default ground and fog layout without projection", () => {
+    const renderer = createStorySliceRenderer({
+      world: new Container(),
+      center: STORY_CENTER_LIGHTHOUSE.position,
+      lit: false,
+    });
+
+    const firstGroundSprite = renderer.layers.ground.children[0] as PixiSprite;
+    const firstGroundPosition = {
+      x: STORY_CENTER_LIGHTHOUSE.position.x - 4 * 256,
+      y: STORY_CENTER_LIGHTHOUSE.position.y - 3 * 256,
+    };
+
+    expect(firstGroundSprite.position.x).toBe(firstGroundPosition.x);
+    expect(firstGroundSprite.position.y).toBe(firstGroundPosition.y);
+    expect(firstGroundSprite.scale.x).toBe(1);
+    expect(firstGroundSprite.scale.y).toBe(1);
+
+    const firstFogSprite = renderer.layers.fog.children[0] as PixiSprite;
+    expect(firstFogSprite.scale.x).toBe(2.2);
+    expect(firstFogSprite.scale.y).toBe(2.2);
   });
 
   it("adds textured fog that thins as the lighthouse turns on", () => {
