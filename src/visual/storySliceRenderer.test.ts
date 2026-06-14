@@ -11,6 +11,12 @@ import {
   getStoryDepth,
   projectStoryPoint,
 } from "./story2_5dProjection";
+import {
+  STORY_A2_PREVIEW_MAP,
+  getStoryIsoBlockedFootprints,
+  getStoryIsoMapStats,
+  getStoryIsoTileWorldPoint,
+} from "./storyIsoMap";
 
 const canvasContextStub = {
   drawImage: vi.fn(),
@@ -76,25 +82,35 @@ describe("story slice renderer", () => {
 
     expect(world.children).toContain(renderer.root);
     expect(Object.keys(renderer.layers)).toEqual([...STORY_SLICE_LAYER_NAMES]);
-    expect(renderer.layers.ground.children).toHaveLength(63);
+    const isoStats = getStoryIsoMapStats(STORY_A2_PREVIEW_MAP);
+    expect(renderer.layers.ground.children).toHaveLength(isoStats.tileCount);
+    expect(renderer.debugGroundTiles()).toHaveLength(isoStats.tileCount);
+    expect(renderer.debugIsoMapStats()).toEqual(isoStats);
+    expect(renderer.debugBlockedFootprints()).toEqual(
+      getStoryIsoBlockedFootprints(STORY_A2_PREVIEW_MAP),
+    );
     expect(renderer.layers.decal.children).toHaveLength(2);
     expect(renderer.layers.prop.children).toHaveLength(0);
     expect(renderer.layers.fog.children).toHaveLength(4);
     expect(renderer.layers.lighthouse.children).toHaveLength(0);
     expect(renderer.layers.effect.children).toHaveLength(1);
     expect(renderer.layers.worldUi.children).toHaveLength(0);
-    expect(renderer.debugSpriteCount()).toBeGreaterThanOrEqual(86);
+    expect(renderer.debugSpriteCount()).toBeGreaterThanOrEqual(165);
 
+    const firstMapTile = STORY_A2_PREVIEW_MAP.tiles[0];
     const firstGroundTile = renderer.debugGroundTiles()[0];
+    const firstGroundWorldPoint = getStoryIsoTileWorldPoint(
+      firstMapTile,
+      STORY_CENTER_LIGHTHOUSE.position,
+    );
     const projectedFirstGroundPosition = projectStoryPoint(
-      {
-        x: STORY_CENTER_LIGHTHOUSE.position.x - 4 * 256,
-        y: STORY_CENTER_LIGHTHOUSE.position.y - 3 * 256,
-      },
+      firstGroundWorldPoint,
       STORY_CENTER_LIGHTHOUSE.position,
     );
 
-    expect(firstGroundTile.label).toBe("story-iso-ground-concrete-0");
+    expect(firstGroundTile.label).toBe("story-a2-ground-curb-0");
+    expect(firstGroundTile.kind).toBe(firstMapTile.kind);
+    expect(firstGroundTile.worldPoint).toEqual(firstGroundWorldPoint);
     expect(firstGroundTile.projectedPoint).toEqual(projectedFirstGroundPosition);
     expect(firstGroundTile.diamondWidth).toBe(STORY_2_5D_CONFIG.isoTileWidth);
     expect(firstGroundTile.diamondHeight).toBe(STORY_2_5D_CONFIG.isoTileHeight);
@@ -121,7 +137,9 @@ describe("story slice renderer", () => {
     });
 
     const props = renderer.debugVolumeProps();
-    expect(renderer.debugGroundTiles()).toHaveLength(63);
+    const isoStats = getStoryIsoMapStats(STORY_A2_PREVIEW_MAP);
+    expect(renderer.debugGroundTiles()).toHaveLength(isoStats.tileCount);
+    expect(renderer.debugIsoMapStats()).toEqual(isoStats);
 
     expect(props.map((prop) => prop.role)).toEqual([
       "building",
@@ -133,6 +151,9 @@ describe("story slice renderer", () => {
       "sign",
       "lighthouse",
     ]);
+    expect(props.map((prop) => prop.label)).toEqual(
+      STORY_A2_PREVIEW_MAP.props.map((prop) => prop.label),
+    );
     expect(props.filter((prop) => prop.role === "building")).toHaveLength(3);
     expect(props.every((prop) => prop.visualHeight > 0)).toBe(true);
     expect(
@@ -141,22 +162,30 @@ describe("story slice renderer", () => {
     expect(props.every((prop) => prop.shadowChildCount >= 1)).toBe(true);
 
     const firstBuilding = props[0];
-    expect(firstBuilding.label).toBe("story-volume-building-green");
+    expect(firstBuilding.label).toBe("story-a2-building-green");
+    expect(firstBuilding.tile).toEqual({ x: -3, y: -3 });
+    expect(firstBuilding.footprint).toEqual({
+      x: -4,
+      y: -4,
+      width: 2,
+      height: 2,
+    });
     expect(firstBuilding.basePoint).toEqual({
-      x: center.x - 520,
-      y: center.y - 390 + 118,
+      x: center.x - 768,
+      y: center.y - 768,
     });
     expect(firstBuilding.projectedPoint).toEqual(
       projectStoryPoint(firstBuilding.basePoint, center),
     );
     expect(firstBuilding.zIndex).toBe(
-      getStoryDepth(firstBuilding.basePoint, 70),
+      getStoryDepth(firstBuilding.basePoint, 90),
     );
 
     const lighthouse = props.at(-1);
-    expect(lighthouse?.label).toBe("story-volume-lighthouse");
+    expect(lighthouse?.label).toBe("story-a2-lighthouse");
+    expect(lighthouse?.tile).toEqual({ x: 0, y: 0 });
     expect(lighthouse?.basePoint).toEqual(center);
-    expect(lighthouse?.zIndex).toBe(getStoryDepth(center, 95));
+    expect(lighthouse?.zIndex).toBe(getStoryDepth(center, 105));
   });
 
   it("preserves default ground and fog layout without projection", () => {
@@ -180,6 +209,8 @@ describe("story slice renderer", () => {
     const firstFogSprite = renderer.layers.fog.children[0] as PixiSprite;
     expect(firstFogSprite.scale.x).toBe(2.2);
     expect(firstFogSprite.scale.y).toBe(2.2);
+    expect(renderer.debugIsoMapStats()).toBeUndefined();
+    expect(renderer.debugBlockedFootprints()).toEqual([]);
   });
 
   it("adds textured fog that thins as the lighthouse turns on", () => {

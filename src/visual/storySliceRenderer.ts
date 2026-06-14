@@ -13,6 +13,20 @@ import {
   getStoryDepth,
   type StoryPoint,
 } from "./story2_5dProjection";
+import {
+  STORY_A2_PREVIEW_MAP,
+  getStoryIsoBlockedFootprints,
+  getStoryIsoMapStats,
+  getStoryIsoPropBasePoint,
+  getStoryIsoTileWorldPoint,
+  type StoryIsoFootprint,
+  type StoryIsoMapDefinition,
+  type StoryIsoMapStats,
+  type StoryIsoPropDefinition,
+  type StoryIsoPropRole,
+  type StoryIsoTileDefinition,
+  type StoryIsoTileKind,
+} from "./storyIsoMap";
 
 export interface StorySliceRendererOptions {
   world: Container;
@@ -20,15 +34,10 @@ export interface StorySliceRendererOptions {
   lit: boolean;
   // Enables story 2.5D projection for ground, fog, and volume props.
   projectPoint?: (point: StoryPoint) => StoryPoint;
+  isoMap?: StoryIsoMapDefinition;
 }
 
-type StoryVolumePropRole =
-  | "building"
-  | "vehicle"
-  | "streetlight"
-  | "roadblock"
-  | "sign"
-  | "lighthouse";
+type StoryVolumePropRole = StoryIsoPropRole;
 
 interface StoryVolumePropDefinition {
   label: string;
@@ -42,6 +51,8 @@ interface StoryVolumePropDefinition {
   depthOffset: number;
   shadowScaleX: number;
   shadowScaleY: number;
+  tile?: StoryIsoPropDefinition["tile"];
+  footprint?: StoryIsoFootprint;
 }
 
 export interface StoryVolumePropDebug {
@@ -53,6 +64,8 @@ export interface StoryVolumePropDebug {
   zIndex: number;
   containerParentLabel: string | undefined;
   shadowChildCount: number;
+  tile?: StoryIsoPropDefinition["tile"];
+  footprint?: StoryIsoFootprint;
 }
 
 export interface StoryGroundTileDebug {
@@ -61,7 +74,7 @@ export interface StoryGroundTileDebug {
   projectedPoint: StoryPoint;
   diamondWidth: number;
   diamondHeight: number;
-  kind: "road" | "cracked" | "concrete" | "grass";
+  kind: StoryIsoTileKind;
 }
 
 export interface StorySliceRenderer {
@@ -73,6 +86,8 @@ export interface StorySliceRenderer {
   playScanPulse(origin: { x: number; y: number }): void;
   debugGroundTiles(): StoryGroundTileDebug[];
   debugVolumeProps(): StoryVolumePropDebug[];
+  debugIsoMapStats(): StoryIsoMapStats | undefined;
+  debugBlockedFootprints(): StoryIsoFootprint[];
   debugSpriteCount(): number;
   destroy(): void;
 }
@@ -131,32 +146,69 @@ function makeSprite(
   return sprite;
 }
 
-function getGroundKind(asset: string): StoryGroundTileDebug["kind"] {
+function getGroundKind(asset: string): StoryIsoTileKind {
   if (asset.includes("road-straight")) return "road";
-  if (asset.includes("road-cracked")) return "cracked";
+  if (asset.includes("road-cracked")) return "roadCracked";
   if (asset.includes("concrete")) return "concrete";
-  return "grass";
+  return "plaza";
 }
 
-function getIsoGroundColor(kind: StoryGroundTileDebug["kind"]): number {
+function getIsoGroundColor(kind: StoryIsoTileKind): number {
   if (kind === "road") return STORY_ART_PALETTE.roadGreyGreen;
-  if (kind === "cracked") return 0x39433d;
+  if (kind === "roadCracked") return 0x39433d;
+  if (kind === "curb") return 0x59675f;
   if (kind === "concrete") return 0x667368;
+  if (kind === "stain") return 0x405f52;
+  if (kind === "rubble") return 0x4b554f;
+  if (kind === "blocked") return 0x2c342f;
   return STORY_ART_PALETTE.wastelandOchre;
 }
 
-function makeIsoGroundTile(
-  asset: string,
+function decorateIsoGroundTile(
+  view: Graphics,
+  kind: StoryIsoTileKind,
+  diamondWidth: number,
+  diamondHeight: number,
+): void {
+  if (kind === "road" || kind === "roadCracked") {
+    view
+      .moveTo(-diamondWidth * 0.28, 0)
+      .lineTo(0, -diamondHeight * 0.16)
+      .lineTo(diamondWidth * 0.28, 0)
+      .stroke({
+        color: 0xffd166,
+        alpha: kind === "road" ? 0.3 : 0.18,
+        width: 3,
+      });
+    return;
+  }
+
+  if (kind === "curb") {
+    view
+      .moveTo(-diamondWidth * 0.5, 0)
+      .lineTo(0, diamondHeight * 0.5)
+      .stroke({ color: 0xc7d2b8, alpha: 0.18, width: 2 });
+    return;
+  }
+
+  if (kind === "rubble") {
+    view.circle(-18, 4, 5).fill({ color: 0x222a25, alpha: 0.38 });
+    view.circle(14, -8, 3).fill({ color: 0x222a25, alpha: 0.28 });
+  }
+}
+
+function makeIsoGroundTileFromKind(
+  kind: StoryIsoTileKind,
   worldPoint: StoryPoint,
   tileIndex: number,
+  labelPrefix: "story-iso-ground" | "story-a2-ground",
   options: Pick<StorySliceRendererOptions, "projectPoint">,
 ): { view: Graphics; debug: StoryGroundTileDebug } {
-  const kind = getGroundKind(asset);
   const projectedPoint = options.projectPoint?.(worldPoint) ?? worldPoint;
   const diamondWidth = STORY_2_5D_CONFIG.isoTileWidth;
   const diamondHeight = STORY_2_5D_CONFIG.isoTileHeight;
   const view = new Graphics();
-  const label = `story-iso-ground-${kind}-${tileIndex}`;
+  const label = `${labelPrefix}-${kind}-${tileIndex}`;
   view.label = label;
   view.position.set(projectedPoint.x, projectedPoint.y);
   view
@@ -172,9 +224,10 @@ function makeIsoGroundTile(
     ])
     .fill({
       color: getIsoGroundColor(kind),
-      alpha: kind === "grass" ? 0.5 : 0.74,
+      alpha: kind === "plaza" ? 0.58 : kind === "stain" ? 0.42 : 0.76,
     })
-    .stroke({ color: 0x050706, alpha: 0.2, width: 2 });
+    .stroke({ color: 0x050706, alpha: 0.24, width: 2 });
+  decorateIsoGroundTile(view, kind, diamondWidth, diamondHeight);
 
   return {
     view,
@@ -189,11 +242,87 @@ function makeIsoGroundTile(
   };
 }
 
+function makeIsoGroundTile(
+  asset: string,
+  worldPoint: StoryPoint,
+  tileIndex: number,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
+): { view: Graphics; debug: StoryGroundTileDebug } {
+  return makeIsoGroundTileFromKind(
+    getGroundKind(asset),
+    worldPoint,
+    tileIndex,
+    "story-iso-ground",
+    options,
+  );
+}
+
+function getIsoTileWorldPoint(
+  tile: StoryIsoTileDefinition,
+  center: StoryPoint,
+  isoMap: StoryIsoMapDefinition,
+): StoryPoint {
+  if (isoMap === STORY_A2_PREVIEW_MAP) {
+    return getStoryIsoTileWorldPoint(tile, center);
+  }
+
+  return {
+    x: center.x + tile.x * isoMap.tileSize,
+    y: center.y + tile.y * isoMap.tileSize,
+  };
+}
+
+function getIsoPropBasePoint(
+  prop: StoryIsoPropDefinition,
+  center: StoryPoint,
+  isoMap: StoryIsoMapDefinition,
+): StoryPoint {
+  if (isoMap === STORY_A2_PREVIEW_MAP) {
+    return getStoryIsoPropBasePoint(prop, center);
+  }
+
+  return {
+    x: center.x + prop.tile.x * isoMap.tileSize,
+    y: center.y + prop.tile.y * isoMap.tileSize,
+  };
+}
+
+function makeA2GroundTile(
+  tile: StoryIsoTileDefinition,
+  center: StoryPoint,
+  isoMap: StoryIsoMapDefinition,
+  tileIndex: number,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
+): { view: Graphics; debug: StoryGroundTileDebug } {
+  return makeIsoGroundTileFromKind(
+    tile.kind,
+    getIsoTileWorldPoint(tile, center, isoMap),
+    tileIndex,
+    "story-a2-ground",
+    options,
+  );
+}
+
 function addGround(
   layers: Record<StorySliceLayerName, Container>,
   center: StoryPoint,
   options: Pick<StorySliceRendererOptions, "projectPoint">,
+  isoMap: StoryIsoMapDefinition | undefined,
 ): StoryGroundTileDebug[] {
+  if (options.projectPoint && isoMap) {
+    return isoMap.tiles.map((tile, tileIndex) => {
+      const groundTile = makeA2GroundTile(
+        tile,
+        center,
+        isoMap,
+        tileIndex,
+        options,
+      );
+      layers.ground.addChild(groundTile.view);
+      return groundTile.debug;
+    });
+  }
+
   const tileSize = STORY_2_5D_CONFIG.isoLogicalTileSize;
   const [road, cracked, concrete, grass] = STORY_SLICE_ASSETS.map.groundTiles;
   const debugTiles: StoryGroundTileDebug[] = [];
@@ -231,7 +360,35 @@ function addGround(
   return debugTiles;
 }
 
-function getVolumePropDefinitions(center: StoryPoint): StoryVolumePropDefinition[] {
+function getVolumePropDefinitions(
+  center: StoryPoint,
+  isoMap: StoryIsoMapDefinition | undefined,
+  lighthouseState: StoryLighthouseVisualState,
+): StoryVolumePropDefinition[] {
+  if (isoMap) {
+    return isoMap.props.map((prop) => {
+      const basePoint = getIsoPropBasePoint(prop, center, isoMap);
+      return {
+        label: prop.label,
+        role: prop.role,
+        texturePath:
+          prop.role === "lighthouse"
+            ? STORY_SLICE_ASSETS.lighthouse.states[lighthouseState]
+            : prop.texturePath,
+        x: basePoint.x,
+        y: basePoint.y,
+        scale: prop.scale,
+        baseYOffset: 0,
+        visualHeight: prop.visualHeight,
+        depthOffset: prop.depthOffset,
+        shadowScaleX: prop.shadowScaleX,
+        shadowScaleY: prop.shadowScaleY,
+        tile: prop.tile,
+        footprint: prop.footprint,
+      };
+    });
+  }
+
   const [buildingGreen, buildingOchre, buildingTeal] =
     STORY_SLICE_ASSETS.map.buildings;
   const [, , wreckedCar, streetlight, roadblock, signboard] =
@@ -399,6 +556,8 @@ function makeVolumeProp(
       shadowChildCount: container.children.filter((child) =>
         child.label?.endsWith("-shadow"),
       ).length,
+      tile: definition.tile ? { ...definition.tile } : undefined,
+      footprint: definition.footprint ? { ...definition.footprint } : undefined,
     },
   };
 }
@@ -441,16 +600,29 @@ export function createStorySliceRenderer(
     options.world.label = "story-world-root";
   }
 
+  const activeIsoMap = options.projectPoint
+    ? options.isoMap ?? STORY_A2_PREVIEW_MAP
+    : undefined;
+  let lighthouseState: StoryLighthouseVisualState = options.lit ? "on" : "off";
+  const isoMapStats = activeIsoMap
+    ? getStoryIsoMapStats(activeIsoMap)
+    : undefined;
+  const blockedFootprints = activeIsoMap
+    ? getStoryIsoBlockedFootprints(activeIsoMap)
+    : [];
+
   const root = new Container();
   root.label = "story-art-slice-root";
   options.world.addChild(root);
 
   const layers = createLayers(root);
-  const groundTiles = addGround(layers, options.center, options);
+  const groundTiles = addGround(layers, options.center, options, activeIsoMap);
   addGroundDecals(layers, options.center, options);
-  const volumeProps = getVolumePropDefinitions(options.center).map((definition) =>
-    makeVolumeProp(definition, options),
-  );
+  const volumeProps = getVolumePropDefinitions(
+    options.center,
+    activeIsoMap,
+    lighthouseState,
+  ).map((definition) => makeVolumeProp(definition, options));
 
   const lighthouseTextures = Object.fromEntries(
     STORY_LIGHTHOUSE_VISUAL_STATES.map((state) => [
@@ -459,32 +631,35 @@ export function createStorySliceRenderer(
     ]),
   ) as Record<StoryLighthouseVisualState, Texture>;
   const activePulses = new Set<ActivePulse>();
-  let lighthouseState: StoryLighthouseVisualState = options.lit ? "on" : "off";
   const fogSprites = addTexturedFog(
     layers,
     options.center,
     lighthouseState,
     options,
   );
-  const lighthouseVolume = makeVolumeProp(
-    {
-      label: "story-volume-lighthouse",
-      role: "lighthouse",
-      texturePath: STORY_SLICE_ASSETS.lighthouse.states[lighthouseState],
-      x: options.center.x,
-      y: options.center.y,
-      scale: 0.82,
-      baseYOffset: 0,
-      visualHeight: 190,
-      depthOffset: 95,
-      shadowScaleX: 1.1,
-      shadowScaleY: 0.28,
-    },
-    options,
-  );
+  const lighthouseVolume =
+    volumeProps.find((prop) => prop.debug.role === "lighthouse") ??
+    makeVolumeProp(
+      {
+        label: "story-volume-lighthouse",
+        role: "lighthouse",
+        texturePath: STORY_SLICE_ASSETS.lighthouse.states[lighthouseState],
+        x: options.center.x,
+        y: options.center.y,
+        scale: 0.82,
+        baseYOffset: 0,
+        visualHeight: 190,
+        depthOffset: 95,
+        shadowScaleX: 1.1,
+        shadowScaleY: 0.28,
+      },
+      options,
+    );
+  if (!volumeProps.includes(lighthouseVolume)) {
+    volumeProps.push(lighthouseVolume);
+  }
   const lighthouse = lighthouseVolume.sprite;
   lighthouse.texture = lighthouseTextures[lighthouseState];
-  volumeProps.push(lighthouseVolume);
 
   const coreGlow = makeSprite(
     STORY_SLICE_ASSETS.lighthouse.coreGlow,
@@ -529,12 +704,22 @@ export function createStorySliceRenderer(
     debugVolumeProps(): StoryVolumePropDebug[] {
       return volumeProps.map((prop) => ({
         ...prop.debug,
+        tile: prop.debug.tile ? { ...prop.debug.tile } : undefined,
+        footprint: prop.debug.footprint
+          ? { ...prop.debug.footprint }
+          : undefined,
         zIndex: prop.container.zIndex,
         containerParentLabel: prop.container.parent?.label,
         shadowChildCount: prop.container.children.filter((child) =>
           child.label?.endsWith("-shadow"),
         ).length,
       }));
+    },
+    debugIsoMapStats(): StoryIsoMapStats | undefined {
+      return isoMapStats ? { ...isoMapStats } : undefined;
+    },
+    debugBlockedFootprints(): StoryIsoFootprint[] {
+      return blockedFootprints.map((footprint) => ({ ...footprint }));
     },
     playScanPulse(origin: { x: number; y: number }): void {
       const pulse = makeSprite(
