@@ -34,7 +34,7 @@ export interface StorySliceRendererOptions {
   lit: boolean;
   // Enables story 2.5D projection for ground, fog, and volume props.
   projectPoint?: (point: StoryPoint) => StoryPoint;
-  isoMap?: StoryIsoMapDefinition;
+  isoMap?: StoryIsoMapDefinition | null;
 }
 
 type StoryVolumePropRole = StoryIsoPropRole;
@@ -601,7 +601,9 @@ export function createStorySliceRenderer(
   }
 
   const activeIsoMap = options.projectPoint
-    ? options.isoMap ?? STORY_A2_PREVIEW_MAP
+    ? options.isoMap === null
+      ? undefined
+      : options.isoMap ?? STORY_A2_PREVIEW_MAP
     : undefined;
   let lighthouseState: StoryLighthouseVisualState = options.lit ? "on" : "off";
   const isoMapStats = activeIsoMap

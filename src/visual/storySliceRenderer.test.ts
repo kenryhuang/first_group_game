@@ -213,6 +213,35 @@ describe("story slice renderer", () => {
     expect(renderer.debugBlockedFootprints()).toEqual([]);
   });
 
+  it("preserves legacy projected ground layout when iso map is disabled", () => {
+    const world = new Container();
+    const center = STORY_CENTER_LIGHTHOUSE.position;
+    const renderer = createStorySliceRenderer({
+      world,
+      center,
+      lit: false,
+      projectPoint: (point) => projectStoryPoint(point, center),
+      isoMap: null,
+    });
+
+    expect(renderer.layers.ground.children).toHaveLength(63);
+    expect(renderer.debugGroundTiles()).toHaveLength(63);
+
+    const firstGroundTile = renderer.debugGroundTiles()[0];
+    const projectedFirstGroundPosition = projectStoryPoint(
+      {
+        x: center.x - 4 * 256,
+        y: center.y - 3 * 256,
+      },
+      center,
+    );
+
+    expect(firstGroundTile.label).toBe("story-iso-ground-concrete-0");
+    expect(firstGroundTile.projectedPoint).toEqual(projectedFirstGroundPosition);
+    expect(renderer.debugIsoMapStats()).toBeUndefined();
+    expect(renderer.debugBlockedFootprints()).toEqual([]);
+  });
+
   it("adds textured fog that thins as the lighthouse turns on", () => {
     const renderer = createStorySliceRenderer({
       world: new Container(),
