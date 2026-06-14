@@ -9,8 +9,13 @@ import { STORY_ART_PALETTE } from "./storyArtDirection";
 export type StoryActorCharacter = "vanguard" | "zombie";
 
 export const STORY_ACTOR_SCALES: Record<StoryActorCharacter, number> = {
-  vanguard: 0.52,
-  zombie: 0.39,
+  vanguard: 0.57,
+  zombie: 0.43,
+};
+
+export const STORY_ACTOR_FOOT_ANCHORS: Record<StoryActorCharacter, number> = {
+  vanguard: 0.88,
+  zombie: 0.9,
 };
 
 export interface StoryActorVisual {
@@ -78,7 +83,7 @@ export function attachStoryActorVisual(
   view.allowChildren = true;
 
   const sprite = new AnimatedSprite(getTextures(character, animation, direction));
-  sprite.anchor.set(0.5);
+  sprite.anchor.set(0.5, STORY_ACTOR_FOOT_ANCHORS[character]);
   sprite.scale.set(STORY_ACTOR_SCALES[character]);
   sprite.animationSpeed = 1000 / getFrameMs(character, animation, direction) / 60;
   sprite.loop = shouldLoop(character, animation, direction);
