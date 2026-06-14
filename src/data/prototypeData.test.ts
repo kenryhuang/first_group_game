@@ -14,6 +14,7 @@ describe("prototype data", () => {
       "courier",
     ]);
     expect(BOSS_ORDER.map((boss) => boss.descentLevel)).toEqual([10, 20, 30]);
+    expect(BOSS_ORDER.map((boss) => boss.name)).toEqual(["变异厨师", "变异小丑", "变异快递员"]);
     expect(BOSS_ORDER.map((boss) => boss.specialItem.name)).toEqual([
       "血肉菜谱",
       "裂笑面具",
@@ -36,5 +37,6 @@ describe("prototype data", () => {
 
   it("includes at least one explosive skill for the courier chain", () => {
     expect(SKILLS.some((skill) => skill.tags.includes("explosive"))).toBe(true);
+    expect(SKILLS.find((skill) => skill.id === "explosive-parcel")?.name).toBe("爆炸包裹");
   });
 });

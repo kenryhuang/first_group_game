@@ -13,8 +13,10 @@ export type StoryMechId = "vanguard" | "medic" | "engineer";
 export interface GameMetrics {
   enemyCount: number;
   bossCount: number;
+  bossHazardCount?: number;
   bulletCount: number;
   buildingCount: number;
+  renderedBuildingCount?: number;
   mapWidth: number;
   mapHeight: number;
   attackMode: "auto" | "manual";
@@ -22,10 +24,14 @@ export interface GameMetrics {
   bossNames: string[];
   insideBuilding: boolean;
   currentBuildingId: string | null;
+  playerX?: number;
+  playerY?: number;
   playerHealth: number;
   storyVisionRadius?: number;
   storyLitLighthouseCount?: number;
   storyMonsterPressureMultiplier?: number;
+  storyMagicianInterferenceActive?: boolean;
+  storyMagicianInterferenceCount?: number;
   selectedStoryMechId?: StoryMechId | null;
   storyArtSliceEnabled?: boolean;
   storyLighthouseVisualState?: "off" | "charging" | "on";
@@ -45,8 +51,10 @@ function createInitialMetrics(): GameMetrics {
   return {
     enemyCount: 0,
     bossCount: 0,
+    bossHazardCount: 0,
     bulletCount: 0,
     buildingCount: BUILDINGS.length,
+    renderedBuildingCount: 0,
     mapWidth: MAP_WIDTH,
     mapHeight: MAP_HEIGHT,
     attackMode: "auto",
@@ -54,10 +62,14 @@ function createInitialMetrics(): GameMetrics {
     bossNames: [],
     insideBuilding: false,
     currentBuildingId: null,
+    playerX: undefined,
+    playerY: undefined,
     playerHealth: createRunState().health,
     storyVisionRadius: undefined,
     storyLitLighthouseCount: undefined,
     storyMonsterPressureMultiplier: undefined,
+    storyMagicianInterferenceActive: undefined,
+    storyMagicianInterferenceCount: undefined,
     selectedStoryMechId: null,
     storyArtSliceEnabled: false,
     storyLighthouseVisualState: undefined,
@@ -87,7 +99,7 @@ export const useGameStore = defineStore("game", {
       ...(state.mode === "story"
         ? [
             `灯塔 ${state.storyLitLighthouseCount ?? 0}/1  视野 ${state.storyVisionRadius ?? 0}  怪物压力 x${state.storyMonsterPressureMultiplier ?? 1}`,
-            `剧情机甲 ${state.selectedStoryMechId ? STORY_MECH_LABELS[state.selectedStoryMechId] : "未选择"}  未解锁区城墙封锁  地图 20000x20000`,
+            `剧情机甲 ${state.selectedStoryMechId ? STORY_MECH_LABELS[state.selectedStoryMechId] : "未选择"}  全城开放调图中  移速 x5  地图 ${state.mapWidth}x${state.mapHeight}`,
           ]
         : []),
       ...createHudLines(state.runState),
@@ -128,7 +140,7 @@ export const useGameStore = defineStore("game", {
       this.runState = createRunState();
       Object.assign(this, createInitialMetrics());
       this.selectedStoryMechId = selectedMechId;
-      this.message = "剧情模式：进入雾城。先点亮中心灯塔，建立临时视野。";
+      this.message = "剧情模式调图版：全城已开放，移速提高到 5 倍。";
     },
     openBossRushSelect(): void {
       this.phase = "bossRushSelect";
@@ -169,8 +181,10 @@ export const useGameStore = defineStore("game", {
     syncMetrics(metrics: GameMetrics): void {
       this.enemyCount = metrics.enemyCount;
       this.bossCount = metrics.bossCount;
+      this.bossHazardCount = metrics.bossHazardCount;
       this.bulletCount = metrics.bulletCount;
       this.buildingCount = metrics.buildingCount;
+      this.renderedBuildingCount = metrics.renderedBuildingCount;
       this.mapWidth = metrics.mapWidth;
       this.mapHeight = metrics.mapHeight;
       this.attackMode = metrics.attackMode;
@@ -178,10 +192,14 @@ export const useGameStore = defineStore("game", {
       this.bossNames = metrics.bossNames;
       this.insideBuilding = metrics.insideBuilding;
       this.currentBuildingId = metrics.currentBuildingId;
+      this.playerX = metrics.playerX;
+      this.playerY = metrics.playerY;
       this.playerHealth = metrics.playerHealth;
       this.storyVisionRadius = metrics.storyVisionRadius;
       this.storyLitLighthouseCount = metrics.storyLitLighthouseCount;
       this.storyMonsterPressureMultiplier = metrics.storyMonsterPressureMultiplier;
+      this.storyMagicianInterferenceActive = metrics.storyMagicianInterferenceActive;
+      this.storyMagicianInterferenceCount = metrics.storyMagicianInterferenceCount;
       this.selectedStoryMechId = metrics.selectedStoryMechId ?? this.selectedStoryMechId;
       this.storyArtSliceEnabled = metrics.storyArtSliceEnabled;
       this.storyLighthouseVisualState = metrics.storyLighthouseVisualState;

@@ -3,7 +3,7 @@ import { createRunState } from "../systems/runState";
 import { createHudLines } from "./hud";
 
 describe("hud", () => {
-  it("summarizes level, health, pollution, Boss pressure, and loadout", () => {
+  it("summarizes level, health, pollution, Boss pressure, and loadout in Chinese", () => {
     const lines = createHudLines({
       ...createRunState(),
       level: 10,
@@ -17,11 +17,12 @@ describe("hud", () => {
         resolvedMilestones: [],
       },
     });
-    expect(lines[0]).toContain("Lv 10");
+    expect(lines[0]).toContain("等级 10");
     expect(lines[1]).toContain("污染 12");
-    expect(lines[2]).toContain("追杀 变异厨师");
+    expect(lines[2]).toContain("追猎 变异厨师");
     expect(lines[3]).toContain("技能 无");
   });
+
   it("shows pending and selected final mech forms", () => {
     const pendingLines = createHudLines({
       ...createRunState(),

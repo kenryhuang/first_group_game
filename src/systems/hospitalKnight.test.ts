@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   HOSPITAL_KNIGHT_AGGRO_RADIUS,
+  HOSPITAL_KNIGHT_BONE_COMMAND_COUNT,
+  HOSPITAL_KNIGHT_DEAD_FORMATION_LANES,
   HOSPITAL_KNIGHT_DEFINITION,
   HOSPITAL_KNIGHT_GUARD_RADIUS,
+  HOSPITAL_KNIGHT_HOLY_LANCE_SPIKES,
+  HOSPITAL_KNIGHT_ROYAL_GUARD_COUNT,
   HOSPITAL_KNIGHT_SPAWN,
   BONE_CONTACT_DAMAGE,
   BONE_SOLDIER_CONTACT_DAMAGE,
@@ -10,6 +14,7 @@ import {
   getHospitalKnightGuardRoamTarget,
   getHospitalKnightPhase,
   getInitialBoneHordeCount,
+  getNextHospitalKnightSkill,
   isHospitalKnightAtRuinedHospital,
   isHospitalKnightDamageable,
   shouldConvertZombieToBoneSoldier,
@@ -55,5 +60,22 @@ describe("hospital knight boss", () => {
     expect(GIANT_SWORD_TRAP_MS).toBe(3000);
     expect(BONE_CONTACT_DAMAGE).toBe(10);
     expect(BONE_SOLDIER_CONTACT_DAMAGE).toBe(19);
+  });
+
+  it("rotates through the full legion kit with stronger phase two options", () => {
+    expect(getNextHospitalKnightSkill(1, 0)).toBe("bone-command");
+    expect(getNextHospitalKnightSkill(1, 1)).toBe("giant-sword-judgment");
+    expect(getNextHospitalKnightSkill(1, 2)).toBe("holy-lance-charge");
+    expect(getNextHospitalKnightSkill(1, 3)).toBe("bone-command");
+
+    expect(getNextHospitalKnightSkill(2, 0)).toBe("royal-guard");
+    expect(getNextHospitalKnightSkill(2, 1)).toBe("giant-sword-judgment");
+    expect(getNextHospitalKnightSkill(2, 2)).toBe("holy-lance-charge");
+    expect(getNextHospitalKnightSkill(2, 3)).toBe("dead-formation");
+
+    expect(HOSPITAL_KNIGHT_BONE_COMMAND_COUNT).toBe(12);
+    expect(HOSPITAL_KNIGHT_ROYAL_GUARD_COUNT).toBe(8);
+    expect(HOSPITAL_KNIGHT_DEAD_FORMATION_LANES).toBe(4);
+    expect(HOSPITAL_KNIGHT_HOLY_LANCE_SPIKES).toBe(6);
   });
 });

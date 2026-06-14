@@ -3,12 +3,16 @@ import type { RunState } from "../domain/types";
 import { createRunState } from "./runState";
 import {
   FINAL_BOSS_DEFINITION,
+  FINAL_BOSS_PHASE_FOUR_SKILL,
   FINAL_BOSS_PHASE_ONE_SKILL,
   FINAL_BOSS_PHASE_THREE_SKILL,
   FINAL_BOSS_PHASE_TWO_SKILL,
   getEndgameUltimateDefinition,
   getFinalBossPhase,
+  getWarCoreDefeatOutcome,
+  getWarCoreEvacuationOutcome,
   isEndgameReady,
+  shouldAllowWarCoreSpawn,
 } from "./endgame";
 
 function createEndgameState(overrides: Partial<RunState> = {}): RunState {
@@ -42,11 +46,13 @@ describe("endgame", () => {
     expect(getEndgameUltimateDefinition("blade").radius).toBeGreaterThanOrEqual(380);
   });
 
-  it("tracks the city core final boss phases by absolute health", () => {
+  it("tracks the city authority war core through four absolute-health phases", () => {
     expect(FINAL_BOSS_DEFINITION.maxHealth).toBe(10000);
+    expect(FINAL_BOSS_DEFINITION.name).toBe("失控战争核心");
     expect(getFinalBossPhase(9000)).toBe(1);
     expect(getFinalBossPhase(7000)).toBe(2);
     expect(getFinalBossPhase(5000)).toBe(3);
+    expect(getFinalBossPhase(2000)).toBe(4);
   });
 
   it("defines phase one as a city core turret with full-map interference and beam", () => {
@@ -80,5 +86,33 @@ describe("endgame", () => {
     expect(FINAL_BOSS_PHASE_THREE_SKILL.crawlerExplosionRadius).toBe(56);
     expect(FINAL_BOSS_PHASE_THREE_SKILL.suppressMs).toBe(5000);
     expect(FINAL_BOSS_PHASE_THREE_SKILL.finalBeamHealthThreshold).toBe(1000);
+  });
+
+  it("defines phase four as the underground armory and collapse evacuation", () => {
+    expect(FINAL_BOSS_PHASE_FOUR_SKILL.armoryWidth).toBeGreaterThanOrEqual(1800);
+    expect(FINAL_BOSS_PHASE_FOUR_SKILL.armoryHeight).toBeGreaterThanOrEqual(1200);
+    expect(FINAL_BOSS_PHASE_FOUR_SKILL.pressureTickMs).toBeLessThanOrEqual(900);
+    expect(FINAL_BOSS_PHASE_FOUR_SKILL.barrageDamage).toBeGreaterThan(0);
+    expect(FINAL_BOSS_PHASE_FOUR_SKILL.collapseEscapeMs).toBeGreaterThanOrEqual(20000);
+    expect(FINAL_BOSS_PHASE_FOUR_SKILL.exitRadius).toBeGreaterThanOrEqual(80);
+  });
+
+  it("resolves underground armory evacuation by timer and exit distance", () => {
+    expect(getWarCoreEvacuationOutcome({ collapseMs: 1000, distanceToExit: 40, exitRadius: 90 })).toBe("escaped");
+    expect(getWarCoreEvacuationOutcome({ collapseMs: 1000, distanceToExit: 120, exitRadius: 90 })).toBe("still-running");
+    expect(getWarCoreEvacuationOutcome({ collapseMs: 0, distanceToExit: 120, exitRadius: 90 })).toBe("buried");
+  });
+
+  it("starts collapse instead of immediately ending when the phase four core is destroyed in the armory", () => {
+    expect(getWarCoreDefeatOutcome({ phase: 4, armoryActive: true, collapseMs: 0 })).toBe("start-collapse");
+    expect(getWarCoreDefeatOutcome({ phase: 4, armoryActive: true, collapseMs: 1000 })).toBe("mission-success");
+    expect(getWarCoreDefeatOutcome({ phase: 3, armoryActive: true, collapseMs: 0 })).toBe("mission-success");
+    expect(getWarCoreDefeatOutcome({ phase: 4, armoryActive: false, collapseMs: 0 })).toBe("mission-success");
+  });
+
+  it("does not respawn the war core during the underground armory sequence", () => {
+    expect(shouldAllowWarCoreSpawn({ armoryActive: false, collapseMs: 0 })).toBe(true);
+    expect(shouldAllowWarCoreSpawn({ armoryActive: true, collapseMs: 0 })).toBe(false);
+    expect(shouldAllowWarCoreSpawn({ armoryActive: true, collapseMs: 1000 })).toBe(false);
   });
 });

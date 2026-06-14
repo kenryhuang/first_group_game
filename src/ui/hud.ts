@@ -10,6 +10,15 @@ function getMechFormName(formId: NonNullable<RunState["selectedMechFormId"]>): s
   return "大刀形态";
 }
 
+function getPollutionBandName(label: string): string {
+  if (label === "calm") return "平稳";
+  if (label === "charged") return "充能";
+  if (label === "unstable") return "不稳定";
+  if (label === "dangerous") return "危险";
+  if (label === "overrun") return "失控";
+  return label;
+}
+
 export function createHudLines(state: RunState): string[] {
   const pollution = getPollutionTotals(state);
   const band = getPollutionBand(pollution.total);
@@ -37,9 +46,9 @@ export function createHudLines(state: RunState): string[] {
       : undefined;
 
   const lines = [
-    `Lv ${state.level}  HP ${state.health}/${state.maxHealth}  EXP ${state.experience}`,
-    `污染 ${pollution.total}  阶段 ${state.stagePollution}  状态 ${band.label}`,
-    `追杀 ${activeHunterName}  已击杀 ${state.killedBossIds.length}/3  线索 ${state.discoveredBossClues.length}`,
+    `等级 ${state.level}  生命 ${state.health}/${state.maxHealth}  经验 ${state.experience}`,
+    `污染 ${pollution.total}  阶段 ${state.stagePollution}  状态 ${getPollutionBandName(band.label)}`,
+    `追猎 ${activeHunterName}  已击杀 ${state.killedBossIds.length}/3  线索 ${state.discoveredBossClues.length}`,
     `技能 ${skillNames.join(" / ") || "无"}`,
     `击杀强化 ${state.killsTowardSkillChoice}/${requiredKills}${pendingChoice}  ${upgradeNames.join(" / ") || "暂无强化"}`,
   ];

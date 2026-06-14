@@ -18,7 +18,7 @@ export interface AutoWeaponDefinition {
 export const AUTO_WEAPON_DEFINITIONS: AutoWeaponDefinition[] = [
   {
     id: "missile-pod",
-    name: "肩载导弹巢",
+    name: "肩载导弹舱",
     mode: "area",
     priority: "cluster",
     cooldownMs: 2600,
