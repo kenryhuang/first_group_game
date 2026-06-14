@@ -34,6 +34,7 @@ export interface StorySliceRendererOptions {
   lit: boolean;
   // Enables story 2.5D projection for ground, fog, and volume props.
   projectPoint?: (point: StoryPoint) => StoryPoint;
+  // Pass null to disable the default A2 map and use legacy projected ground.
   isoMap?: StoryIsoMapDefinition | null;
 }
 
@@ -203,10 +204,11 @@ function makeIsoGroundTileFromKind(
   tileIndex: number,
   labelPrefix: "story-iso-ground" | "story-a2-ground",
   options: Pick<StorySliceRendererOptions, "projectPoint">,
+  diamondScale = 1,
 ): { view: Graphics; debug: StoryGroundTileDebug } {
   const projectedPoint = options.projectPoint?.(worldPoint) ?? worldPoint;
-  const diamondWidth = STORY_2_5D_CONFIG.isoTileWidth;
-  const diamondHeight = STORY_2_5D_CONFIG.isoTileHeight;
+  const diamondWidth = STORY_2_5D_CONFIG.isoTileWidth * diamondScale;
+  const diamondHeight = STORY_2_5D_CONFIG.isoTileHeight * diamondScale;
   const view = new Graphics();
   const label = `${labelPrefix}-${kind}-${tileIndex}`;
   view.label = label;
@@ -257,6 +259,10 @@ function makeIsoGroundTile(
   );
 }
 
+function getIsoMapTileScale(isoMap: StoryIsoMapDefinition): number {
+  return isoMap.tileSize / STORY_2_5D_CONFIG.isoLogicalTileSize;
+}
+
 function getIsoTileWorldPoint(
   tile: StoryIsoTileDefinition,
   center: StoryPoint,
@@ -300,6 +306,7 @@ function makeA2GroundTile(
     tileIndex,
     "story-a2-ground",
     options,
+    getIsoMapTileScale(isoMap),
   );
 }
 
@@ -701,11 +708,17 @@ export function createStorySliceRenderer(
     setLighthouseLit: (lit: boolean) => setState(lit ? "on" : "off"),
     getLighthouseVisualState: () => lighthouseState,
     debugGroundTiles(): StoryGroundTileDebug[] {
-      return groundTiles.map((tile) => ({ ...tile }));
+      return groundTiles.map((tile) => ({
+        ...tile,
+        worldPoint: { ...tile.worldPoint },
+        projectedPoint: { ...tile.projectedPoint },
+      }));
     },
     debugVolumeProps(): StoryVolumePropDebug[] {
       return volumeProps.map((prop) => ({
         ...prop.debug,
+        basePoint: { ...prop.debug.basePoint },
+        projectedPoint: { ...prop.debug.projectedPoint },
         tile: prop.debug.tile ? { ...prop.debug.tile } : undefined,
         footprint: prop.debug.footprint
           ? { ...prop.debug.footprint }

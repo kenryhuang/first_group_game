@@ -16,6 +16,7 @@ import {
   getStoryIsoBlockedFootprints,
   getStoryIsoMapStats,
   getStoryIsoTileWorldPoint,
+  type StoryIsoMapDefinition,
 } from "./storyIsoMap";
 
 const canvasContextStub = {
@@ -186,6 +187,16 @@ describe("story slice renderer", () => {
     expect(lighthouse?.tile).toEqual({ x: 0, y: 0 });
     expect(lighthouse?.basePoint).toEqual(center);
     expect(lighthouse?.zIndex).toBe(getStoryDepth(center, 105));
+
+    const lighthouseContainer = world.children.find(
+      (child) => child.label === "story-a2-lighthouse",
+    ) as InstanceType<typeof Container>;
+    const lighthouseSprite = lighthouseContainer.children.find(
+      (child) => child.label === "story-a2-lighthouse-sprite",
+    ) as PixiSprite;
+    expect(lighthouseSprite.texture).toBe(
+      cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.states.off),
+    );
   });
 
   it("preserves default ground and fog layout without projection", () => {
@@ -240,6 +251,43 @@ describe("story slice renderer", () => {
     expect(firstGroundTile.projectedPoint).toEqual(projectedFirstGroundPosition);
     expect(renderer.debugIsoMapStats()).toBeUndefined();
     expect(renderer.debugBlockedFootprints()).toEqual([]);
+  });
+
+  it("scales custom iso map ground diamonds with tile size", () => {
+    const center = STORY_CENTER_LIGHTHOUSE.position;
+    const customIsoMap: StoryIsoMapDefinition = {
+      mode: "a2-preview",
+      tileSize: 512,
+      tiles: [{ x: 1, y: 0, kind: "concrete" }],
+      props: [],
+    };
+    const renderer = createStorySliceRenderer({
+      world: new Container(),
+      center,
+      lit: false,
+      projectPoint: (point) => projectStoryPoint(point, center),
+      isoMap: customIsoMap,
+    });
+
+    const firstGroundTile = renderer.debugGroundTiles()[0];
+
+    expect(firstGroundTile.worldPoint).toEqual({
+      x: center.x + 512,
+      y: center.y,
+    });
+    expect(firstGroundTile.diamondWidth).toBe(
+      STORY_2_5D_CONFIG.isoTileWidth * 2,
+    );
+    expect(firstGroundTile.diamondHeight).toBe(
+      STORY_2_5D_CONFIG.isoTileHeight * 2,
+    );
+    expect(renderer.debugIsoMapStats()).toEqual({
+      mode: "a2-preview",
+      tileCount: 1,
+      roadTileCount: 0,
+      propCount: 0,
+      blockedFootprintCount: 0,
+    });
   });
 
   it("adds textured fog that thins as the lighthouse turns on", () => {
