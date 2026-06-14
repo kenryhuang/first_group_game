@@ -260,6 +260,10 @@ import {
   unprojectStoryPoint,
   type StoryPoint,
 } from "../visual/story2_5dProjection";
+import {
+  STORY_A2_PREVIEW_MAP,
+  getStoryIsoBlockedRects,
+} from "../visual/storyIsoMap";
 
 type AttackMode = "auto" | "manual";
 type BossMode = "roam" | "chase" | "charge" | "windup";
@@ -585,6 +589,8 @@ interface FinalBossCrawlerActor extends Actor {
 const BULLET_SOUND =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 const METRICS_EMIT_INTERVAL_MS = 250;
+const STORY_A2_PROJECTED_ROAD_UNDERLAY_ALPHA = 0.08;
+const STORY_A2_PROJECTED_DISTRICT_UNDERLAY_ALPHA = 0.08;
 
 export class PixiWastelandGame {
   private app = new Application();
@@ -593,6 +599,8 @@ export class PixiWastelandGame {
   private playerWeapon?: WeaponVisual;
   private storySliceRenderer?: StorySliceRenderer;
   private storyProjectedUnderlayEnabled = false;
+  private storyProjectedRoadUnderlayAlpha: number | undefined;
+  private storyProjectedDistrictUnderlayAlpha: number | undefined;
   private playerStoryVisual?: StoryActorVisual;
   private readonly playerStoryAnimationLock = createStoryActorAnimationLock();
   private readonly enemyStoryVisuals = new WeakMap<EnemyActor, StoryActorVisual>();
@@ -818,7 +826,18 @@ export class PixiWastelandGame {
   }
 
   private getActiveBlockingBuildings(): Rect[] {
-    this.activeBlockingBuildingsCache ??= this.getActiveBuildings().filter(isBlockingBuilding);
+    if (!this.activeBlockingBuildingsCache) {
+      const blockingBuildings = this.getActiveBuildings().filter(isBlockingBuilding);
+      this.activeBlockingBuildingsCache = this.isStoryMode()
+        ? [
+            ...blockingBuildings,
+            ...getStoryIsoBlockedRects(
+              STORY_A2_PREVIEW_MAP,
+              STORY_CENTER_LIGHTHOUSE.position,
+            ),
+          ]
+        : blockingBuildings;
+    }
     return this.activeBlockingBuildingsCache;
   }
 
@@ -1124,16 +1143,18 @@ export class PixiWastelandGame {
 
   private drawStoryCity(): void {
     this.storyProjectedUnderlayEnabled = true;
+    this.storyProjectedRoadUnderlayAlpha = STORY_A2_PROJECTED_ROAD_UNDERLAY_ALPHA;
+    this.storyProjectedDistrictUnderlayAlpha = STORY_A2_PROJECTED_DISTRICT_UNDERLAY_ALPHA;
 
     const road = new Graphics();
     road.zIndex = this.getStoryVisualDepth({ x: 0, y: 0 }, -900);
     for (let x = 2200; x <= this.getMapWidth(); x += 2600) {
       this.drawProjectedStoryQuad(road, x, this.getMapHeight() / 2, 84, this.getMapHeight())
-        .fill({ color: 0x151914, alpha: 0.34 });
+        .fill({ color: 0x151914, alpha: this.storyProjectedRoadUnderlayAlpha });
     }
     for (let y = 2200; y <= this.getMapHeight(); y += 2600) {
       this.drawProjectedStoryQuad(road, this.getMapWidth() / 2, y, this.getMapWidth(), 84)
-        .fill({ color: 0x151914, alpha: 0.42 });
+        .fill({ color: 0x151914, alpha: this.storyProjectedRoadUnderlayAlpha });
     }
     this.world.addChild(road);
 
@@ -1142,11 +1163,16 @@ export class PixiWastelandGame {
       const unlocked = this.unlockedStoryRegionIds.has(region.id);
       const district = new Graphics();
       this.drawProjectedStoryQuad(district, region.x, region.y, region.width, region.height)
-        .fill({ color: region.color, alpha: unlocked ? 0.28 : 0.12 })
+        .fill({
+          color: region.color,
+          alpha: unlocked
+            ? this.storyProjectedDistrictUnderlayAlpha
+            : this.storyProjectedDistrictUnderlayAlpha * 0.5,
+        })
         .stroke({
           color: unlocked ? 0x59614f : 0x1a080b,
-          alpha: unlocked ? 0.34 : 0.6,
-          width: unlocked ? 2 : 10,
+          alpha: unlocked ? 0.16 : 0.24,
+          width: unlocked ? 2 : 6,
         });
       district.zIndex = this.getStoryVisualDepth(
         { x: region.x, y: region.y + region.height / 2 },
@@ -8083,6 +8109,9 @@ export class PixiWastelandGame {
     const storyIsoBlockedFootprints = this.isStoryMode()
       ? this.storySliceRenderer?.debugBlockedFootprints()
       : undefined;
+    const storyDepthSortedPropCount = storyVolumeProps?.filter(
+      (prop) => prop.containerParentLabel === "story-world-root",
+    ).length;
     const projectedPlayer =
       this.isStoryMode() && this.player ? this.projectPoint(this.player) : undefined;
     const metrics = {
@@ -8139,20 +8168,26 @@ export class PixiWastelandGame {
       story2_5dPlayerScreenX: projectedPlayer?.x,
       story2_5dPlayerScreenY: projectedPlayer?.y,
       story2_5dVolumePropCount: storyVolumeProps?.length,
-      story2_5dDepthSortedPropCount: storyVolumeProps?.filter(
-        (prop) => prop.containerParentLabel === "story-world-root",
-      ).length,
+      story2_5dDepthSortedPropCount: storyDepthSortedPropCount,
       story2_5dProjectedUnderlayEnabled: this.isStoryMode()
         ? this.storyProjectedUnderlayEnabled
         : false,
+      story2_5dProjectedRoadUnderlayAlpha: this.isStoryMode()
+        ? this.storyProjectedRoadUnderlayAlpha
+        : undefined,
+      story2_5dProjectedDistrictUnderlayAlpha: this.isStoryMode()
+        ? this.storyProjectedDistrictUnderlayAlpha
+        : undefined,
       storyIsoMapMode: storyIsoMapStats?.mode,
       storyIsoMapTileCount: storyIsoMapStats?.tileCount,
       storyIsoMapRoadTileCount: storyIsoMapStats?.roadTileCount,
       storyIsoMapPropCount: storyIsoMapStats?.propCount,
-      storyIsoMapDepthSortedPropCount: storyVolumeProps?.filter(
-        (prop) => prop.containerParentLabel === "story-world-root",
-      ).length,
-      storyIsoMapBlockedFootprintCount: storyIsoBlockedFootprints?.length,
+      storyIsoMapDepthSortedPropCount: storyIsoMapStats
+        ? storyDepthSortedPropCount
+        : undefined,
+      storyIsoMapBlockedFootprintCount: storyIsoMapStats
+        ? storyIsoBlockedFootprints?.length
+        : undefined,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;

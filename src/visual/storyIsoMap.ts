@@ -67,6 +67,16 @@ export interface StoryIsoMapStats {
   blockedFootprintCount: number;
 }
 
+export interface StoryIsoBlockingRect {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export const STORY_A2_BLOCKING_FOOTPRINT_SCALE = 0.68;
+
 function getPreviewTileKind(x: number, y: number): StoryIsoTileKind {
   const isDiagonalRoad =
     x === y || x === -y || (Math.abs(x) <= 1 && Math.abs(y) <= 1);
@@ -256,6 +266,25 @@ export function getStoryIsoBlockedFootprints(
   return map.props
     .filter((prop) => prop.blocksMovement)
     .map((prop) => ({ ...prop.footprint }));
+}
+
+export function getStoryIsoBlockedRects(
+  map: StoryIsoMapDefinition,
+  center: StoryPoint,
+): StoryIsoBlockingRect[] {
+  return map.props
+    .filter((prop) => prop.blocksMovement)
+    .map((prop) => ({
+      id: `story-a2-blocking-${prop.label}`,
+      x: center.x + prop.tile.x * map.tileSize,
+      y: center.y + prop.tile.y * map.tileSize,
+      width: Math.round(
+        prop.footprint.width * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
+      ),
+      height: Math.round(
+        prop.footprint.height * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
+      ),
+    }));
 }
 
 export function getStoryIsoMapStats(

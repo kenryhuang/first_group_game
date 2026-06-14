@@ -4,6 +4,7 @@ import { STORY_2_5D_CONFIG } from "./story2_5dProjection";
 import {
   STORY_A2_PREVIEW_MAP,
   getStoryIsoBlockedFootprints,
+  getStoryIsoBlockedRects,
   getStoryIsoMapStats,
   getStoryIsoPropBasePoint,
   getStoryIsoTileWorldPoint,
@@ -65,5 +66,28 @@ describe("story isometric preview map", () => {
     });
     expect(getStoryIsoPropBasePoint(firstBuilding, STORY_CENTER_LIGHTHOUSE.position))
       .toEqual({ x: 19232, y: 19032 });
+  });
+
+  it("converts blocked footprints into world collision rectangles around prop bases", () => {
+    const blockedRects = getStoryIsoBlockedRects(
+      STORY_A2_PREVIEW_MAP,
+      STORY_CENTER_LIGHTHOUSE.position,
+    );
+
+    expect(blockedRects).toHaveLength(6);
+    expect(blockedRects[0]).toEqual({
+      id: "story-a2-blocking-story-a2-building-green",
+      x: 19232,
+      y: 19032,
+      width: 348,
+      height: 348,
+    });
+    expect(blockedRects.find((rect) => rect.id.endsWith("lighthouse"))).toEqual({
+      id: "story-a2-blocking-story-a2-lighthouse",
+      x: 20000,
+      y: 19800,
+      width: 348,
+      height: 348,
+    });
   });
 });

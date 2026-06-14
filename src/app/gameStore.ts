@@ -42,6 +42,8 @@ export interface GameMetrics {
   story2_5dVolumePropCount?: number;
   story2_5dDepthSortedPropCount?: number;
   story2_5dProjectedUnderlayEnabled?: boolean;
+  story2_5dProjectedRoadUnderlayAlpha?: number;
+  story2_5dProjectedDistrictUnderlayAlpha?: number;
   story2_5dProjectionMode?: "isometric-a1";
   story2_5dIsoTileWidth?: number;
   story2_5dIsoTileHeight?: number;
@@ -97,6 +99,8 @@ function createInitialMetrics(): GameMetrics {
     story2_5dVolumePropCount: undefined,
     story2_5dDepthSortedPropCount: undefined,
     story2_5dProjectedUnderlayEnabled: false,
+    story2_5dProjectedRoadUnderlayAlpha: undefined,
+    story2_5dProjectedDistrictUnderlayAlpha: undefined,
     story2_5dProjectionMode: undefined,
     story2_5dIsoTileWidth: undefined,
     story2_5dIsoTileHeight: undefined,
@@ -244,6 +248,8 @@ export const useGameStore = defineStore("game", {
       this.story2_5dVolumePropCount = metrics.story2_5dVolumePropCount;
       this.story2_5dDepthSortedPropCount = metrics.story2_5dDepthSortedPropCount;
       this.story2_5dProjectedUnderlayEnabled = metrics.story2_5dProjectedUnderlayEnabled;
+      this.story2_5dProjectedRoadUnderlayAlpha = metrics.story2_5dProjectedRoadUnderlayAlpha;
+      this.story2_5dProjectedDistrictUnderlayAlpha = metrics.story2_5dProjectedDistrictUnderlayAlpha;
       this.story2_5dProjectionMode = metrics.story2_5dProjectionMode;
       this.story2_5dIsoTileWidth = metrics.story2_5dIsoTileWidth;
       this.story2_5dIsoTileHeight = metrics.story2_5dIsoTileHeight;
