@@ -32,7 +32,8 @@ import {
 import {
   STORY_CENTER_LIGHTHOUSE,
   STORY_DEBUG_PLAYER_SPEED_MULTIPLIER,
-  STORY_DISABLE_ENCOUNTERS_FOR_MAP_TUNING,
+  STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING,
+  STORY_DISABLE_ZOMBIE_WAVES_FOR_MAP_TUNING,
   STORY_FOG_BASE_RADIUS,
   STORY_INITIAL_UNLOCKED_BOUNDS,
   STORY_INITIAL_UNLOCKED_REGION_IDS,
@@ -662,8 +663,12 @@ export class PixiWastelandGame {
     return this.options.mode === "story";
   }
 
-  private shouldDisableStoryEncounters(): boolean {
-    return this.isStoryMode() && STORY_DISABLE_ENCOUNTERS_FOR_MAP_TUNING;
+  private shouldDisableStoryBossEncounters(): boolean {
+    return this.isStoryMode() && STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING;
+  }
+
+  private shouldDisableStoryZombieWaves(): boolean {
+    return this.isStoryMode() && STORY_DISABLE_ZOMBIE_WAVES_FOR_MAP_TUNING;
   }
 
   private getMapWidth(): number {
@@ -732,13 +737,13 @@ export class PixiWastelandGame {
     this.createNodeMarkers();
     if (this.isBossRushMode()) {
       this.spawnBossRushScenario();
-    } else if (!this.shouldDisableStoryEncounters() && !EXPERIMENTAL_DISABLE_SMALL_ENEMIES) {
+    } else if (!this.shouldDisableStoryBossEncounters() && !EXPERIMENTAL_DISABLE_SMALL_ENEMIES) {
       this.spawnInitialBosses();
       this.spawnHospitalKnight();
     }
     this.world.addChild(this.interiorVisibilityMask);
     this.bindInput();
-    if (!this.isBossRushMode() && !this.shouldDisableStoryEncounters() && !EXPERIMENTAL_DISABLE_SMALL_ENEMIES) {
+    if (!this.isBossRushMode() && !this.shouldDisableStoryZombieWaves() && !EXPERIMENTAL_DISABLE_SMALL_ENEMIES) {
       this.spawnEnemyWave(getEnemySpawnBatchSize(this.state.level, 1000));
     }
     this.app.ticker.add(this.update);
@@ -2334,7 +2339,7 @@ export class PixiWastelandGame {
 
   private updateSpawning(deltaMs: number): void {
     if (this.isBossRushMode()) return;
-    if (this.shouldDisableStoryEncounters()) return;
+    if (this.shouldDisableStoryZombieWaves()) return;
     if (
       !shouldAllowSmallEnemySpawning({
         experimentalDisabled: EXPERIMENTAL_DISABLE_SMALL_ENEMIES,
@@ -4197,7 +4202,7 @@ export class PixiWastelandGame {
 
   private ensureEndgameBoss(): void {
     if (this.isBossRushMode()) return;
-    if (this.shouldDisableStoryEncounters()) return;
+    if (this.shouldDisableStoryBossEncounters()) return;
     if (!shouldAllowWarCoreSpawn({ armoryActive: this.warCoreArmoryActive, collapseMs: this.warCoreCollapseMs })) return;
     if (!this.player || this.finalBoss || !isEndgameReady(this.state)) return;
     this.spawnFinalBoss();

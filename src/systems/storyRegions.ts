@@ -10,7 +10,9 @@ export const STORY_LIGHTHOUSE_PRESSURE_BONUS = 0.85;
 export const STORY_MAP_TUNING_ALL_OPEN = true;
 export const STORY_DEBUG_PLAYER_SPEED_MULTIPLIER = 5;
 export const STORY_DISABLE_FOG_FOR_MAP_TUNING = true;
-export const STORY_DISABLE_ENCOUNTERS_FOR_MAP_TUNING = true;
+export const STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING = true;
+export const STORY_DISABLE_ZOMBIE_WAVES_FOR_MAP_TUNING = false;
+export const STORY_FLATTEN_MONSTER_PRESSURE_FOR_MAP_TUNING = true;
 export const STORY_INITIAL_UNLOCKED_BOUNDS = {
   x: STORY_MAP_WIDTH / 2,
   y: STORY_MAP_HEIGHT / 2,
@@ -330,7 +332,7 @@ export function getStoryVisionRadius(point: { x: number; y: number }, litLightho
 }
 
 export function getStoryMonsterPressureMultiplier(point: { x: number; y: number }, litLighthouseIds: string[]): number {
-  if (STORY_DISABLE_ENCOUNTERS_FOR_MAP_TUNING) return 1;
+  if (STORY_FLATTEN_MONSTER_PRESSURE_FOR_MAP_TUNING) return 1;
   const centerStrength = getLitLighthouseStrength(point, STORY_CENTER_LIGHTHOUSE, litLighthouseIds);
   return Number((1 + STORY_LIGHTHOUSE_PRESSURE_BONUS * centerStrength).toFixed(2));
 }

@@ -83,7 +83,7 @@ test.skip("story mode can be selected from the main menu", async ({ page }) => {
   await expect(page.getByTestId("story-intro")).toBeVisible();
 });
 
-test("story mode map tuning starts without fog combat limits or encounters", async ({ page }) => {
+test("story mode map tuning starts with zombie waves and without boss encounters", async ({ page }) => {
   await page.goto("/");
 
   await page.getByTestId("story-mode-button").click();
@@ -117,7 +117,7 @@ test("story mode map tuning starts without fog combat limits or encounters", asy
     .toBe(0);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.enemyCount ?? -1))
-    .toBe(0);
+    .toBeGreaterThan(0);
   await expect
     .poll(() => page.evaluate(() => (window.__prototypeDebug as any)?.renderedBuildingCount ?? -1))
     .toBeGreaterThanOrEqual(150);
