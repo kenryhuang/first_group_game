@@ -690,6 +690,19 @@ export class PixiWastelandGame {
     view.position.set(projected.x, projected.y + (this.isStoryMode() ? visualYOffset : 0));
   }
 
+  private projectEffectPoint(point: StoryPoint): StoryPoint {
+    const projected = this.projectPoint(point);
+    return {
+      x: projected.x,
+      y: projected.y + (this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0),
+    };
+  }
+
+  private setEffectPosition(view: Container, x: number, y: number, depthOffset = 45): void {
+    this.setViewPosition(view, x, y, STORY_2_5D_CONFIG.effectYOffset);
+    view.zIndex = this.getStoryVisualDepth({ x, y }, depthOffset);
+  }
+
   private getStoryVisualDepth(point: StoryPoint, offset = 0): number {
     return this.isStoryMode() ? getStoryDepth(point, offset) : 0;
   }
@@ -2033,7 +2046,13 @@ export class PixiWastelandGame {
   private updateProjectiles(deltaMs: number): void {
     for (const bullet of [...this.bullets]) {
       bullet.projectile = updateProjectileState(bullet.projectile, deltaMs);
-      this.setActorPosition(bullet, bullet.projectile.x, bullet.projectile.y, 40);
+      this.setActorPosition(
+        bullet,
+        bullet.projectile.x,
+        bullet.projectile.y,
+        40,
+        STORY_2_5D_CONFIG.effectYOffset,
+      );
 
       if (
         bullet.projectile.expired ||
@@ -2082,6 +2101,7 @@ export class PixiWastelandGame {
         missile.x + missile.velocityX * seconds,
         missile.y + missile.velocityY * seconds,
         40,
+        STORY_2_5D_CONFIG.effectYOffset,
       );
 
       if (
@@ -2676,7 +2696,7 @@ export class PixiWastelandGame {
       .moveTo(0, -radius)
       .lineTo(0, radius)
       .stroke({ color: 0xfff3b0, alpha: 0.72, width: 2 });
-    view.position.set(x, y);
+    this.setEffectPosition(view, x, y);
     this.world.addChild(view);
     this.autoStrikes.push({ view, x, y, radius, damage, lifeMs: 650, maxLifeMs: 650 });
   }
@@ -2704,14 +2724,17 @@ export class PixiWastelandGame {
   }
 
   private drawLaserEffect(start: { x: number; y: number }, end: { x: number; y: number }, color: number): void {
+    const visualStart = this.projectEffectPoint(start);
+    const visualEnd = this.projectEffectPoint(end);
     const view = new Graphics();
     view
-      .moveTo(start.x, start.y)
-      .lineTo(end.x, end.y)
+      .moveTo(visualStart.x, visualStart.y)
+      .lineTo(visualEnd.x, visualEnd.y)
       .stroke({ color: 0xd9f7ff, alpha: 0.88, width: 5 })
-      .moveTo(start.x, start.y)
-      .lineTo(end.x, end.y)
+      .moveTo(visualStart.x, visualStart.y)
+      .lineTo(visualEnd.x, visualEnd.y)
       .stroke({ color, alpha: 0.55, width: 14 });
+    view.zIndex = this.getStoryVisualDepth(end, 45);
     this.world.addChild(view);
     this.laserEffects.push({ view, lifeMs: 220, maxLifeMs: 220 });
   }
@@ -2913,7 +2936,7 @@ export class PixiWastelandGame {
       .fill({ color: 0x68e1fd, alpha: 0.18 })
       .circle(0, 0, radius)
       .stroke({ color: 0xd9f7ff, alpha: 0.72, width: 2 });
-    view.position.set(x, y);
+    this.setEffectPosition(view, x, y);
     this.world.addChild(view);
     this.laserEffects.push({ view, lifeMs: 260, maxLifeMs: 260 });
   }
@@ -2929,7 +2952,7 @@ export class PixiWastelandGame {
       .fill({ color: 0xff4d6d, alpha: 0.36 })
       .circle(0, 0, radius)
       .stroke({ color: 0xfff3b0, alpha: 0.5, width: 5 });
-    cloud.position.set(x, y);
+    this.setEffectPosition(cloud, x, y);
     this.world.addChild(cloud);
     gsap.to(cloud.scale, { x: 1.7, y: 1.7, duration: 0.5, ease: "power2.out" });
     gsap.to(cloud, {
@@ -3032,7 +3055,8 @@ export class PixiWastelandGame {
       .stroke({ color: 0xb56cff, alpha: 0.9, width: 2 })
       .circle(0, 0, radius)
       .stroke({ color: 0x68e1fd, alpha: 0.18, width: 1 });
-    view.position.set(x, y);
+    this.setViewPosition(view, x, y);
+    view.zIndex = this.getStoryVisualDepth({ x, y }, 15);
     this.world.addChild(view);
     this.warpMines.push({ view, x, y, radius, damage, lifeMs: 9000 });
     this.emitState("Fold mine: deployed behind you.");
@@ -3041,7 +3065,8 @@ export class PixiWastelandGame {
   private drawPhaseRing(x: number, y: number, radius: number): void {
     const ring = new Graphics();
     ring.circle(0, 0, radius).stroke({ color: 0xb56cff, alpha: 0.78, width: 3 });
-    ring.position.set(x, y);
+    this.setViewPosition(ring, x, y);
+    ring.zIndex = this.getStoryVisualDepth({ x, y }, 45);
     this.world.addChild(ring);
     gsap.to(ring.scale, { x: 1.5, y: 1.5, duration: 0.24 });
     gsap.to(ring, {
@@ -3931,7 +3956,7 @@ export class PixiWastelandGame {
     this.addScreenShake(120, 6);
     const blast = new Graphics();
     blast.circle(0, 0, radius).fill({ color, alpha: 0.2 }).stroke({ color: 0xfff3b0, alpha: 0.65, width: 2 });
-    blast.position.set(x, y);
+    this.setEffectPosition(blast, x, y);
     this.world.addChild(blast);
     gsap.to(blast, {
       alpha: 0,
@@ -4248,9 +4273,9 @@ export class PixiWastelandGame {
   }
 
   private spawnHitSparks(x: number, y: number, color: number, count: number): void {
-    const projected = this.projectPoint({ x, y });
+    const projected = this.projectEffectPoint({ x, y });
     const sparkX = projected.x;
-    const sparkY = projected.y + (this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0);
+    const sparkY = projected.y;
     for (let index = 0; index < count; index += 1) {
       const angle = Math.random() * Math.PI * 2;
       const spark = new Graphics();
@@ -7945,10 +7970,10 @@ export class PixiWastelandGame {
     return BOSS_DEFINITIONS.find((boss) => boss.id === bossId)?.name ?? bossId;
   }
 
-  private setActorPosition(actor: Actor, x: number, y: number, depthOffset = 20): void {
+  private setActorPosition(actor: Actor, x: number, y: number, depthOffset = 20, visualYOffset = 0): void {
     actor.x = x;
     actor.y = y;
-    this.setViewPosition(actor.view, x, y);
+    this.setViewPosition(actor.view, x, y, visualYOffset);
     actor.view.zIndex = this.getStoryVisualDepth({ x, y }, depthOffset);
   }
 
@@ -8088,7 +8113,8 @@ export class PixiWastelandGame {
       }),
     });
     view.anchor.set(0.5);
-    view.position.set(x, y);
+    this.setViewPosition(view, x, y);
+    view.zIndex = this.getStoryVisualDepth({ x, y }, 60);
     this.world.addChild(view);
     this.damageNumbers.push({ view, lifeMs: 650, velocityY: -44 });
   }
