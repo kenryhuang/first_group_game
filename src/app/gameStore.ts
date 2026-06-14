@@ -47,6 +47,12 @@ export interface GameMetrics {
   story2_5dIsoTileHeight?: number;
   story2_5dIsoLogicalTileSize?: number;
   story2_5dPlayerScreenX?: number;
+  storyIsoMapMode?: "a2-preview";
+  storyIsoMapTileCount?: number;
+  storyIsoMapRoadTileCount?: number;
+  storyIsoMapPropCount?: number;
+  storyIsoMapDepthSortedPropCount?: number;
+  storyIsoMapBlockedFootprintCount?: number;
 }
 
 interface GameStoreState extends GameMetrics {
@@ -96,6 +102,12 @@ function createInitialMetrics(): GameMetrics {
     story2_5dIsoTileHeight: undefined,
     story2_5dIsoLogicalTileSize: undefined,
     story2_5dPlayerScreenX: undefined,
+    storyIsoMapMode: undefined,
+    storyIsoMapTileCount: undefined,
+    storyIsoMapRoadTileCount: undefined,
+    storyIsoMapPropCount: undefined,
+    storyIsoMapDepthSortedPropCount: undefined,
+    storyIsoMapBlockedFootprintCount: undefined,
   };
 }
 
@@ -237,6 +249,12 @@ export const useGameStore = defineStore("game", {
       this.story2_5dIsoTileHeight = metrics.story2_5dIsoTileHeight;
       this.story2_5dIsoLogicalTileSize = metrics.story2_5dIsoLogicalTileSize;
       this.story2_5dPlayerScreenX = metrics.story2_5dPlayerScreenX;
+      this.storyIsoMapMode = metrics.storyIsoMapMode;
+      this.storyIsoMapTileCount = metrics.storyIsoMapTileCount;
+      this.storyIsoMapRoadTileCount = metrics.storyIsoMapRoadTileCount;
+      this.storyIsoMapPropCount = metrics.storyIsoMapPropCount;
+      this.storyIsoMapDepthSortedPropCount = metrics.storyIsoMapDepthSortedPropCount;
+      this.storyIsoMapBlockedFootprintCount = metrics.storyIsoMapBlockedFootprintCount;
     },
     setMessage(message: string): void {
       this.message = message;

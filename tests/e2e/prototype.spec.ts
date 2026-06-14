@@ -149,6 +149,24 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dIsoLogicalTileSize ?? 0))
     .toBe(256);
   await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapMode ?? null))
+    .toBe("a2-preview");
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapTileCount ?? 0))
+    .toBe(143);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapRoadTileCount ?? 0))
+    .toBe(25);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapPropCount ?? 0))
+    .toBe(8);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapDepthSortedPropCount ?? 0))
+    .toBe(8);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapBlockedFootprintCount ?? 0))
+    .toBe(6);
+  await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dVolumePropCount ?? 0))
     .toBeGreaterThanOrEqual(8);
   await expect

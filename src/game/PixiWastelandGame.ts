@@ -8077,6 +8077,12 @@ export class PixiWastelandGame {
     const storyVolumeProps = this.isStoryMode()
       ? this.storySliceRenderer?.debugVolumeProps()
       : undefined;
+    const storyIsoMapStats = this.isStoryMode()
+      ? this.storySliceRenderer?.debugIsoMapStats()
+      : undefined;
+    const storyIsoBlockedFootprints = this.isStoryMode()
+      ? this.storySliceRenderer?.debugBlockedFootprints()
+      : undefined;
     const projectedPlayer =
       this.isStoryMode() && this.player ? this.projectPoint(this.player) : undefined;
     const metrics = {
@@ -8139,6 +8145,14 @@ export class PixiWastelandGame {
       story2_5dProjectedUnderlayEnabled: this.isStoryMode()
         ? this.storyProjectedUnderlayEnabled
         : false,
+      storyIsoMapMode: storyIsoMapStats?.mode,
+      storyIsoMapTileCount: storyIsoMapStats?.tileCount,
+      storyIsoMapRoadTileCount: storyIsoMapStats?.roadTileCount,
+      storyIsoMapPropCount: storyIsoMapStats?.propCount,
+      storyIsoMapDepthSortedPropCount: storyVolumeProps?.filter(
+        (prop) => prop.containerParentLabel === "story-world-root",
+      ).length,
+      storyIsoMapBlockedFootprintCount: storyIsoBlockedFootprints?.length,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;

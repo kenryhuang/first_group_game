@@ -1,7 +1,7 @@
 import { chromium } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5317";
-const outputPath = process.env.STORY_2_5D_SCREENSHOT ?? "/tmp/story-2-5d.png";
+const outputPath = process.env.STORY_2_5D_SCREENSHOT ?? "/tmp/story-isometric-a2-preview.png";
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -25,6 +25,12 @@ console.log(JSON.stringify({
   story2_5dIsoTileWidth: metrics?.story2_5dIsoTileWidth,
   story2_5dIsoTileHeight: metrics?.story2_5dIsoTileHeight,
   story2_5dIsoLogicalTileSize: metrics?.story2_5dIsoLogicalTileSize,
+  storyIsoMapMode: metrics?.storyIsoMapMode,
+  storyIsoMapTileCount: metrics?.storyIsoMapTileCount,
+  storyIsoMapRoadTileCount: metrics?.storyIsoMapRoadTileCount,
+  storyIsoMapPropCount: metrics?.storyIsoMapPropCount,
+  storyIsoMapDepthSortedPropCount: metrics?.storyIsoMapDepthSortedPropCount,
+  storyIsoMapBlockedFootprintCount: metrics?.storyIsoMapBlockedFootprintCount,
   story2_5dPlayerScreenX: metrics?.story2_5dPlayerScreenX,
   story2_5dPlayerScreenY: metrics?.story2_5dPlayerScreenY,
   story2_5dVolumePropCount: metrics?.story2_5dVolumePropCount,
