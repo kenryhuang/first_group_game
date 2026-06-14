@@ -140,6 +140,15 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dGroundScaleY ?? 0))
     .toBe(0.56);
   await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dVolumePropCount ?? 0))
+    .toBeGreaterThanOrEqual(8);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dDepthSortedPropCount ?? 0))
+    .toBeGreaterThanOrEqual(8);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dProjectedUnderlayEnabled ?? false))
+    .toBe(true);
+  await expect
     .poll(() =>
       page.evaluate(() => {
         const metrics = window.__prototypeDebug;

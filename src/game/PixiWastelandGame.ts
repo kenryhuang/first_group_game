@@ -706,6 +706,40 @@ export class PixiWastelandGame {
     view.position.set(projected.x, projected.y + (this.isStoryMode() ? visualYOffset : 0));
   }
 
+  private drawProjectedStoryQuad(
+    view: Graphics,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): Graphics {
+    const left = x - width / 2;
+    const right = x + width / 2;
+    const top = y - height / 2;
+    const bottom = y + height / 2;
+    const topLeft = this.projectPoint({ x: left, y: top });
+    const topRight = this.projectPoint({ x: right, y: top });
+    const bottomRight = this.projectPoint({ x: right, y: bottom });
+    const bottomLeft = this.projectPoint({ x: left, y: bottom });
+
+    return view.poly([
+      topLeft.x,
+      topLeft.y,
+      topRight.x,
+      topRight.y,
+      bottomRight.x,
+      bottomRight.y,
+      bottomLeft.x,
+      bottomLeft.y,
+    ]);
+  }
+
+  private placeStoryWorldLabel(label: Text, x: number, y: number, depthOffset = 160): void {
+    const projected = this.projectPoint({ x, y });
+    label.position.set(projected.x, projected.y);
+    label.zIndex = this.getStoryVisualDepth({ x, y }, depthOffset);
+  }
+
   private projectEffectPoint(point: StoryPoint): StoryPoint {
     const projected = this.projectPoint(point);
     return {
@@ -1089,12 +1123,17 @@ export class PixiWastelandGame {
   }
 
   private drawStoryCity(): void {
+    this.storyProjectedUnderlayEnabled = true;
+
     const road = new Graphics();
+    road.zIndex = this.getStoryVisualDepth({ x: 0, y: 0 }, -900);
     for (let x = 2200; x <= this.getMapWidth(); x += 2600) {
-      road.rect(x - 42, 0, 84, this.getMapHeight()).fill({ color: 0x151914, alpha: 0.82 });
+      this.drawProjectedStoryQuad(road, x, this.getMapHeight() / 2, 84, this.getMapHeight())
+        .fill({ color: 0x151914, alpha: 0.34 });
     }
     for (let y = 2200; y <= this.getMapHeight(); y += 2600) {
-      road.rect(0, y - 42, this.getMapWidth(), 84).fill({ color: 0x151914, alpha: 0.82 });
+      this.drawProjectedStoryQuad(road, this.getMapWidth() / 2, y, this.getMapWidth(), 84)
+        .fill({ color: 0x151914, alpha: 0.42 });
     }
     this.world.addChild(road);
 
@@ -1102,15 +1141,26 @@ export class PixiWastelandGame {
     for (const region of STORY_REGIONS) {
       const unlocked = this.unlockedStoryRegionIds.has(region.id);
       const district = new Graphics();
-      district
-        .rect(region.x - region.width / 2, region.y - region.height / 2, region.width, region.height)
-        .fill({ color: region.color, alpha: unlocked ? 0.76 : 0.28 })
-        .stroke({ color: unlocked ? 0x59614f : 0x1a080b, alpha: unlocked ? 0.58 : 0.95, width: unlocked ? 3 : 28 });
+      this.drawProjectedStoryQuad(district, region.x, region.y, region.width, region.height)
+        .fill({ color: region.color, alpha: unlocked ? 0.28 : 0.12 })
+        .stroke({
+          color: unlocked ? 0x59614f : 0x1a080b,
+          alpha: unlocked ? 0.34 : 0.6,
+          width: unlocked ? 2 : 10,
+        });
+      district.zIndex = this.getStoryVisualDepth(
+        { x: region.x, y: region.y + region.height / 2 },
+        -820,
+      );
       this.world.addChild(district);
 
       const label = new Text({ text: region.name, style });
       label.alpha = unlocked ? 1 : 0.45;
-      label.position.set(region.x - region.width / 2 + 34, region.y - region.height / 2 + 24);
+      this.placeStoryWorldLabel(
+        label,
+        region.x - region.width / 2 + 34,
+        region.y - region.height / 2 + 24,
+      );
       this.world.addChild(label);
 
       if (!unlocked) {
@@ -1119,7 +1169,7 @@ export class PixiWastelandGame {
           style: new TextStyle({ fill: "#ff9f1c", fontFamily: "Arial", fontSize: 20, fontWeight: "700" }),
         });
         lockLabel.anchor.set(0.5);
-        lockLabel.position.set(region.x, region.y);
+        this.placeStoryWorldLabel(lockLabel, region.x, region.y, 170);
         this.world.addChild(lockLabel);
       }
     }
@@ -1130,10 +1180,17 @@ export class PixiWastelandGame {
         this.unlockedStoryRegionIds.has(passage.toRegionId);
       for (const rect of getStoryPassageRects(passage)) {
         const gate = new Graphics();
-        gate
-          .rect(rect.x - rect.width / 2, rect.y - rect.height / 2, rect.width, rect.height)
-          .fill({ color: unlocked ? 0x151914 : 0x160709, alpha: unlocked ? 0.92 : 0.8 })
-          .stroke({ color: unlocked ? 0x050706 : 0x9a1f2f, alpha: unlocked ? 0.92 : 0.92, width: unlocked ? 10 : 12 });
+        this.drawProjectedStoryQuad(gate, rect.x, rect.y, rect.width, rect.height)
+          .fill({ color: unlocked ? 0x151914 : 0x160709, alpha: unlocked ? 0.36 : 0.34 })
+          .stroke({
+            color: unlocked ? 0x050706 : 0x9a1f2f,
+            alpha: unlocked ? 0.5 : 0.64,
+            width: unlocked ? 4 : 6,
+          });
+        gate.zIndex = this.getStoryVisualDepth(
+          { x: rect.x, y: rect.y + rect.height / 2 },
+          -780,
+        );
         const vertical = rect.height >= rect.width;
         const markerCount = Math.max(2, Math.floor((vertical ? rect.height : rect.width) / 680));
         for (let index = 0; index < markerCount; index += 1) {
@@ -1141,40 +1198,16 @@ export class PixiWastelandGame {
           const markerX = vertical ? rect.x : rect.x - rect.width / 2 + rect.width * progress;
           const markerY = vertical ? rect.y - rect.height / 2 + rect.height * progress : rect.y;
           if (vertical) {
-            gate.rect(markerX - 8, markerY - 120, 16, 240).fill({ color: 0xffd166, alpha: unlocked ? 0.12 : 0.04 });
+            this.drawProjectedStoryQuad(gate, markerX, markerY, 16, 240)
+              .fill({ color: 0xffd166, alpha: unlocked ? 0.05 : 0.025 });
           } else {
-            gate.rect(markerX - 120, markerY - 8, 240, 16).fill({ color: 0xffd166, alpha: unlocked ? 0.12 : 0.04 });
+            this.drawProjectedStoryQuad(gate, markerX, markerY, 240, 16)
+              .fill({ color: 0xffd166, alpha: unlocked ? 0.05 : 0.025 });
           }
         }
         this.world.addChild(gate);
       }
     }
-
-    const tower = new Graphics();
-    tower
-      .circle(0, 0, 58)
-      .fill({ color: 0x59614f, alpha: 0.96 })
-      .stroke({ color: 0xf8f4e3, alpha: 0.9, width: 4 })
-      .rect(-14, -92, 28, 128)
-      .fill({ color: 0x8a817c, alpha: 0.9 });
-    tower.position.set(STORY_CENTER_LIGHTHOUSE.position.x, STORY_CENTER_LIGHTHOUSE.position.y);
-    this.world.addChild(tower);
-
-    const label = new Text({
-      text: "中心灯塔",
-      style: new TextStyle({ fill: "#f8f4e3", fontFamily: "Arial", fontSize: 30, fontWeight: "700" }),
-    });
-    label.anchor.set(0.5);
-    label.position.set(STORY_CENTER_LIGHTHOUSE.position.x, STORY_CENTER_LIGHTHOUSE.position.y + 88);
-    this.world.addChild(label);
-
-    const subLabel = new Text({
-      text: "靠近后按 E 点亮，视野扩大但怪物压力上升。",
-      style: new TextStyle({ fill: "#d8dfd0", fontFamily: "Arial", fontSize: 18 }),
-    });
-    subLabel.anchor.set(0.5);
-    subLabel.position.set(STORY_CENTER_LIGHTHOUSE.position.x, STORY_CENTER_LIGHTHOUSE.position.y + 124);
-    this.world.addChild(subLabel);
 
     this.storySliceRenderer = createStorySliceRenderer({
       world: this.world,
