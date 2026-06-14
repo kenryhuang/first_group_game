@@ -25,6 +25,7 @@ const { Cache, Graphics, Texture } = await import("pixi.js");
 const {
   attachStoryActorVisual,
   getStoryActorDirection,
+  STORY_ACTOR_SCALES,
 } = await import("./storyActorVisuals");
 
 const cachedTextures = new Map<string, PixiTexture>();
@@ -119,6 +120,25 @@ describe("story actor visuals", () => {
     expect(visual.character).toBe("vanguard");
     expect(visual.animation).toBe("idle");
     expect(visual.direction).toBe("down");
+  });
+
+  it("uses readable story sprite scales for the redrawn character art", () => {
+    const vanguardView = new Graphics();
+    const vanguard = attachStoryActorVisual(
+      vanguardView,
+      "vanguard",
+      "idle",
+      "down",
+    );
+    const zombieView = new Graphics();
+    const zombie = attachStoryActorVisual(zombieView, "zombie", "idle", "down");
+
+    expect(STORY_ACTOR_SCALES.vanguard).toBe(0.52);
+    expect(STORY_ACTOR_SCALES.zombie).toBe(0.39);
+    expect(vanguard.sprite.scale.x).toBeCloseTo(0.52);
+    expect(vanguard.sprite.scale.y).toBeCloseTo(0.52);
+    expect(zombie.sprite.scale.x).toBeCloseTo(0.39);
+    expect(zombie.sprite.scale.y).toBeCloseTo(0.39);
   });
 
   it("updates animation and flashes without removing the actor view", () => {

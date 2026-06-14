@@ -8,6 +8,11 @@ import { STORY_ART_PALETTE } from "./storyArtDirection";
 
 export type StoryActorCharacter = "vanguard" | "zombie";
 
+export const STORY_ACTOR_SCALES: Record<StoryActorCharacter, number> = {
+  vanguard: 0.52,
+  zombie: 0.39,
+};
+
 export interface StoryActorVisual {
   character: StoryActorCharacter;
   animation: StoryAnimationName;
@@ -74,7 +79,7 @@ export function attachStoryActorVisual(
 
   const sprite = new AnimatedSprite(getTextures(character, animation, direction));
   sprite.anchor.set(0.5);
-  sprite.scale.set(character === "vanguard" ? 0.44 : 0.34);
+  sprite.scale.set(STORY_ACTOR_SCALES[character]);
   sprite.animationSpeed = 1000 / getFrameMs(character, animation, direction) / 60;
   sprite.loop = shouldLoop(character, animation, direction);
   sprite.play();

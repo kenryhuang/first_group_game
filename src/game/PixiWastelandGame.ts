@@ -157,6 +157,7 @@ import {
   getStoryActorDirection,
   type StoryActorVisual,
 } from "../visual/storyActorVisuals";
+import { PLAYER_WEAPON_VISUAL_GEOMETRY } from "../visual/playerWeaponVisuals";
 import {
   createStorySliceRenderer,
   type StorySliceRenderer,
@@ -987,24 +988,79 @@ export class PixiWastelandGame {
     const start = this.getPlayerStart();
     const container = new Container();
     container.position.set(start.x, start.y);
+    const geometry = PLAYER_WEAPON_VISUAL_GEOMETRY;
 
     const barrel = new Graphics();
     barrel
-      .roundRect(2, -6, 46, 12, 4)
+      .roundRect(
+        geometry.barrel.x,
+        geometry.barrel.y,
+        geometry.barrel.width,
+        geometry.barrel.height,
+        geometry.barrel.radius,
+      )
       .fill(0x15202b)
       .stroke({ color: 0x8ee7ff, alpha: 0.78, width: 1.5 });
-    barrel.rect(10, -2, 24, 4).fill({ color: 0x68e1fd, alpha: 0.9 });
-    barrel.rect(28, -9, 14, 5).fill(0x283a4d);
-    barrel.rect(28, 4, 14, 5).fill(0x283a4d);
-    barrel.rect(43, -4, 15, 3).fill(0xd9f7ff);
-    barrel.rect(43, 1, 15, 3).fill(0xd9f7ff);
+    barrel
+      .rect(
+        geometry.energyCore.x,
+        geometry.energyCore.y,
+        geometry.energyCore.width,
+        geometry.energyCore.height,
+      )
+      .fill({ color: 0x68e1fd, alpha: 0.9 });
+    barrel
+      .rect(
+        geometry.sideVents.x,
+        geometry.sideVents.upperY,
+        geometry.sideVents.width,
+        geometry.sideVents.height,
+      )
+      .fill(0x283a4d);
+    barrel
+      .rect(
+        geometry.sideVents.x,
+        geometry.sideVents.lowerY,
+        geometry.sideVents.width,
+        geometry.sideVents.height,
+      )
+      .fill(0x283a4d);
+    barrel
+      .rect(
+        geometry.muzzleTips.x,
+        geometry.muzzleTips.upperY,
+        geometry.muzzleTips.width,
+        geometry.muzzleTips.height,
+      )
+      .fill(0xd9f7ff);
+    barrel
+      .rect(
+        geometry.muzzleTips.x,
+        geometry.muzzleTips.lowerY,
+        geometry.muzzleTips.width,
+        geometry.muzzleTips.height,
+      )
+      .fill(0xd9f7ff);
     container.addChild(barrel);
 
     const muzzleFlash = new Graphics();
     muzzleFlash
-      .poly([52, 0, 74, -11, 66, 0, 74, 11])
+      .poly([
+        geometry.muzzleFlash.baseX,
+        0,
+        geometry.muzzleFlash.tipX,
+        geometry.muzzleFlash.upperY,
+        geometry.muzzleFlash.innerX,
+        0,
+        geometry.muzzleFlash.tipX,
+        geometry.muzzleFlash.lowerY,
+      ])
       .fill({ color: 0xfff3b0, alpha: 0.9 })
-      .circle(57, 0, 7)
+      .circle(
+        geometry.muzzleFlash.circleX,
+        0,
+        geometry.muzzleFlash.circleRadius,
+      )
       .stroke({ color: 0x68e1fd, alpha: 0.8, width: 2 });
     muzzleFlash.visible = false;
     container.addChild(muzzleFlash);
