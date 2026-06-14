@@ -18,7 +18,7 @@ export interface StorySliceRendererOptions {
   world: Container;
   center: StoryPoint;
   lit: boolean;
-  // Enables story 2.5D projection; ground/fog y-scale compression is tied to this mode.
+  // Enables story 2.5D projection for ground, fog, and volume props.
   projectPoint?: (point: StoryPoint) => StoryPoint;
 }
 
@@ -55,6 +55,15 @@ export interface StoryVolumePropDebug {
   shadowChildCount: number;
 }
 
+export interface StoryGroundTileDebug {
+  label: string;
+  worldPoint: StoryPoint;
+  projectedPoint: StoryPoint;
+  diamondWidth: number;
+  diamondHeight: number;
+  kind: "road" | "cracked" | "concrete" | "grass";
+}
+
 export interface StorySliceRenderer {
   root: Container;
   layers: Record<StorySliceLayerName, Container>;
@@ -62,6 +71,7 @@ export interface StorySliceRenderer {
   setLighthouseLit(lit: boolean): void;
   getLighthouseVisualState(): StoryLighthouseVisualState;
   playScanPulse(origin: { x: number; y: number }): void;
+  debugGroundTiles(): StoryGroundTileDebug[];
   debugVolumeProps(): StoryVolumePropDebug[];
   debugSpriteCount(): number;
   destroy(): void;
@@ -103,7 +113,7 @@ function getGroundPlaneScaleY(
   scale: number,
   options: Pick<StorySliceRendererOptions, "projectPoint">,
 ): number {
-  return options.projectPoint ? scale * STORY_2_5D_CONFIG.groundScaleY : scale;
+  return options.projectPoint ? scale * STORY_2_5D_CONFIG.isoFogScaleY : scale;
 }
 
 function makeSprite(
@@ -121,13 +131,74 @@ function makeSprite(
   return sprite;
 }
 
+function getGroundKind(asset: string): StoryGroundTileDebug["kind"] {
+  if (asset.includes("road-straight")) return "road";
+  if (asset.includes("road-cracked")) return "cracked";
+  if (asset.includes("concrete")) return "concrete";
+  return "grass";
+}
+
+function getIsoGroundColor(kind: StoryGroundTileDebug["kind"]): number {
+  if (kind === "road") return STORY_ART_PALETTE.roadGreyGreen;
+  if (kind === "cracked") return 0x39433d;
+  if (kind === "concrete") return 0x667368;
+  return STORY_ART_PALETTE.wastelandOchre;
+}
+
+function makeIsoGroundTile(
+  asset: string,
+  worldPoint: StoryPoint,
+  tileIndex: number,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
+): { view: Graphics; debug: StoryGroundTileDebug } {
+  const kind = getGroundKind(asset);
+  const projectedPoint = options.projectPoint?.(worldPoint) ?? worldPoint;
+  const diamondWidth = STORY_2_5D_CONFIG.isoTileWidth;
+  const diamondHeight = STORY_2_5D_CONFIG.isoTileHeight;
+  const view = new Graphics();
+  const label = `story-iso-ground-${kind}-${tileIndex}`;
+  view.label = label;
+  view.position.set(projectedPoint.x, projectedPoint.y);
+  view
+    .poly([
+      0,
+      -diamondHeight / 2,
+      diamondWidth / 2,
+      0,
+      0,
+      diamondHeight / 2,
+      -diamondWidth / 2,
+      0,
+    ])
+    .fill({
+      color: getIsoGroundColor(kind),
+      alpha: kind === "grass" ? 0.5 : 0.74,
+    })
+    .stroke({ color: 0x050706, alpha: 0.2, width: 2 });
+
+  return {
+    view,
+    debug: {
+      label,
+      worldPoint,
+      projectedPoint,
+      diamondWidth,
+      diamondHeight,
+      kind,
+    },
+  };
+}
+
 function addGround(
   layers: Record<StorySliceLayerName, Container>,
   center: StoryPoint,
   options: Pick<StorySliceRendererOptions, "projectPoint">,
-): void {
-  const tileSize = 256;
+): StoryGroundTileDebug[] {
+  const tileSize = STORY_2_5D_CONFIG.isoLogicalTileSize;
   const [road, cracked, concrete, grass] = STORY_SLICE_ASSETS.map.groundTiles;
+  const debugTiles: StoryGroundTileDebug[] = [];
+  let tileIndex = 0;
+
   for (let ix = -4; ix <= 4; ix += 1) {
     for (let iy = -3; iy <= 3; iy += 1) {
       const isRoad = Math.abs(iy) <= 1 || Math.abs(ix) <= 1;
@@ -138,18 +209,26 @@ function addGround(
         : Math.abs(ix) % 2 === 0
           ? concrete
           : grass;
-      layers.ground.addChild(
-        makeSprite(
-          asset,
-          center.x + ix * tileSize,
-          center.y + iy * tileSize,
-          1,
-          options,
-          getGroundPlaneScaleY(1, options),
-        ),
-      );
+      const worldPoint = {
+        x: center.x + ix * tileSize,
+        y: center.y + iy * tileSize,
+      };
+
+      if (options.projectPoint) {
+        const tile = makeIsoGroundTile(asset, worldPoint, tileIndex, options);
+        layers.ground.addChild(tile.view);
+        debugTiles.push(tile.debug);
+      } else {
+        layers.ground.addChild(
+          makeSprite(asset, worldPoint.x, worldPoint.y, 1, options, 1),
+        );
+      }
+
+      tileIndex += 1;
     }
   }
+
+  return debugTiles;
 }
 
 function getVolumePropDefinitions(center: StoryPoint): StoryVolumePropDefinition[] {
@@ -367,7 +446,7 @@ export function createStorySliceRenderer(
   options.world.addChild(root);
 
   const layers = createLayers(root);
-  addGround(layers, options.center, options);
+  const groundTiles = addGround(layers, options.center, options);
   addGroundDecals(layers, options.center, options);
   const volumeProps = getVolumePropDefinitions(options.center).map((definition) =>
     makeVolumeProp(definition, options),
@@ -444,6 +523,9 @@ export function createStorySliceRenderer(
     setLighthouseCharging: () => setState("charging"),
     setLighthouseLit: (lit: boolean) => setState(lit ? "on" : "off"),
     getLighthouseVisualState: () => lighthouseState,
+    debugGroundTiles(): StoryGroundTileDebug[] {
+      return groundTiles.map((tile) => ({ ...tile }));
+    },
     debugVolumeProps(): StoryVolumePropDebug[] {
       return volumeProps.map((prop) => ({
         ...prop.debug,

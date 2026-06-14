@@ -85,7 +85,7 @@ describe("story slice renderer", () => {
     expect(renderer.layers.worldUi.children).toHaveLength(0);
     expect(renderer.debugSpriteCount()).toBeGreaterThanOrEqual(86);
 
-    const firstGroundSprite = renderer.layers.ground.children[0] as PixiSprite;
+    const firstGroundTile = renderer.debugGroundTiles()[0];
     const projectedFirstGroundPosition = projectStoryPoint(
       {
         x: STORY_CENTER_LIGHTHOUSE.position.x - 4 * 256,
@@ -94,14 +94,15 @@ describe("story slice renderer", () => {
       STORY_CENTER_LIGHTHOUSE.position,
     );
 
-    expect(firstGroundSprite.position.x).toBe(projectedFirstGroundPosition.x);
-    expect(firstGroundSprite.position.y).toBe(projectedFirstGroundPosition.y);
-    expect(firstGroundSprite.scale.x).toBe(1);
-    expect(firstGroundSprite.scale.y).toBe(STORY_2_5D_CONFIG.groundScaleY);
+    expect(firstGroundTile.label).toBe("story-iso-ground-concrete-0");
+    expect(firstGroundTile.projectedPoint).toEqual(projectedFirstGroundPosition);
+    expect(firstGroundTile.diamondWidth).toBe(STORY_2_5D_CONFIG.isoTileWidth);
+    expect(firstGroundTile.diamondHeight).toBe(STORY_2_5D_CONFIG.isoTileHeight);
+    expect(renderer.layers.ground.children[0].label).toBe(firstGroundTile.label);
 
     const firstFogSprite = renderer.layers.fog.children[0] as PixiSprite;
     expect(firstFogSprite.scale.x).toBe(2.2);
-    expect(firstFogSprite.scale.y).toBe(2.2 * STORY_2_5D_CONFIG.groundScaleY);
+    expect(firstFogSprite.scale.y).toBe(2.2 * STORY_2_5D_CONFIG.isoFogScaleY);
 
     const coreGlow = renderer.layers.effect.children[0] as PixiSprite;
     expect(coreGlow.texture).toBe(
@@ -120,6 +121,7 @@ describe("story slice renderer", () => {
     });
 
     const props = renderer.debugVolumeProps();
+    expect(renderer.debugGroundTiles()).toHaveLength(63);
 
     expect(props.map((prop) => prop.role)).toEqual([
       "building",
