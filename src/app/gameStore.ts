@@ -39,6 +39,9 @@ export interface GameMetrics {
   story2_5dEnabled?: boolean;
   story2_5dGroundScaleY?: number;
   story2_5dPlayerScreenY?: number;
+  story2_5dVolumePropCount?: number;
+  story2_5dDepthSortedPropCount?: number;
+  story2_5dProjectedUnderlayEnabled?: boolean;
 }
 
 interface GameStoreState extends GameMetrics {
@@ -80,6 +83,9 @@ function createInitialMetrics(): GameMetrics {
     story2_5dEnabled: false,
     story2_5dGroundScaleY: undefined,
     story2_5dPlayerScreenY: undefined,
+    story2_5dVolumePropCount: undefined,
+    story2_5dDepthSortedPropCount: undefined,
+    story2_5dProjectedUnderlayEnabled: false,
   };
 }
 
@@ -213,6 +219,9 @@ export const useGameStore = defineStore("game", {
       this.story2_5dEnabled = metrics.story2_5dEnabled;
       this.story2_5dGroundScaleY = metrics.story2_5dGroundScaleY;
       this.story2_5dPlayerScreenY = metrics.story2_5dPlayerScreenY;
+      this.story2_5dVolumePropCount = metrics.story2_5dVolumePropCount;
+      this.story2_5dDepthSortedPropCount = metrics.story2_5dDepthSortedPropCount;
+      this.story2_5dProjectedUnderlayEnabled = metrics.story2_5dProjectedUnderlayEnabled;
     },
     setMessage(message: string): void {
       this.message = message;

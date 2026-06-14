@@ -592,6 +592,7 @@ export class PixiWastelandGame {
   private player?: Actor;
   private playerWeapon?: WeaponVisual;
   private storySliceRenderer?: StorySliceRenderer;
+  private storyProjectedUnderlayEnabled = false;
   private playerStoryVisual?: StoryActorVisual;
   private readonly playerStoryAnimationLock = createStoryActorAnimationLock();
   private readonly enemyStoryVisuals = new WeakMap<EnemyActor, StoryActorVisual>();
@@ -8040,6 +8041,9 @@ export class PixiWastelandGame {
       this.player && !this.isStoryFullVisibilityMode()
         ? pointInsideBuildings(this.player, this.getActiveBuildings())
         : false;
+    const storyVolumeProps = this.isStoryMode()
+      ? this.storySliceRenderer?.debugVolumeProps()
+      : undefined;
     const metrics = {
       enemyCount: this.enemies.length,
       bossCount: this.bosses.length + finalBosses.length + hospitalKnights.length,
@@ -8080,6 +8084,13 @@ export class PixiWastelandGame {
       story2_5dEnabled: this.isStoryMode(),
       story2_5dGroundScaleY: this.isStoryMode() ? STORY_2_5D_CONFIG.groundScaleY : undefined,
       story2_5dPlayerScreenY: this.isStoryMode() && this.player ? this.projectPoint(this.player).y : undefined,
+      story2_5dVolumePropCount: storyVolumeProps?.length,
+      story2_5dDepthSortedPropCount: storyVolumeProps?.filter(
+        (prop) => prop.containerParentLabel === "story-world-root",
+      ).length,
+      story2_5dProjectedUnderlayEnabled: this.isStoryMode()
+        ? this.storyProjectedUnderlayEnabled
+        : false,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;

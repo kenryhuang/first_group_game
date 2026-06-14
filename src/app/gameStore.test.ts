@@ -63,6 +63,9 @@ describe("game store phases", () => {
     expect(store.story2_5dEnabled).toBe(false);
     expect(store.story2_5dGroundScaleY).toBeUndefined();
     expect(store.story2_5dPlayerScreenY).toBeUndefined();
+    expect(store.story2_5dVolumePropCount).toBeUndefined();
+    expect(store.story2_5dDepthSortedPropCount).toBeUndefined();
+    expect(store.story2_5dProjectedUnderlayEnabled).toBe(false);
 
     store.syncMetrics({
       enemyCount: 3,
@@ -83,6 +86,9 @@ describe("game store phases", () => {
       story2_5dEnabled: true,
       story2_5dGroundScaleY: 0.56,
       story2_5dPlayerScreenY: 19888,
+      story2_5dVolumePropCount: 8,
+      story2_5dDepthSortedPropCount: 8,
+      story2_5dProjectedUnderlayEnabled: true,
     });
 
     expect(store.storyArtSliceEnabled).toBe(true);
@@ -91,5 +97,8 @@ describe("game store phases", () => {
     expect(store.story2_5dEnabled).toBe(true);
     expect(store.story2_5dGroundScaleY).toBe(0.56);
     expect(store.story2_5dPlayerScreenY).toBe(19888);
+    expect(store.story2_5dVolumePropCount).toBe(8);
+    expect(store.story2_5dDepthSortedPropCount).toBe(8);
+    expect(store.story2_5dProjectedUnderlayEnabled).toBe(true);
   });
 });
