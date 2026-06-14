@@ -76,6 +76,7 @@ export interface StoryGroundTileDebug {
   diamondWidth: number;
   diamondHeight: number;
   kind: StoryIsoTileKind;
+  texturePath?: string;
 }
 
 export interface StorySliceRenderer {
@@ -163,6 +164,17 @@ function getIsoGroundColor(kind: StoryIsoTileKind): number {
   if (kind === "rubble") return 0x4b554f;
   if (kind === "blocked") return 0x2c342f;
   return STORY_ART_PALETTE.wastelandOchre;
+}
+
+function getA2GroundTexturePath(kind: StoryIsoTileKind): string {
+  const [road, cracked, concrete, pollutedEdge] =
+    STORY_SLICE_ASSETS.map.groundTiles;
+  if (kind === "road") return road;
+  if (kind === "roadCracked") return cracked;
+  if (kind === "curb" || kind === "rubble" || kind === "stain") {
+    return pollutedEdge;
+  }
+  return concrete;
 }
 
 function decorateIsoGroundTile(
@@ -299,15 +311,52 @@ function makeA2GroundTile(
   isoMap: StoryIsoMapDefinition,
   tileIndex: number,
   options: Pick<StorySliceRendererOptions, "projectPoint">,
-): { view: Graphics; debug: StoryGroundTileDebug } {
-  return makeIsoGroundTileFromKind(
-    tile.kind,
-    getIsoTileWorldPoint(tile, center, isoMap),
-    tileIndex,
-    "story-a2-ground",
-    options,
-    getIsoMapTileScale(isoMap),
-  );
+): { view: Container; debug: StoryGroundTileDebug } {
+  const worldPoint = getIsoTileWorldPoint(tile, center, isoMap);
+  const projectedPoint = options.projectPoint?.(worldPoint) ?? worldPoint;
+  const diamondScale = getIsoMapTileScale(isoMap);
+  const diamondWidth = STORY_2_5D_CONFIG.isoTileWidth * diamondScale;
+  const diamondHeight = STORY_2_5D_CONFIG.isoTileHeight * diamondScale;
+  const texturePath = getA2GroundTexturePath(tile.kind);
+  const label = `story-a2-ground-${tile.kind}-${tileIndex}`;
+  const view = new Container();
+  view.label = label;
+  view.position.set(projectedPoint.x, projectedPoint.y);
+
+  const sprite = new Sprite(Texture.from(texturePath));
+  sprite.label = `${label}-sprite`;
+  sprite.anchor.set(0.5);
+  sprite.width = diamondWidth;
+  sprite.height = diamondHeight;
+  view.addChild(sprite);
+
+  const outline = new Graphics();
+  outline
+    .poly([
+      0,
+      -diamondHeight / 2,
+      diamondWidth / 2,
+      0,
+      0,
+      diamondHeight / 2,
+      -diamondWidth / 2,
+      0,
+    ])
+    .stroke({ color: 0x050706, alpha: 0.22, width: 2 });
+  view.addChild(outline);
+
+  return {
+    view,
+    debug: {
+      label,
+      worldPoint,
+      projectedPoint,
+      diamondWidth,
+      diamondHeight,
+      kind: tile.kind,
+      texturePath,
+    },
+  };
 }
 
 function addGround(

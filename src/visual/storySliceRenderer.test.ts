@@ -115,7 +115,18 @@ describe("story slice renderer", () => {
     expect(firstGroundTile.projectedPoint).toEqual(projectedFirstGroundPosition);
     expect(firstGroundTile.diamondWidth).toBe(STORY_2_5D_CONFIG.isoTileWidth);
     expect(firstGroundTile.diamondHeight).toBe(STORY_2_5D_CONFIG.isoTileHeight);
+    expect(firstGroundTile.texturePath).toBe(
+      STORY_SLICE_ASSETS.map.groundTiles[3],
+    );
     expect(renderer.layers.ground.children[0].label).toBe(firstGroundTile.label);
+    const firstGroundTileContainer = renderer.layers.ground
+      .children[0] as InstanceType<typeof Container>;
+    const firstGroundTileSprite = firstGroundTileContainer.children.find(
+      (child) => child.label === "story-a2-ground-curb-0-sprite",
+    ) as PixiSprite;
+    expect(firstGroundTileSprite.texture).toBe(
+      cachedTextures.get(STORY_SLICE_ASSETS.map.groundTiles[3]),
+    );
 
     const firstFogSprite = renderer.layers.fog.children[0] as PixiSprite;
     expect(firstFogSprite.scale.x).toBe(2.2);
@@ -258,7 +269,7 @@ describe("story slice renderer", () => {
     const customIsoMap: StoryIsoMapDefinition = {
       mode: "a2-preview",
       tileSize: 512,
-      tiles: [{ x: 1, y: 0, kind: "concrete" }],
+      tiles: [{ x: 1, y: 0, kind: "road" }],
       props: [],
     };
     const renderer = createStorySliceRenderer({
@@ -284,10 +295,13 @@ describe("story slice renderer", () => {
     expect(renderer.debugIsoMapStats()).toEqual({
       mode: "a2-preview",
       tileCount: 1,
-      roadTileCount: 0,
+      roadTileCount: 1,
       propCount: 0,
       blockedFootprintCount: 0,
     });
+    expect(renderer.debugGroundTiles()[0].texturePath).toBe(
+      STORY_SLICE_ASSETS.map.groundTiles[0],
+    );
   });
 
   it("adds textured fog that thins as the lighthouse turns on", () => {

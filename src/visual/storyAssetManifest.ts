@@ -61,35 +61,37 @@ function directional(
   };
 }
 
+const A2_CITY_PATH = "/assets/story-slice/a2-city";
+
 export const STORY_SLICE_ASSETS: StorySliceAssetManifest = {
   map: {
     groundTiles: [
-      "/assets/story-slice/map/road-straight-01.png",
-      "/assets/story-slice/map/road-cracked-01.png",
-      "/assets/story-slice/map/concrete-broken-01.png",
-      "/assets/story-slice/map/wasteland-grass-01.png",
+      `${A2_CITY_PATH}/map/road-straight-01.png`,
+      `${A2_CITY_PATH}/map/road-cracked-01.png`,
+      `${A2_CITY_PATH}/map/concrete-broken-01.png`,
+      `${A2_CITY_PATH}/map/wasteland-grass-01.png`,
     ],
     decorations: [
-      "/assets/story-slice/map/debris-small-01.png",
-      "/assets/story-slice/map/debris-small-02.png",
-      "/assets/story-slice/map/wrecked-car-01.png",
-      "/assets/story-slice/map/streetlight-broken-01.png",
-      "/assets/story-slice/map/roadblock-01.png",
-      "/assets/story-slice/map/signboard-broken-01.png",
+      `${A2_CITY_PATH}/map/debris-small-01.png`,
+      `${A2_CITY_PATH}/map/debris-small-02.png`,
+      `${A2_CITY_PATH}/map/wrecked-car-01.png`,
+      `${A2_CITY_PATH}/map/streetlight-broken-01.png`,
+      `${A2_CITY_PATH}/map/roadblock-01.png`,
+      `${A2_CITY_PATH}/map/signboard-broken-01.png`,
     ],
     buildings: [
-      "/assets/story-slice/map/building-green-01.png",
-      "/assets/story-slice/map/building-ochre-01.png",
-      "/assets/story-slice/map/building-teal-01.png",
+      `${A2_CITY_PATH}/map/building-green-01.png`,
+      `${A2_CITY_PATH}/map/building-ochre-01.png`,
+      `${A2_CITY_PATH}/map/building-teal-01.png`,
     ],
   },
   lighthouse: {
     states: {
-      off: "/assets/story-slice/lighthouse/lighthouse-off.png",
-      charging: "/assets/story-slice/lighthouse/lighthouse-charging.png",
-      on: "/assets/story-slice/lighthouse/lighthouse-on.png",
+      off: `${A2_CITY_PATH}/lighthouse/lighthouse-off.png`,
+      charging: `${A2_CITY_PATH}/lighthouse/lighthouse-charging.png`,
+      on: `${A2_CITY_PATH}/lighthouse/lighthouse-on.png`,
     },
-    coreGlow: "/assets/story-slice/lighthouse/lighthouse-core-glow.png",
+    coreGlow: `${A2_CITY_PATH}/lighthouse/lighthouse-core-glow.png`,
   },
   effects: {
     scanRing: "/assets/story-slice/effects/scan-ring.png",

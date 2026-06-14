@@ -4,7 +4,10 @@ This folder contains the first art-slice assets for the story-mode fog city ligh
 
 Current committed PNGs are deterministic placeholder assets for pipeline validation and should be replaced with polished production art in a later pass.
 
-## Style
+## Legacy Placeholder Style
+
+The root-level placeholder assets follow this older non-isometric style. The
+A2 city pack below is intentionally isometric.
 
 - Top-down or slightly top-down 2D game asset.
 - Bright cartoon wasteland.
