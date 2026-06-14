@@ -143,7 +143,15 @@ import {
 import {
   STORY_SLICE_ASSETS,
   getStorySliceAssetPaths,
+  type StoryAnimationName,
+  type StoryDirection,
 } from "../visual/storyAssetManifest";
+import {
+  createStoryActorAnimationLock,
+  getStoryActorPlayback,
+  triggerStoryActorOneShot as triggerStoryActorOneShotLock,
+  type StoryActorAnimationLock,
+} from "../visual/storyActorAnimationLocks";
 import {
   attachStoryActorVisual,
   getStoryActorDirection,
@@ -324,6 +332,14 @@ interface DamageNumberActor {
   velocityY: number;
 }
 
+interface StoryDeathVisual {
+  view: Graphics;
+  visual: StoryActorVisual;
+  x: number;
+  y: number;
+  lifeMs: number;
+}
+
 interface WeaponVisual {
   container: Container;
   barrel: Graphics;
@@ -380,7 +396,10 @@ export class PixiWastelandGame {
   private playerWeapon?: WeaponVisual;
   private storySliceRenderer?: StorySliceRenderer;
   private playerStoryVisual?: StoryActorVisual;
+  private readonly playerStoryAnimationLock = createStoryActorAnimationLock();
   private readonly enemyStoryVisuals = new WeakMap<EnemyActor, StoryActorVisual>();
+  private readonly enemyStoryAnimationLocks = new WeakMap<EnemyActor, StoryActorAnimationLock>();
+  private storyDeathVisuals: StoryDeathVisual[] = [];
   private state: RunState = createRunState();
   private nodeMarkers: NodeActor[] = [];
   private enemies: EnemyActor[] = [];
@@ -415,6 +434,7 @@ export class PixiWastelandGame {
   private autoWeaponElapsedMs: Partial<Record<AutoWeaponId, number>> = {};
   private energySkillElapsedMs: Partial<Record<EnergySkillId, number>> = {};
   private playerHistory: PlayerSnapshot[] = [];
+  private storyAnimationClockMs = 0;
   private litStoryLighthouseIds = new Set<string>();
   private unlockedStoryRegionIds = new Set(STORY_INITIAL_UNLOCKED_REGION_IDS);
   private ultimateElapsedMs = 999999;
@@ -566,31 +586,108 @@ export class PixiWastelandGame {
     for (const enemy of this.enemies) {
       this.destroyEnemyStoryVisual(enemy);
     }
+    for (const deathVisual of this.storyDeathVisuals) {
+      deathVisual.visual.destroy();
+      this.world.removeChild(deathVisual.view);
+      deathVisual.view.destroy();
+    }
+    this.storyDeathVisuals = [];
   }
 
   private destroyEnemyStoryVisual(enemy: EnemyActor): void {
     const visual = this.enemyStoryVisuals.get(enemy);
-    if (!visual) return;
-    visual.destroy();
+    if (visual) {
+      visual.destroy();
+    }
     this.enemyStoryVisuals.delete(enemy);
+    this.enemyStoryAnimationLocks.delete(enemy);
+  }
+
+  private getStoryAnimationDurationMs(
+    visual: StoryActorVisual,
+    animation: StoryAnimationName,
+    direction: StoryDirection,
+  ): number {
+    const definition =
+      STORY_SLICE_ASSETS.characters[visual.character].animations[animation]?.[
+        direction
+      ];
+    return definition ? definition.frames.length * definition.frameMs : 180;
   }
 
   private playStoryActorVisual(
     visual: StoryActorVisual | undefined,
     animation: "idle" | "run",
     vector: { x: number; y: number },
+    lock?: StoryActorAnimationLock,
   ): void {
     if (!visual) return;
     const direction = getStoryActorDirection(vector);
-    if (visual.animation === animation && visual.direction === direction) return;
+    const playback = getStoryActorPlayback(
+      lock,
+      animation,
+      direction,
+      this.storyAnimationClockMs,
+    );
+    if (
+      visual.animation === playback.animation &&
+      visual.direction === playback.direction
+    ) {
+      return;
+    }
+    visual.play(playback.animation, playback.direction);
+  }
+
+  private triggerStoryActorOneShot(
+    visual: StoryActorVisual | undefined,
+    lock: StoryActorAnimationLock | undefined,
+    animation: StoryAnimationName,
+    vector: { x: number; y: number },
+  ): void {
+    if (!visual || !lock) return;
+    const direction = getStoryActorDirection(vector);
+    triggerStoryActorOneShotLock(
+      lock,
+      animation,
+      direction,
+      this.storyAnimationClockMs,
+      this.getStoryAnimationDurationMs(visual, animation, direction),
+    );
     visual.play(animation, direction);
+  }
+
+  private triggerPlayerStoryOneShot(
+    animation: StoryAnimationName,
+    vector: { x: number; y: number },
+  ): void {
+    this.triggerStoryActorOneShot(
+      this.playerStoryVisual,
+      this.playerStoryAnimationLock,
+      animation,
+      vector,
+    );
+  }
+
+  private triggerEnemyStoryOneShot(
+    enemy: EnemyActor,
+    animation: StoryAnimationName,
+    vector: { x: number; y: number },
+  ): void {
+    this.triggerStoryActorOneShot(
+      this.enemyStoryVisuals.get(enemy),
+      this.enemyStoryAnimationLocks.get(enemy),
+      animation,
+      vector,
+    );
   }
 
   private readonly update = (ticker: Ticker): void => {
     if (this.gameOver) return;
     const delta = ticker.deltaMS;
+    this.storyAnimationClockMs += delta;
     if (this.state.pendingSkillChoiceIds.length > 0) {
       this.showSkillChoiceOverlay();
+      this.updateStoryDeathVisuals(delta);
       this.updateDamageNumbers(delta);
       this.updateScreenShake(delta);
       this.updateWeaponAim();
@@ -601,6 +698,7 @@ export class PixiWastelandGame {
     this.clearSkillChoiceOverlay();
     if (this.state.pendingMechFormIds.length > 0) {
       this.showFormChoiceOverlay();
+      this.updateStoryDeathVisuals(delta);
       this.updateDamageNumbers(delta);
       this.updateScreenShake(delta);
       this.updateWeaponAim();
@@ -632,6 +730,7 @@ export class PixiWastelandGame {
     this.updateLaserEffects(delta);
     this.updateWarpMines(delta);
     this.updateBossHazards(delta);
+    this.updateStoryDeathVisuals(delta);
     this.updateDamageNumbers(delta);
     this.updateSpawning(delta);
     this.updateAutoAttack(delta);
@@ -1077,6 +1176,7 @@ export class PixiWastelandGame {
       this.playerStoryVisual,
       dx !== 0 || dy !== 0 ? "run" : "idle",
       this.movementDirection,
+      this.playerStoryAnimationLock,
     );
     if (this.playerFreezeMs > 0) return;
     const moveSpeed = this.getPlayerMoveSpeed();
@@ -1123,7 +1223,12 @@ export class PixiWastelandGame {
       const storyVisual = this.enemyStoryVisuals.get(enemy);
       if (storyVisual) {
         enemy.view.rotation = 0;
-        this.playStoryActorVisual(storyVisual, "run", toPlayer);
+        this.playStoryActorVisual(
+          storyVisual,
+          "run",
+          toPlayer,
+          this.enemyStoryAnimationLocks.get(enemy),
+        );
       } else {
         enemy.view.rotation = angle;
       }
@@ -1511,6 +1616,20 @@ export class PixiWastelandGame {
     }
   }
 
+  private updateStoryDeathVisuals(deltaMs: number): void {
+    for (const deathVisual of [...this.storyDeathVisuals]) {
+      deathVisual.lifeMs -= deltaMs;
+      deathVisual.view.alpha = Math.min(1, Math.max(0, deathVisual.lifeMs / 180));
+      if (deathVisual.lifeMs > 0) continue;
+      deathVisual.visual.destroy();
+      this.world.removeChild(deathVisual.view);
+      deathVisual.view.destroy();
+      this.storyDeathVisuals = this.storyDeathVisuals.filter(
+        (candidate) => candidate !== deathVisual,
+      );
+    }
+  }
+
   private updateDamageNumbers(deltaMs: number): void {
     const seconds = deltaMs / 1000;
     for (const damageNumber of [...this.damageNumbers]) {
@@ -1615,6 +1734,7 @@ export class PixiWastelandGame {
           }),
         ),
       );
+      this.enemyStoryAnimationLocks.set(enemy, createStoryActorAnimationLock());
     }
     this.enemies.push(enemy);
     return enemy;
@@ -1663,6 +1783,13 @@ export class PixiWastelandGame {
   private flashEnemy(enemy: EnemyActor): void {
     const storyVisual = this.enemyStoryVisuals.get(enemy);
     if (storyVisual) {
+      this.triggerEnemyStoryOneShot(
+        enemy,
+        "hit",
+        this.player
+          ? { x: this.player.x - enemy.x, y: this.player.y - enemy.y }
+          : { x: 0, y: 1 },
+      );
       storyVisual.flash();
       return;
     }
@@ -1728,6 +1855,10 @@ export class PixiWastelandGame {
     if (kind === "basic") {
       this.animateGunshot();
     }
+    this.triggerPlayerStoryOneShot("attack", {
+      x: target.x - this.player.x,
+      y: target.y - this.player.y,
+    });
     this.playShotSound();
     if (label) {
       this.emitState(`${label}：发射子弹。`);
@@ -2312,10 +2443,11 @@ export class PixiWastelandGame {
     const damage = Math.max(0, Math.round(amount));
     enemy.health -= damage;
     this.showDamageNumber(enemy.x, enemy.y - 24, damage, color);
-    this.flashEnemy(enemy);
     if (enemy.health <= 0) {
       this.defeatEnemy(enemy);
+      return;
     }
+    this.flashEnemy(enemy);
   }
 
   private damageRoamingBoss(boss: BossActor, amount: number, color: string): void {
@@ -2369,6 +2501,23 @@ export class PixiWastelandGame {
     }
   }
 
+  private spawnStoryEnemyDeathVisual(enemy: EnemyActor): void {
+    const storyVisual = this.enemyStoryVisuals.get(enemy);
+    if (!storyVisual || storyVisual.character !== "zombie") return;
+    const direction = storyVisual.direction;
+    const view = new Graphics();
+    view.position.set(enemy.x, enemy.y);
+    this.world.addChild(view);
+    const visual = attachStoryActorVisual(view, "zombie", "death", direction);
+    this.storyDeathVisuals.push({
+      view,
+      visual,
+      x: enemy.x,
+      y: enemy.y,
+      lifeMs: this.getStoryAnimationDurationMs(visual, "death", direction) + 140,
+    });
+  }
+
   private defeatHospitalKnight(boss: HospitalKnightActor): void {
     this.world.removeChild(boss.view);
     this.world.removeChild(boss.label);
@@ -2411,6 +2560,7 @@ export class PixiWastelandGame {
     if (enemy.kind === "bone" || enemy.kind === "boneSoldier") {
       this.spawnBonePile(enemy.x, enemy.y);
     }
+    this.spawnStoryEnemyDeathVisual(enemy);
     this.destroyEnemyStoryVisual(enemy);
     this.world.removeChild(enemy.view);
     enemy.view.destroy();
@@ -4813,6 +4963,9 @@ export class PixiWastelandGame {
     for (const pile of this.bonePiles) {
       pile.view.visible = this.isVisibleFromPlayerZone(pile);
     }
+    for (const deathVisual of this.storyDeathVisuals) {
+      deathVisual.view.visible = this.isVisibleFromPlayerZone(deathVisual);
+    }
     if (this.playerTrap) {
       this.playerTrap.view.visible = this.isVisibleFromPlayerZone(this.playerTrap);
     }
@@ -5101,6 +5254,7 @@ export class PixiWastelandGame {
   private flashPlayerMech(): void {
     if (!this.player) return;
     if (this.playerStoryVisual) {
+      this.triggerPlayerStoryOneShot("hit", this.movementDirection);
       this.playerStoryVisual.flash();
       return;
     }
