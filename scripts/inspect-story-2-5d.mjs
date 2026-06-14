@@ -21,7 +21,11 @@ await browser.close();
 console.log(JSON.stringify({
   outputPath,
   story2_5dEnabled: metrics?.story2_5dEnabled,
-  story2_5dGroundScaleY: metrics?.story2_5dGroundScaleY,
+  story2_5dProjectionMode: metrics?.story2_5dProjectionMode,
+  story2_5dIsoTileWidth: metrics?.story2_5dIsoTileWidth,
+  story2_5dIsoTileHeight: metrics?.story2_5dIsoTileHeight,
+  story2_5dIsoLogicalTileSize: metrics?.story2_5dIsoLogicalTileSize,
+  story2_5dPlayerScreenX: metrics?.story2_5dPlayerScreenX,
   story2_5dPlayerScreenY: metrics?.story2_5dPlayerScreenY,
   story2_5dVolumePropCount: metrics?.story2_5dVolumePropCount,
   story2_5dDepthSortedPropCount: metrics?.story2_5dDepthSortedPropCount,
