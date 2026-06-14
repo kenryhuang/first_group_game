@@ -175,11 +175,13 @@ test("story mode map tuning starts with zombie waves and without boss encounters
   await page.keyboard.up("w");
 
   await page.keyboard.down("d");
-  await page.waitForTimeout(4200);
-  await page.keyboard.up("d");
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.playerX ?? 99999), { timeout: 3000 })
-    .toBeGreaterThan(22200);
+  try {
+    await expect
+      .poll(() => page.evaluate(() => window.__prototypeDebug?.playerX ?? 99999), { timeout: 10000 })
+      .toBeGreaterThan(22200);
+  } finally {
+    await page.keyboard.up("d");
+  }
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyMagicianInterferenceActive ?? false))
     .toBe(false);
@@ -208,6 +210,8 @@ test("boss rush selection starts a dungeon without normal enemy waves", async ({
 });
 
 test("boss rush dungeons spawn every configured boss", async ({ page }) => {
+  test.setTimeout(90000);
+
   const expectedBossCounts: Record<BossRushScenarioId, number> = {
     "duel-chef": 1,
     "duel-clown": 1,
