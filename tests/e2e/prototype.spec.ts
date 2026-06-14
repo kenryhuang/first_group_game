@@ -225,12 +225,15 @@ test("story mode map tuning starts with zombie waves and without boss encounters
   await page.waitForTimeout(2700);
   await page.keyboard.up("w");
 
+  const beforeRightMoveX = await page.evaluate(
+    () => window.__prototypeDebug?.playerX ?? 0,
+  );
   await page.keyboard.down("d");
   await page.waitForTimeout(4200);
   await page.keyboard.up("d");
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.playerX ?? 99999), { timeout: 3000 })
-    .toBeGreaterThan(22200);
+    .toBeGreaterThan(beforeRightMoveX + 1500);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyMagicianInterferenceActive ?? false))
     .toBe(false);
