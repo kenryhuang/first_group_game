@@ -694,6 +694,15 @@ export class PixiWastelandGame {
     return this.isStoryMode() ? getStoryDepth(point, offset) : 0;
   }
 
+  private getVisualVelocityAngle(point: StoryPoint, velocityX: number, velocityY: number): number {
+    if (!this.isStoryMode()) return Math.atan2(velocityY, velocityX);
+    return projectStoryAngle(
+      point,
+      { x: point.x + velocityX, y: point.y + velocityY },
+      this.getStoryProjectionOrigin(),
+    );
+  }
+
   private shouldDisableStoryBossEncounters(): boolean {
     return this.isStoryMode() && STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING;
   }
@@ -2024,7 +2033,7 @@ export class PixiWastelandGame {
   private updateProjectiles(deltaMs: number): void {
     for (const bullet of [...this.bullets]) {
       bullet.projectile = updateProjectileState(bullet.projectile, deltaMs);
-      this.setActorPosition(bullet, bullet.projectile.x, bullet.projectile.y);
+      this.setActorPosition(bullet, bullet.projectile.x, bullet.projectile.y, 40);
 
       if (
         bullet.projectile.expired ||
@@ -2067,11 +2076,12 @@ export class PixiWastelandGame {
       const speed = Math.hypot(missile.velocityX, missile.velocityY);
       missile.velocityX = (dx / length) * speed;
       missile.velocityY = (dy / length) * speed;
-      missile.view.rotation = Math.atan2(missile.velocityY, missile.velocityX);
+      missile.view.rotation = this.getVisualVelocityAngle(missile, missile.velocityX, missile.velocityY);
       this.setActorPosition(
         missile,
         missile.x + missile.velocityX * seconds,
         missile.y + missile.velocityY * seconds,
+        40,
       );
 
       if (
@@ -2623,8 +2633,18 @@ export class PixiWastelandGame {
       view.poly([18, -6, 30, 0, 18, 6]).fill(0xff9f1c);
       view.circle(-20, 0, 6).fill({ color: 0x68e1fd, alpha: 0.5 });
     }
-    view.position.set(launchPoint.x, launchPoint.y);
-    view.rotation = launchAngle;
+    this.setViewPosition(
+      view,
+      launchPoint.x,
+      launchPoint.y,
+      this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0,
+    );
+    view.zIndex = this.getStoryVisualDepth(launchPoint, 40);
+    view.rotation = this.getVisualVelocityAngle(
+      launchPoint,
+      Math.cos(launchAngle),
+      Math.sin(launchAngle),
+    );
     this.world.addChild(view);
     this.heavyProjectiles.push({
       view,
@@ -4199,14 +4219,19 @@ export class PixiWastelandGame {
   private spawnMuzzleSparks(): void {
     if (!this.player || !this.playerWeapon) return;
     const angle = this.playerWeapon.container.rotation;
-    const muzzleX = this.player.x + Math.cos(angle) * 58;
-    const muzzleY = this.player.y + Math.sin(angle) * 58;
+    const projectedPlayer = this.projectPoint(this.player);
+    const muzzleX = projectedPlayer.x + Math.cos(angle) * 58;
+    const muzzleY =
+      projectedPlayer.y +
+      (this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0) +
+      Math.sin(angle) * 58;
 
     for (let index = 0; index < BASIC_GUN.sparkCount; index += 1) {
       const sparkAngle = angle + (Math.random() - 0.5) * 0.75;
       const spark = new Graphics();
       spark.circle(0, 0, 1.2 + Math.random() * 2.2).fill(index % 2 === 0 ? 0xfff3b0 : 0x68e1fd);
       spark.position.set(muzzleX, muzzleY);
+      spark.zIndex = this.getStoryVisualDepth(this.player, 45);
       this.world.addChild(spark);
       gsap.to(spark, {
         x: muzzleX + Math.cos(sparkAngle) * (22 + Math.random() * 28),
@@ -4223,16 +4248,20 @@ export class PixiWastelandGame {
   }
 
   private spawnHitSparks(x: number, y: number, color: number, count: number): void {
+    const projected = this.projectPoint({ x, y });
+    const sparkX = projected.x;
+    const sparkY = projected.y + (this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0);
     for (let index = 0; index < count; index += 1) {
       const angle = Math.random() * Math.PI * 2;
       const spark = new Graphics();
       spark.rect(-1, -1, 2 + Math.random() * 3, 2).fill(color);
-      spark.position.set(x, y);
+      spark.position.set(sparkX, sparkY);
       spark.rotation = angle;
+      spark.zIndex = this.getStoryVisualDepth({ x, y }, 45);
       this.world.addChild(spark);
       gsap.to(spark, {
-        x: x + Math.cos(angle) * (18 + Math.random() * 24),
-        y: y + Math.sin(angle) * (18 + Math.random() * 24),
+        x: sparkX + Math.cos(angle) * (18 + Math.random() * 24),
+        y: sparkY + Math.sin(angle) * (18 + Math.random() * 24),
         alpha: 0,
         duration: 0.16,
         ease: "power2.out",
@@ -7916,11 +7945,11 @@ export class PixiWastelandGame {
     return BOSS_DEFINITIONS.find((boss) => boss.id === bossId)?.name ?? bossId;
   }
 
-  private setActorPosition(actor: Actor, x: number, y: number): void {
+  private setActorPosition(actor: Actor, x: number, y: number, depthOffset = 20): void {
     actor.x = x;
     actor.y = y;
     this.setViewPosition(actor.view, x, y);
-    actor.view.zIndex = this.getStoryVisualDepth({ x, y }, 20);
+    actor.view.zIndex = this.getStoryVisualDepth({ x, y }, depthOffset);
   }
 
   private getBasicGunDamage(): number {
