@@ -10,6 +10,7 @@ import {
   collectNode,
   gainRunExperience,
   killRunBoss,
+  PLAYER_INVINCIBLE_FOR_FINAL_BOSS_TESTING,
   recordRunEnemyKill,
   useRunSkill,
 } from "./runState";
@@ -53,12 +54,13 @@ describe("run state", () => {
     expect(state.temporaryPollution).toBe(3);
   });
 
-  it("applies incoming damage to the player without going below zero", () => {
+  it("keeps the player invincible during final Boss testing", () => {
+    expect(PLAYER_INVINCIBLE_FOR_FINAL_BOSS_TESTING).toBe(true);
     const damaged = applyRunDamage(createRunState(), 18);
-    expect(damaged.health).toBe(82);
+    expect(damaged.health).toBe(100);
 
     const defeated = applyRunDamage(damaged, 200);
-    expect(defeated.health).toBe(0);
+    expect(defeated.health).toBe(100);
   });
 
   it("opens a three-choice skill upgrade after enough enemy kills", () => {

@@ -75,6 +75,24 @@ export const FINAL_BOSS_PHASE_THREE_SKILL = {
   finalBeamHealthThreshold: 1000,
 };
 
+export const FINAL_BOSS_PHASE_FOUR_SKILL = {
+  armoryWidth: 2200,
+  armoryHeight: 1500,
+  coreSpeed: 68,
+  pressureTickMs: 720,
+  barrageDamage: 22,
+  barrageRadius: 86,
+  barrageWarningMs: 520,
+  ammoRackDamage: 34,
+  ammoRackRadius: 145,
+  turretDamage: 12,
+  turretProjectileSpeed: 620,
+  collapseEscapeMs: 28000,
+  collapseTickMs: 1000,
+  collapseDamage: 10,
+  exitRadius: 96,
+} as const;
+
 export const ENDGAME_ULTIMATE_DEFINITIONS: Record<MechFormId, EndgameUltimateDefinition> = {
   laser: {
     formId: "laser",
@@ -108,8 +126,37 @@ export function getEndgameUltimateDefinition(formId: MechFormId): EndgameUltimat
   return ENDGAME_ULTIMATE_DEFINITIONS[formId];
 }
 
-export function getFinalBossPhase(health: number, _maxHealth = FINAL_BOSS_DEFINITION.maxHealth): 1 | 2 | 3 {
+export type FinalBossPhase = 1 | 2 | 3 | 4;
+
+export function getFinalBossPhase(health: number, _maxHealth = FINAL_BOSS_DEFINITION.maxHealth): FinalBossPhase {
+  if (health <= 2000) return 4;
   if (health <= 5000) return 3;
   if (health <= 7000) return 2;
   return 1;
+}
+
+export type WarCoreEvacuationOutcome = "escaped" | "buried" | "still-running";
+export type WarCoreDefeatOutcome = "start-collapse" | "mission-success";
+
+export function getWarCoreDefeatOutcome(input: {
+  phase: FinalBossPhase;
+  armoryActive: boolean;
+  collapseMs: number;
+}): WarCoreDefeatOutcome {
+  if (input.phase === 4 && input.armoryActive && input.collapseMs <= 0) return "start-collapse";
+  return "mission-success";
+}
+
+export function shouldAllowWarCoreSpawn(input: { armoryActive: boolean; collapseMs: number }): boolean {
+  return !input.armoryActive && input.collapseMs <= 0;
+}
+
+export function getWarCoreEvacuationOutcome(input: {
+  collapseMs: number;
+  distanceToExit: number;
+  exitRadius: number;
+}): WarCoreEvacuationOutcome {
+  if (input.distanceToExit <= input.exitRadius) return "escaped";
+  if (input.collapseMs <= 0) return "buried";
+  return "still-running";
 }

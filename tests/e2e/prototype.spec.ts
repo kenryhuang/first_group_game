@@ -11,69 +11,10 @@ declare global {
 test.skip("prototype loads and responds to keyboard controls", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("button", { name: "经典" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "剧情模式" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Boss Rush" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "联机 未开发" })).toBeDisabled();
-  await expect(page.locator("canvas")).toHaveCount(0);
-  await page.getByRole("button", { name: "经典" }).click();
-
-  const canvas = page.locator("canvas").first();
-  await expect(canvas).toBeVisible();
-  await expect
-    .poll(async () => canvasHasVisiblePixels(await canvas.elementHandle()))
-    .toBe(true);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.mapWidth ?? 0))
-    .toBe(10000);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.mapHeight ?? 0))
-    .toBe(10000);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.bossCount ?? 0))
-    .toBeGreaterThanOrEqual(4);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.enemyCount ?? 0))
-    .toBeGreaterThan(0);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.buildingCount ?? 0))
-    .toBeGreaterThanOrEqual(14);
-  await expect
-    .poll(() => page.evaluate(() => typeof window.__prototypeDebug?.insideBuilding))
-    .toBe("boolean");
-  await expect
-    .poll(() => page.evaluate(() => Object.hasOwn(window.__prototypeDebug ?? {}, "currentBuildingId")))
-    .toBe(true);
-  await expect
-    .poll(() => page.evaluate(() => typeof window.__prototypeDebug?.playerHealth))
-    .toBe("number");
-
-  const beforeInput = await canvas.evaluate((element) =>
-    (element as HTMLCanvasElement).toDataURL(),
-  );
-  await page.keyboard.press("1");
-  await page.mouse.move(720, 300);
-  await page.keyboard.press("Space");
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.bulletCount ?? 0))
-    .toBeGreaterThan(0);
-  await page.keyboard.press("X");
-  await page.keyboard.press("Q");
-  await page.keyboard.press("B");
-  await expect
-    .poll(async () =>
-      canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL()),
-    )
-    .not.toBe(beforeInput);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.bossCount ?? 0))
-    .toBeGreaterThanOrEqual(4);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.bossNames.length ?? 0))
-    .toBeGreaterThanOrEqual(4);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.bossNames.includes("失控战争核心")))
-    .toBe(false);
+  await expect(page.getByTestId("classic-mode-button")).toBeVisible();
+  await expect(page.getByTestId("story-mode-button")).toBeVisible();
+  await expect(page.getByTestId("boss-rush-button")).toBeVisible();
+  await expect(page.getByTestId("coop-mode-button")).toBeDisabled();
 });
 
 test("classic mode loads and responds to keyboard controls", async ({ page }) => {
@@ -138,27 +79,11 @@ test("in-game return button goes back to the main menu", async ({ page }) => {
 
 test.skip("story mode can be selected from the main menu", async ({ page }) => {
   await page.goto("/");
-
-  await page.getByRole("button", { name: "剧情模式" }).click();
-
-  const canvas = page.locator("canvas").first();
-  await expect(canvas).toBeVisible();
-  await expect(page.getByText(/剧情模式/)).toBeVisible();
-  await expect(page.getByText(/中心开放区/)).toBeVisible();
-  await expect(page.getByText(/封锁区不可进入/)).toBeVisible();
-  await expect(page.getByText(/北部入口区/)).toHaveCount(0);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.mapWidth ?? 0))
-    .toBe(20000);
-  await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.mapHeight ?? 0))
-    .toBe(20000);
-  await expect
-    .poll(async () => canvasHasVisiblePixels(await canvas.elementHandle()))
-    .toBe(true);
+  await page.getByTestId("story-mode-button").click();
+  await expect(page.getByTestId("story-intro")).toBeVisible();
 });
 
-test("story mode first phase starts through intro, mech select, and fog lighthouse", async ({ page }) => {
+test("story mode map tuning starts without fog combat limits or encounters", async ({ page }) => {
   await page.goto("/");
 
   await page.getByTestId("story-mode-button").click();
@@ -171,13 +96,13 @@ test("story mode first phase starts through intro, mech select, and fog lighthou
 
   const canvas = page.locator("canvas").first();
   await expect(canvas).toBeVisible();
-  await expect(page.getByText(/灯塔/)).toBeVisible();
+  await expect(page.getByText(/全城开放调图中/)).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.mapWidth ?? 0))
-    .toBe(20000);
+    .toBe(40000);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.mapHeight ?? 0))
-    .toBe(20000);
+    .toBe(40000);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.selectedStoryMechId ?? null))
     .toBe("vanguard");
@@ -186,7 +111,16 @@ test("story mode first phase starts through intro, mech select, and fog lighthou
     .toBe(0);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyVisionRadius ?? 0))
-    .toBeGreaterThan(0);
+    .toBe(40000);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.bossCount ?? -1))
+    .toBe(0);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.enemyCount ?? -1))
+    .toBe(0);
+  await expect
+    .poll(() => page.evaluate(() => (window.__prototypeDebug as any)?.renderedBuildingCount ?? -1))
+    .toBeGreaterThanOrEqual(150);
   await expect
     .poll(async () => canvasHasVisiblePixels(await canvas.elementHandle()))
     .toBe(true);
@@ -197,21 +131,39 @@ test("story mode first phase starts through intro, mech select, and fog lighthou
     .toBe(1);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyMonsterPressureMultiplier ?? 1))
-    .toBeGreaterThan(1);
+    .toBe(1);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyMagicianInterferenceActive ?? false))
+    .toBe(false);
+
+  await page.keyboard.down("w");
+  await page.waitForTimeout(2700);
+  await page.keyboard.up("w");
+
+  await page.keyboard.down("d");
+  await page.waitForTimeout(4200);
+  await page.keyboard.up("d");
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.playerX ?? 99999), { timeout: 3000 })
+    .toBeGreaterThan(22450);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyMagicianInterferenceActive ?? false))
+    .toBe(false);
 });
 
 test("boss rush selection starts a dungeon without normal enemy waves", async ({ page }) => {
+  const kitchenBrawl = BOSS_RUSH_SCENARIOS.find((scenario) => scenario.id === "kitchen-brawl");
+  if (!kitchenBrawl) throw new Error("Missing kitchen-brawl scenario");
+
   await page.goto("/");
 
   await page.getByRole("button", { name: "Boss Rush" }).click();
   await expect(page.getByRole("heading", { name: "Boss Rush" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /终焉之战/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /厨房混战/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /远程狙击/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /圣光审判/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /杂技表演/ })).toBeVisible();
+  for (const scenario of BOSS_RUSH_SCENARIOS) {
+    await expect(page.getByRole("button", { name: new RegExp(scenario.name) })).toBeVisible();
+  }
 
-  await page.getByRole("button", { name: /厨房混战/ }).click();
+  await page.getByRole("button", { name: new RegExp(kitchenBrawl.name) }).click();
   await expect(page.locator("canvas").first()).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.bossCount ?? 0))
@@ -233,6 +185,10 @@ test("boss rush dungeons spawn every configured boss", async ({ page }) => {
     "duel-magician": 1,
     "duel-war-convoy": 1,
     "duel-war-core": 1,
+    "duel-war-core-phase-1": 1,
+    "duel-war-core-phase-2": 1,
+    "duel-war-core-phase-3": 1,
+    "duel-war-core-phase-4": 1,
     "final-war": 5,
     "kitchen-brawl": 6,
     "sniper-crossfire": 5,

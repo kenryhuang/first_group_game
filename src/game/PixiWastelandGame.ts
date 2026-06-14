@@ -31,6 +31,8 @@ import {
 } from "../systems/spawning";
 import {
   STORY_CENTER_LIGHTHOUSE,
+  STORY_DEBUG_PLAYER_SPEED_MULTIPLIER,
+  STORY_DISABLE_ENCOUNTERS_FOR_MAP_TUNING,
   STORY_FOG_BASE_RADIUS,
   STORY_INITIAL_UNLOCKED_BOUNDS,
   STORY_INITIAL_UNLOCKED_REGION_IDS,
@@ -41,16 +43,20 @@ import {
   clampPointToUnlockedStoryRegions,
   getStoryCircularFogCoverRects,
   getStoryEffectiveAttackRange,
+  getStoryPassageRects,
   getStoryPlayerStart,
   getStoryMonsterPressureMultiplier,
   getStoryVisionRadius,
   isPointInsideStoryVision,
+  isStoryMagicianInterferencePoint,
 } from "../systems/storyRegions";
 import {
-  BUILDINGS,
+  BUILDING_LABELS,
   getContainingBuildingId,
+  getBuildingsForMode,
   pointInsideBuildings,
   resolveBlockedMovement,
+  type Rect,
 } from "../systems/terrain";
 import {
   createProjectileState,
@@ -62,6 +68,7 @@ import {
 import { getInitialRoamingBossIds } from "../systems/bossRoaming";
 import { getAimTarget } from "../systems/aiming";
 import { BOSS_VISUAL_THEMES, ZOMBIE_ENEMY_THEME } from "../systems/enemyVisuals";
+import { localizeGameMessage } from "../systems/localization";
 import {
   getActiveAutoWeapons,
   getAutoWeaponDamage,
@@ -100,27 +107,101 @@ import {
   BEASTMASTER_ZOMBIE_SIEGE_COUNT,
   shouldTriggerBeastmasterFrenzy,
 } from "../systems/beastmaster";
+import {
+  CHEF_CHILI_OIL_BOTTLE_FLIGHT_MS,
+  CHEF_CHILI_OIL_BOTTLE_COUNT,
+  CHEF_CHILI_OIL_SPREAD_RADIUS,
+  CHEF_CRASH_AIRBORNE_OFFSET_Y,
+  CHEF_MEAT_GRINDER_ARM_COUNT,
+  CHEF_MEAT_GRINDER_ARM_LENGTH,
+  CHEF_MEAT_GRINDER_DAMAGE,
+  CHEF_MEAT_GRINDER_DURATION_MS,
+  CHEF_MEAT_GRINDER_TICK_MS,
+  CHEF_WOK_MODEL_RADIUS,
+  shouldChefBlockBasicAttack,
+  shouldTriggerChefMeatGrinder,
+} from "../systems/chef";
+import {
+  CLOWN_KNIFE_BURST_COUNT,
+  CLOWN_MAGIC_BOX_FREEZE_MS,
+  CLOWN_MAGIC_BOX_TRIGGER_RADIUS,
+  CLOWN_SPIRAL_KNIFE_DURATION_MS,
+  CLOWN_SPIRAL_KNIFE_STEP,
+  CLOWN_SPIRAL_KNIFE_TICK_MS,
+  CLOWN_SURPRISE_RETREAT_DISTANCE,
+  CLOWN_SURPRISE_SLASH_COUNT,
+  CLOWN_SURPRISE_SLASH_DAMAGE,
+  getClownDistanceTarget,
+} from "../systems/clown";
+import {
+  COURIER_CITYWIDE_DELIVERY_DURATION_MS,
+  COURIER_CITYWIDE_DELIVERY_TICK_MS,
+  COURIER_EXPLOSIVE_PARCEL_DISTANCE_STEP,
+  COURIER_EXPLOSIVE_PARCEL_COUNT,
+  COURIER_EXPLOSIVE_PARCEL_MIN_DISTANCE,
+  COURIER_LOCKER_COUNT,
+  COURIER_PARCEL_TRIGGER_RADIUS,
+  COURIER_ROUTE_RESIDUE_LIFE_MS,
+  COURIER_ROUTE_RESIDUE_RADIUS,
+  COURIER_ROUTE_RESIDUE_TICK_MS,
+  COURIER_SIGNATURE_LOCK_MS,
+  getCourierParcelOutcome,
+  getCourierSignatureLockOutcome,
+} from "../systems/courier";
+import {
+  MAGICIAN_MIRROR_ORBIT_SPEED,
+  MAGICIAN_MIRROR_SHARD_COUNT,
+  MAGICIAN_MIRROR_SHARD_SPEED,
+  MAGICIAN_SPOTLIGHT_CHOOSE_MS,
+  MAGICIAN_SPOTLIGHT_FALSE_BLAST_RADIUS,
+  MAGICIAN_SPOTLIGHT_ORBIT_ROUNDS,
+  MAGICIAN_SPOTLIGHT_STAGE_RADIUS,
+  STORY_MAGICIAN_INTERFERENCE_COOLDOWN_MS,
+  STORY_MAGICIAN_REMOTE_MIRROR_ATTACK_COOLDOWN_MS,
+  STORY_MAGICIAN_REMOTE_MIRROR_COUNT,
+  STORY_MAGICIAN_REMOTE_MIRROR_PROJECTILE_DAMAGE,
+  STORY_MAGICIAN_REMOTE_MIRROR_PROJECTILE_SPEED,
+  STORY_MAGICIAN_REMOTE_MIRROR_PROXIMITY_BURST_RADIUS,
+  createMagicianCurtains,
+  createMagicianHatMaze,
+  createMagicianMirrorHall,
+  createMagicianSpotlights,
+  getMagicianCurtainCallMs,
+  type MagicianCurtainCallKind,
+} from "../systems/magician";
 import { getUltimateDefinition, type UltimateDefinition } from "../systems/mechForms";
 import {
   FINAL_BOSS_DEFINITION,
+  FINAL_BOSS_PHASE_FOUR_SKILL,
   FINAL_BOSS_PHASE_ONE_SKILL,
   FINAL_BOSS_PHASE_THREE_SKILL,
   FINAL_BOSS_PHASE_TWO_SKILL,
   getEndgameUltimateDefinition,
   getFinalBossPhase,
+  getWarCoreDefeatOutcome,
+  getWarCoreEvacuationOutcome,
   isEndgameReady,
+  shouldAllowWarCoreSpawn,
   type EndgameUltimateDefinition,
+  type FinalBossPhase,
 } from "../systems/endgame";
 import {
   HOSPITAL_KNIGHT_AGGRO_RADIUS,
   BONE_CONTACT_DAMAGE,
   BONE_SOLDIER_CONTACT_DAMAGE,
   GIANT_SWORD_TRAP_MS,
+  HOSPITAL_KNIGHT_BONE_COMMAND_COUNT,
+  HOSPITAL_KNIGHT_BONE_COMMAND_DASH_SPEED,
   HOSPITAL_KNIGHT_DEFINITION,
+  HOSPITAL_KNIGHT_DEAD_FORMATION_LANES,
   HOSPITAL_KNIGHT_SPAWN,
+  HOSPITAL_KNIGHT_HOLY_LANCE_SPIKE_DAMAGE,
+  HOSPITAL_KNIGHT_HOLY_LANCE_SPIKES,
+  HOSPITAL_KNIGHT_ROYAL_GUARD_COUNT,
   getHospitalKnightGuardRoamTarget,
   getHospitalKnightPhase,
   getInitialBoneHordeCount,
+  getNextHospitalKnightSkill,
   isHospitalKnightDamageable,
   shouldConvertZombieToBoneSoldier,
   shouldHospitalKnightAggro,
@@ -143,7 +224,19 @@ import {
 
 type AttackMode = "auto" | "manual";
 type BossMode = "roam" | "chase" | "charge" | "windup";
-type HazardKind = "bossProjectile" | "chiliOil" | "firePit" | "bigFirePit" | "knife" | "magicBox";
+type HazardKind =
+  | "bossProjectile"
+  | "chiliOil"
+  | "firePit"
+  | "bigFirePit"
+  | "knife"
+  | "magicBox"
+  | "toxicCloud"
+  | "medicineMist"
+  | "sedativeDart"
+  | "magneticMine"
+  | "electricOrb"
+  | "courierParcel";
 type EnemyKind = "zombie" | "hound" | "bone" | "boneSoldier";
 
 interface GameCallbacks {
@@ -170,6 +263,7 @@ interface EnemyActor extends Actor {
   dashAngle?: number;
   dashSpeed?: number;
   invulnerableMs?: number;
+  plaguePatient?: boolean;
   guardTarget?: { x: number; y: number };
 }
 
@@ -191,19 +285,34 @@ interface BossActor extends Actor {
   pendingChargeAngle: number;
   contactDamageElapsedMs: number;
   beastmasterFrenzyUsed?: boolean;
+  chefMeatGrinderUsed?: boolean;
+  chefMeatGrinderMs?: number;
+  chefMeatGrinderTickMs?: number;
+  chefMeatGrinderAngle?: number;
+  chefMeatGrinderView?: Graphics;
+  chefAirborne?: boolean;
+  clownSpiralKnifeMs?: number;
+  clownSpiralKnifeTickMs?: number;
+  clownSpiralKnifeAngle?: number;
+  courierCitywideMs?: number;
+  courierCitywideTickMs?: number;
 }
 
 interface FinalBossActor extends Actor {
   health: number;
   maxHealth: number;
   label: Text;
-  phase: 1 | 2 | 3;
+  phase: FinalBossPhase;
   skillElapsedMs: number;
   skillCooldownMs: number;
   contactDamageElapsedMs: number;
   skillCursor: number;
   wantedUsed: boolean;
   finalBeamUsed: boolean;
+}
+
+interface WarCoreExtractionActor extends Actor {
+  radius: number;
 }
 
 interface HospitalKnightActor extends Actor {
@@ -287,6 +396,75 @@ interface HazardActor extends Actor {
   tickElapsedMs: number;
   expiresIntoFire: boolean;
   effect?: (typeof JESTER_BOX_EFFECTS)[number];
+}
+
+interface CourierRouteActor {
+  view: Graphics;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  lifeMs: number;
+  tickElapsedMs: number;
+  damage: number;
+}
+
+interface MagicianStagePropActor extends Actor {
+  kind: "curtain" | "spotlight" | "hat" | "mirror";
+  real?: boolean;
+  solid?: boolean;
+  damage?: number;
+  radius?: number;
+  expiresAtMs?: number;
+  birthMs?: number;
+  revealAtMs?: number;
+  centerX?: number;
+  centerY?: number;
+  orbitRadiusX?: number;
+  orbitRadiusY?: number;
+  orbitAngle?: number;
+  orbitSpeed?: number;
+  orbitDirection?: 1 | -1;
+  storyRemote?: boolean;
+  attackElapsedMs?: number;
+  proximityBurstRadius?: number;
+}
+
+interface InfusionStandActor extends Actor {
+  boss: BossActor;
+  health: number;
+  radius: number;
+  lifeMs: number;
+  tickElapsedMs: number;
+}
+
+interface TeslaDeviceActor extends Actor {
+  kind: "turret" | "node";
+  boss: BossActor;
+  health: number;
+  radius: number;
+  lifeMs: number;
+  tickElapsedMs: number;
+}
+
+interface TeslaGridActor {
+  view: Graphics;
+  start: TeslaDeviceActor;
+  end: TeslaDeviceActor;
+  lifeMs: number;
+  tickElapsedMs: number;
+  damage: number;
+}
+
+interface ConvoyVehicleActor extends Actor {
+  kind: "escort" | "ammo";
+  boss: BossActor;
+  health: number;
+  radius: number;
+  lifeMs: number;
+  tickElapsedMs: number;
+  damage: number;
+  orbitAngle?: number;
+  orbitRadius?: number;
+  speed?: number;
 }
 
 export interface PixiWastelandGameOptions {
@@ -374,6 +552,17 @@ export class PixiWastelandGame {
   private laserEffects: LaserEffectActor[] = [];
   private warpMines: WarpMineActor[] = [];
   private bossHazards: HazardActor[] = [];
+  private courierRoutes: CourierRouteActor[] = [];
+  private magicianStageProps: MagicianStagePropActor[] = [];
+  private storyMagicianInterferenceActive = false;
+  private storyMagicianInterferenceCooldownMs = 0;
+  private storyMagicianInterferenceCount = 0;
+  private infusionStands: InfusionStandActor[] = [];
+  private teslaDevices: TeslaDeviceActor[] = [];
+  private teslaGrids: TeslaGridActor[] = [];
+  private convoyVehicles: ConvoyVehicleActor[] = [];
+  private magicianCurtainCallUntilMs = 0;
+  private magicianFinaleInProgress = false;
   private bossTelegraphs: TelegraphActor[] = [];
   private bosses: BossActor[] = [];
   private finalBoss?: FinalBossActor;
@@ -381,6 +570,12 @@ export class PixiWastelandGame {
   private finalBossBombs: FinalBossBombActor[] = [];
   private finalBossMissiles: FinalBossMissileActor[] = [];
   private finalBossCrawlers: FinalBossCrawlerActor[] = [];
+  private warCoreArmoryActive = false;
+  private warCoreCollapseMs = 0;
+  private warCoreCollapseTickMs = 0;
+  private warCoreArmoryPressureMs = 0;
+  private warCoreExtraction?: WarCoreExtractionActor;
+  private warCoreArmoryOverlay?: Graphics;
   private hospitalKnight?: HospitalKnightActor;
   private extraHospitalKnights: HospitalKnightActor[] = [];
   private bonePiles: BonePileActor[] = [];
@@ -424,6 +619,10 @@ export class PixiWastelandGame {
     return this.options.mode === "story";
   }
 
+  private shouldDisableStoryEncounters(): boolean {
+    return this.isStoryMode() && STORY_DISABLE_ENCOUNTERS_FOR_MAP_TUNING;
+  }
+
   private getMapWidth(): number {
     return this.isStoryMode() ? STORY_MAP_WIDTH : MAP_WIDTH;
   }
@@ -434,6 +633,10 @@ export class PixiWastelandGame {
 
   private getPlayerStart(): { x: number; y: number } {
     return this.isStoryMode() ? getStoryPlayerStart() : PLAYER_START;
+  }
+
+  private getActiveBuildings(): Rect[] {
+    return getBuildingsForMode(this.options.mode ?? "classic");
   }
 
   private getBossRushPlayerLevel(): number {
@@ -473,22 +676,22 @@ export class PixiWastelandGame {
     this.createNodeMarkers();
     if (this.isBossRushMode()) {
       this.spawnBossRushScenario();
-    } else if (!EXPERIMENTAL_DISABLE_SMALL_ENEMIES) {
+    } else if (!this.shouldDisableStoryEncounters() && !EXPERIMENTAL_DISABLE_SMALL_ENEMIES) {
       this.spawnInitialBosses();
       this.spawnHospitalKnight();
     }
     this.world.addChild(this.interiorVisibilityMask);
     this.bindInput();
-    if (!this.isBossRushMode() && !EXPERIMENTAL_DISABLE_SMALL_ENEMIES) {
+    if (!this.isBossRushMode() && !this.shouldDisableStoryEncounters() && !EXPERIMENTAL_DISABLE_SMALL_ENEMIES) {
       this.spawnEnemyWave(getEnemySpawnBatchSize(this.state.level, 1000));
     }
     this.app.ticker.add(this.update);
     this.emitState(
       this.isBossRushMode()
-        ? "Boss Rush 副本已展开，选择最终形态后开战。"
+        ? "Boss Rush scenario started. Choose a final form to fight."
         : this.isStoryMode()
-          ? "剧情模式：中心信标已启动。先探索入口区，再点亮区域塔。"
-          : "10000x10000 城市废土已展开。",
+          ? "Story mode: center beacon online. Explore the entry zone, then light towers."
+          : "10000x10000 city wasteland started.",
     );
   }
 
@@ -536,6 +739,8 @@ export class PixiWastelandGame {
     this.updateEnemies(delta);
     this.updateMechTransformationDamage(delta);
     this.updateBosses(delta);
+    this.updateStoryMagicianInterference(delta);
+    this.updateMagicianStageProps(delta);
     this.updateFinalBoss(delta);
     this.updateHospitalKnight(delta);
     this.updatePlayerTrap(delta);
@@ -546,6 +751,11 @@ export class PixiWastelandGame {
     this.updateLaserEffects(delta);
     this.updateWarpMines(delta);
     this.updateBossHazards(delta);
+    this.updateCourierRoutes(delta);
+    this.updateInfusionStands(delta);
+    this.updateTeslaDevices(delta);
+    this.updateTeslaGrids(delta);
+    this.updateConvoyVehicles(delta);
     this.updateDamageNumbers(delta);
     this.updateSpawning(delta);
     this.updateAutoAttack(delta);
@@ -576,6 +786,7 @@ export class PixiWastelandGame {
 
     if (this.isStoryMode()) {
       this.drawStoryCity();
+      this.drawBuildings();
     } else {
       this.drawDistricts();
       this.drawBuildings();
@@ -622,12 +833,26 @@ export class PixiWastelandGame {
       const unlocked =
         this.unlockedStoryRegionIds.has(passage.fromRegionId) &&
         this.unlockedStoryRegionIds.has(passage.toRegionId);
-      const gate = new Graphics();
-      gate
-        .rect(passage.x - passage.width / 2, passage.y - passage.height / 2, passage.width, passage.height)
-        .fill({ color: unlocked ? 0x151914 : 0x160709, alpha: unlocked ? 0.92 : 0.8 })
-        .stroke({ color: unlocked ? 0xffd166 : 0x9a1f2f, alpha: unlocked ? 0.36 : 0.92, width: unlocked ? 2 : 12 });
-      this.world.addChild(gate);
+      for (const rect of getStoryPassageRects(passage)) {
+        const gate = new Graphics();
+        gate
+          .rect(rect.x - rect.width / 2, rect.y - rect.height / 2, rect.width, rect.height)
+          .fill({ color: unlocked ? 0x151914 : 0x160709, alpha: unlocked ? 0.92 : 0.8 })
+          .stroke({ color: unlocked ? 0x050706 : 0x9a1f2f, alpha: unlocked ? 0.92 : 0.92, width: unlocked ? 10 : 12 });
+        const vertical = rect.height >= rect.width;
+        const markerCount = Math.max(2, Math.floor((vertical ? rect.height : rect.width) / 680));
+        for (let index = 0; index < markerCount; index += 1) {
+          const progress = (index + 0.5) / markerCount;
+          const markerX = vertical ? rect.x : rect.x - rect.width / 2 + rect.width * progress;
+          const markerY = vertical ? rect.y - rect.height / 2 + rect.height * progress : rect.y;
+          if (vertical) {
+            gate.rect(markerX - 8, markerY - 120, 16, 240).fill({ color: 0xffd166, alpha: unlocked ? 0.12 : 0.04 });
+          } else {
+            gate.rect(markerX - 120, markerY - 8, 240, 16).fill({ color: 0xffd166, alpha: unlocked ? 0.12 : 0.04 });
+          }
+        }
+        this.world.addChild(gate);
+      }
     }
 
     const tower = new Graphics();
@@ -649,7 +874,7 @@ export class PixiWastelandGame {
     this.world.addChild(label);
 
     const subLabel = new Text({
-      text: "靠近后按 E 点亮，视野扩大但怪物压力上升",
+      text: "靠近后按 E 点亮，视野扩大但怪物压力上升。",
       style: new TextStyle({ fill: "#d8dfd0", fontFamily: "Arial", fontSize: 18 }),
     });
     subLabel.anchor.set(0.5);
@@ -734,29 +959,57 @@ export class PixiWastelandGame {
   }
 
   private drawBuildings(): void {
-    for (const building of BUILDINGS) {
+    for (const building of this.getActiveBuildings()) {
       this.drawBuilding(building.id, building.x, building.y, building.width, building.height);
     }
 
   }
 
   private drawBuilding(id: string, x: number, y: number, width: number, height: number): void {
+    const labelText = BUILDING_LABELS[id];
+    const accentColor = getBuildingAccentColor(id);
     const shape = new Graphics();
-    shape
-      .rect(x - width / 2, y - height / 2, width, height)
-      .fill({ color: 0x1f2a24, alpha: 0.52 })
-      .stroke({ color: 0x9a8c5f, alpha: 0.72, width: 2 });
+    if (id.startsWith("story-gate-wall-")) {
+      this.drawStoryGateWallTexture(shape, x, y, width, height);
+    } else if (id.startsWith("story-region-wall-")) {
+      this.drawStoryRegionWallTexture(shape, id, x, y, width, height);
+    } else if (id.startsWith("story-passage-wall-")) {
+      this.drawStoryPassageWallTexture(shape, x, y, width, height);
+    } else if (id.startsWith("ent-maze-wall-") || id.startsWith("ent-maze-fake-wall-")) {
+      this.drawCircusWallTexture(shape, id, x, y, width, height);
+    } else {
+      this.drawBuildingShellTexture(shape, id, x, y, width, height, Boolean(labelText), accentColor);
+    }
     this.world.addChild(shape);
 
     const roof = new Graphics();
-    roof
-      .rect(x - width / 2, y - height / 2, width, height)
-      .fill({ color: 0x111510, alpha: 0.9 })
-      .stroke({ color: 0xfff3b0, alpha: 0.62, width: 2 });
-    roof
-      .rect(x - width / 2 + 14, y - height / 2 + 13, width - 28, 7)
-      .fill({ color: 0xfff3b0, alpha: 0.5 });
+    if (id.startsWith("story-gate-wall-")) {
+      this.drawStoryGateWallDetails(roof, x, y, width, height);
+    } else if (id.startsWith("story-region-wall-")) {
+      this.drawStoryWallDetails(roof, id, x, y, width, height);
+    } else if (id.startsWith("story-passage-wall-")) {
+      this.drawPassageWallDetails(roof, x, y, width, height);
+    } else if (id.startsWith("ent-maze-wall-") || id.startsWith("ent-maze-fake-wall-")) {
+      this.drawCircusWallDetails(roof, id, x, y, width, height);
+    } else {
+      this.drawBuildingRoofTexture(roof, id, x, y, width, height, Boolean(labelText), accentColor);
+    }
     this.world.addChild(roof);
+    if (labelText) {
+      const label = new Text({
+        text: labelText,
+        style: new TextStyle({
+          fill: "#fff3b0",
+          fontFamily: "Arial",
+          fontSize: 34,
+          fontWeight: "700",
+          stroke: { color: "#050706", width: 4 },
+        }),
+      });
+      label.anchor.set(0.5);
+      label.position.set(x, y);
+      this.world.addChild(label);
+    }
     this.buildingVisuals.push({
       id,
       shell: shape,
@@ -770,6 +1023,160 @@ export class PixiWastelandGame {
       sniperCooldownMs: 0,
       isSniperNest: false,
     });
+  }
+
+  private drawBuildingShellTexture(view: Graphics, id: string, x: number, y: number, width: number, height: number, major: boolean, accentColor: number): void {
+    const left = x - width / 2;
+    const top = y - height / 2;
+    const baseColor = major ? 0x26323a : id.startsWith("res-") ? 0x202a31 : 0x1f2a24;
+    view
+      .rect(left, top, width, height)
+      .fill({ color: baseColor, alpha: major ? 0.78 : 0.58 })
+      .stroke({ color: accentColor, alpha: major ? 0.9 : 0.7, width: major ? 4 : 2 });
+    view
+      .rect(left + 10, top + 10, Math.max(8, width - 20), Math.max(8, height - 20))
+      .stroke({ color: 0x050706, alpha: 0.34, width: 2 });
+  }
+
+  private drawBuildingRoofTexture(view: Graphics, id: string, x: number, y: number, width: number, height: number, major: boolean, accentColor: number): void {
+    const left = x - width / 2;
+    const top = y - height / 2;
+    view
+      .rect(left, top, width, height)
+      .fill({ color: 0x111510, alpha: 0.88 })
+      .stroke({ color: major ? accentColor : 0xfff3b0, alpha: major ? 0.82 : 0.56, width: major ? 4 : 2 })
+      .rect(left + 14, top + 13, Math.max(8, width - 28), 7)
+      .fill({ color: accentColor, alpha: major ? 0.82 : 0.46 });
+
+    const cols = Math.max(1, Math.min(6, Math.floor(width / 130)));
+    const rows = Math.max(1, Math.min(5, Math.floor(height / 115)));
+    const windowColor = major ? accentColor : 0x8d99ae;
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const wx = left + 28 + col * ((width - 56) / Math.max(1, cols));
+        const wy = top + 38 + row * ((height - 76) / Math.max(1, rows));
+        view.rect(wx, wy, 28, 18).fill({ color: windowColor, alpha: 0.22 + ((row + col) % 2) * 0.14 });
+      }
+    }
+
+    view
+      .rect(left + width * 0.62, top + height * 0.18, Math.min(78, width * 0.18), Math.min(36, height * 0.14))
+      .fill({ color: 0x050706, alpha: 0.34 });
+    if (!major && width > 260 && height > 220) {
+      view
+        .moveTo(left + width * 0.18, top + height * 0.72)
+        .lineTo(left + width * 0.34, top + height * 0.58)
+        .lineTo(left + width * 0.46, top + height * 0.66)
+        .stroke({ color: 0xd8dfd0, alpha: 0.18, width: 3 });
+    }
+  }
+
+  private drawCircusWallTexture(view: Graphics, id: string, x: number, y: number, width: number, height: number): void {
+    const left = x - width / 2;
+    const top = y - height / 2;
+    const fake = id.startsWith("ent-maze-fake-wall-");
+    view
+      .rect(left, top, width, height)
+      .fill({ color: fake ? 0x2b2440 : 0x351136, alpha: fake ? 0.48 : 0.86 })
+      .stroke({ color: fake ? 0xb8a7ff : 0xffd166, alpha: fake ? 0.45 : 0.82, width: fake ? 2 : 4 });
+  }
+
+  private drawCircusWallDetails(view: Graphics, id: string, x: number, y: number, width: number, height: number): void {
+    const left = x - width / 2;
+    const top = y - height / 2;
+    const fake = id.startsWith("ent-maze-fake-wall-");
+    const horizontal = width >= height;
+    const step = horizontal ? 420 : 260;
+    const count = Math.max(2, Math.floor((horizontal ? width : height) / step));
+    for (let index = 0; index <= count; index += 1) {
+      const offset = index * step;
+      if (horizontal) {
+        view.rect(left + offset, top + 8, 4, Math.max(8, height - 16)).fill({ color: 0xffd166, alpha: fake ? 0.12 : 0.26 });
+      } else {
+        view.rect(left + 8, top + offset, Math.max(8, width - 16), 4).fill({ color: 0xffd166, alpha: fake ? 0.12 : 0.26 });
+      }
+    }
+    view
+      .rect(left + 10, top + 10, Math.max(8, width - 20), Math.max(8, height - 20))
+      .stroke({ color: 0x9d4edd, alpha: fake ? 0.2 : 0.42, width: 3 });
+  }
+
+  private drawStoryRegionWallTexture(view: Graphics, id: string, x: number, y: number, width: number, height: number): void {
+    const palette = getStoryWallPalette(id);
+    const left = x - width / 2;
+    const top = y - height / 2;
+    view
+      .rect(left, top, width, height)
+      .fill({ color: palette.base, alpha: 0.94 })
+      .stroke({ color: palette.trim, alpha: 0.82, width: 5 });
+  }
+
+  private drawStoryWallDetails(view: Graphics, id: string, x: number, y: number, width: number, height: number): void {
+    const palette = getStoryWallPalette(id);
+    const left = x - width / 2;
+    const top = y - height / 2;
+    const horizontal = width >= height;
+    const length = horizontal ? width : height;
+    const step = Math.max(260, Math.min(520, length / 18));
+    for (let offset = 0; offset < length; offset += step) {
+      if (horizontal) {
+        view.rect(left + offset, top + 14, 6, Math.max(8, height - 28)).fill({ color: palette.detail, alpha: 0.24 });
+      } else {
+        view.rect(left + 14, top + offset, Math.max(8, width - 28), 6).fill({ color: palette.detail, alpha: 0.24 });
+      }
+    }
+    view
+      .rect(left + 18, top + 18, Math.max(8, width - 36), Math.max(8, height - 36))
+      .stroke({ color: palette.detail, alpha: 0.28, width: 3 });
+  }
+
+  private drawStoryPassageWallTexture(view: Graphics, x: number, y: number, width: number, height: number): void {
+    const left = x - width / 2;
+    const top = y - height / 2;
+    view
+      .rect(left, top, width, height)
+      .fill({ color: 0x060708, alpha: 0.96 })
+      .stroke({ color: 0x1d2024, alpha: 0.92, width: 5 });
+  }
+
+  private drawStoryGateWallTexture(view: Graphics, x: number, y: number, width: number, height: number): void {
+    const left = x - width / 2;
+    const top = y - height / 2;
+    view
+      .rect(left, top, width, height)
+      .fill({ color: 0x0a0c10, alpha: 0.98 })
+      .stroke({ color: 0xffd166, alpha: 0.9, width: 6 });
+  }
+
+  private drawStoryGateWallDetails(view: Graphics, x: number, y: number, width: number, height: number): void {
+    const left = x - width / 2;
+    const top = y - height / 2;
+    const horizontal = width >= height;
+    const length = horizontal ? width : height;
+    for (let offset = 0; offset < length; offset += 260) {
+      if (horizontal) {
+        view.rect(left + offset, top + height / 2 - 10, 130, 20).fill({ color: 0xffd166, alpha: 0.38 });
+      } else {
+        view.rect(left + width / 2 - 10, top + offset, 20, 130).fill({ color: 0xffd166, alpha: 0.38 });
+      }
+    }
+    view
+      .rect(left + 18, top + 18, Math.max(8, width - 36), Math.max(8, height - 36))
+      .stroke({ color: 0x050706, alpha: 0.68, width: 5 });
+  }
+
+  private drawPassageWallDetails(view: Graphics, x: number, y: number, width: number, height: number): void {
+    const left = x - width / 2;
+    const top = y - height / 2;
+    const horizontal = width >= height;
+    const length = horizontal ? width : height;
+    for (let offset = 0; offset < length; offset += 360) {
+      if (horizontal) {
+        view.rect(left + offset, top + height / 2 - 5, 180, 10).fill({ color: 0xffd166, alpha: 0.2 });
+      } else {
+        view.rect(left + width / 2 - 5, top + offset, 10, 180).fill({ color: 0xffd166, alpha: 0.2 });
+      }
+    }
   }
 
   private createPlayer(): void {
@@ -916,14 +1323,14 @@ export class PixiWastelandGame {
       }
       const target = this.getManualAttackTarget();
       if (!target) {
-        this.emitState("目标在迷雾外：攻击只能打到当前视野内。");
+        this.emitState("Target is outside fog vision. Attacks only hit visible enemies.");
         return;
       }
-      this.fireProjectile(target, "basic", this.getBasicGunDamage(), BASIC_GUN.projectileSpeed, "手动普攻");
+      this.fireProjectile(target, "basic", this.getBasicGunDamage(), BASIC_GUN.projectileSpeed, "鎵嬪姩鏅敾");
     }
     if (event.key.toLowerCase() === "q") {
       this.attackMode = this.attackMode === "auto" ? "manual" : "auto";
-      this.emitState(`普攻模式：${this.attackMode === "auto" ? "自动" : "手动"}`);
+      this.emitState(`Attack mode: ${this.attackMode === "auto" ? "auto" : "manual"}`);
     }
     if (event.key.toLowerCase() === "e") {
       if (this.tryActivateStoryLighthouse()) {
@@ -933,7 +1340,7 @@ export class PixiWastelandGame {
     }
     if (event.key.toLowerCase() === "x") {
       this.state = gainRunExperience(this.state, 120);
-      this.emitState("调试：获得经验。Boss 已作为游荡威胁常驻地图。");
+      this.emitState("Debug: gained experience. Bosses keep patrolling the map.");
     }
     if (event.key.toLowerCase() === "b") {
       this.focusNearestBoss();
@@ -976,7 +1383,7 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + (dx / length) * moveSpeed * seconds, 24, this.getMapWidth() - 24),
       y: clamp(this.player.y + (dy / length) * moveSpeed * seconds, 24, this.getMapHeight() - 24),
     };
-    let resolved = resolveBlockedMovement(this.player, desired, 16);
+    let resolved = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
     if (this.isStoryMode()) {
       resolved = clampPointToUnlockedStoryRegions(this.player, resolved, [...this.unlockedStoryRegionIds]);
     }
@@ -1006,7 +1413,7 @@ export class PixiWastelandGame {
         x: enemy.x + Math.cos(angle) * enemy.speed * seconds,
         y: enemy.y + Math.sin(angle) * enemy.speed * seconds,
       };
-      const resolved = resolveBlockedMovement(enemy, desired, 11);
+      const resolved = resolveBlockedMovement(enemy, desired, 11, this.getActiveBuildings());
       this.setActorPosition(enemy, resolved.x, resolved.y);
       enemy.view.rotation = angle;
       enemy.dashElapsedMs = (enemy.dashElapsedMs ?? 0) + deltaMs;
@@ -1080,13 +1487,41 @@ export class PixiWastelandGame {
       const finalBossActive = Boolean(this.finalBoss);
       const playerInTerritory = isPointInBossTerritory(boss.bossId, this.player);
       const playerDistance = distance(this.player, boss);
-      const shouldTargetPlayer = shouldRoamingBossTargetPlayer({
-        finalBossActive,
-        bossRushActive: this.isBossRushMode(),
-        sameZoneAsPlayer,
-        playerInTerritory,
-        distanceToPlayer: playerDistance,
-      });
+      const shouldTargetPlayer =
+        boss.bossId === "chef" ||
+        shouldRoamingBossTargetPlayer({
+          finalBossActive,
+          bossRushActive: this.isBossRushMode(),
+          sameZoneAsPlayer,
+          playerInTerritory,
+          distanceToPlayer: playerDistance,
+        });
+
+      if (boss.bossId === "chef") {
+        this.updateChefMeatGrinder(boss, deltaMs);
+        if (
+          shouldTriggerChefMeatGrinder({
+            health: boss.health,
+            maxHealth: boss.maxHealth,
+            used: boss.chefMeatGrinderUsed ?? false,
+          })
+        ) {
+          this.startChefMeatGrinder(boss);
+          this.emitState("Mutant Chef: meat grinder started.");
+        }
+      }
+      if (boss.bossId === "clown") {
+        this.updateClownSpiralKnives(boss, deltaMs);
+      }
+      if (boss.bossId === "courier") {
+        this.updateCourierCitywideDelivery(boss, deltaMs);
+      }
+
+      if (boss.chefAirborne) {
+        boss.label.position.set(boss.x - 64, boss.y - 62);
+        boss.label.text = `${this.getBossName(boss.bossId)} ${Math.ceil(boss.health)}/${boss.maxHealth}`;
+        continue;
+      }
 
       if (boss.mode === "windup") {
         boss.windupMs = Math.max(0, boss.windupMs - deltaMs);
@@ -1099,7 +1534,12 @@ export class PixiWastelandGame {
         boss.mode = shouldTargetPlayer ? "chase" : "roam";
       }
 
-      if (shouldTargetPlayer && boss.skillElapsedMs >= boss.skillCooldownMs) {
+      if (
+        shouldTargetPlayer &&
+        boss.skillElapsedMs >= boss.skillCooldownMs &&
+        (boss.clownSpiralKnifeMs ?? 0) <= 0 &&
+        (boss.courierCitywideMs ?? 0) <= 0
+      ) {
         this.triggerBossSkill(boss);
       }
       if (
@@ -1112,7 +1552,7 @@ export class PixiWastelandGame {
       ) {
         boss.beastmasterFrenzyUsed = true;
         this.spawnBeastmasterTotalFrenzy(boss);
-        this.emitState("驯兽师：彻底暴走");
+        this.emitState("椹吔甯堬細褰诲簳鏆磋蛋");
       }
 
       const movement = this.getBossMovementTarget(boss);
@@ -1122,7 +1562,7 @@ export class PixiWastelandGame {
         x: boss.x + Math.cos(angle) * speed * seconds,
         y: boss.y + Math.sin(angle) * speed * seconds,
       };
-      const resolved = resolveBlockedMovement(boss, desired, 34);
+      const resolved = resolveBlockedMovement(boss, desired, 34, this.getActiveBuildings());
       this.setActorPosition(boss, resolved.x, resolved.y);
       boss.view.rotation = angle;
       if (sameZoneAsPlayer && boss.contactDamageElapsedMs >= 700 && distance(this.player, boss) <= 54) {
@@ -1148,11 +1588,14 @@ export class PixiWastelandGame {
 
   private updateFinalBoss(deltaMs: number): void {
     const finalBosses = this.getFinalBosses();
-    if (!this.player || finalBosses.length === 0) return;
+    if (!this.player) return;
     this.updateFinalBossBombs(deltaMs);
     this.updateFinalBossMissiles(deltaMs);
     this.updateFinalBossCrawlers(deltaMs);
-    const highestPhase = finalBosses.reduce<1 | 2 | 3>((phase, boss) => Math.max(phase, getFinalBossPhase(boss.health, boss.maxHealth)) as 1 | 2 | 3, 1);
+    this.updateWarCoreArmoryPressure(deltaMs);
+    this.updateWarCoreCollapse(deltaMs);
+    if (finalBosses.length === 0) return;
+    const highestPhase = finalBosses.reduce<FinalBossPhase>((phase, boss) => Math.max(phase, getFinalBossPhase(boss.health, boss.maxHealth)) as FinalBossPhase, 1);
     this.updateFinalBossBuildings(deltaMs, highestPhase);
     for (const boss of finalBosses) {
       this.updateFinalBossActor(boss, deltaMs);
@@ -1169,20 +1612,28 @@ export class PixiWastelandGame {
       if (phase === 3) {
         this.clearSniperBuildings();
       }
-      this.emitState(`${FINAL_BOSS_DEFINITION.name} 进入 P${phase}`);
+      if (phase === 4) {
+        this.enterWarCoreArmory(boss);
+      }
+      this.emitState(`${FINAL_BOSS_DEFINITION.name}进入 P${phase}。`);
     }
 
     boss.skillElapsedMs += deltaMs;
     boss.contactDamageElapsedMs += deltaMs;
     const seconds = deltaMs / 1000;
-    const speed = phase === 3 ? FINAL_BOSS_PHASE_THREE_SKILL.mechSpeed : FINAL_BOSS_PHASE_ONE_SKILL.coreSpeed;
+    const speed =
+      phase === 4
+        ? FINAL_BOSS_PHASE_FOUR_SKILL.coreSpeed
+        : phase === 3
+          ? FINAL_BOSS_PHASE_THREE_SKILL.mechSpeed
+          : FINAL_BOSS_PHASE_ONE_SKILL.coreSpeed;
     const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
     if (speed > 0) {
       const desired = {
         x: clamp(boss.x + Math.cos(angle) * speed * seconds, 24, MAP_WIDTH - 24),
         y: clamp(boss.y + Math.sin(angle) * speed * seconds, 24, MAP_HEIGHT - 24),
       };
-      const resolved = resolveBlockedMovement(boss, desired, 46);
+      const resolved = resolveBlockedMovement(boss, desired, 46, this.getActiveBuildings());
       this.setActorPosition(boss, resolved.x, resolved.y);
     }
     boss.view.rotation = angle;
@@ -1224,6 +1675,12 @@ export class PixiWastelandGame {
       y: boss.y + Math.sin(boss.chargeAngle) * 320,
       };
     }
+    if (boss.bossId === "chef" && this.player) {
+      return this.player;
+    }
+    if (boss.bossId === "clown" && boss.mode === "chase" && this.player) {
+      return getClownDistanceTarget(boss, this.player, this.getEffectiveCombatRange(620));
+    }
     if (
       boss.mode === "chase" &&
       this.player &&
@@ -1258,6 +1715,10 @@ export class PixiWastelandGame {
 
       if (
         this.hitEnemyWithBullet(bullet) ||
+        this.hitInfusionStandWithBullet(bullet) ||
+        this.hitTeslaDeviceWithBullet(bullet) ||
+        this.hitConvoyVehicleWithBullet(bullet) ||
+        this.hitMagicianStagePropWithBullet(bullet) ||
         this.hitBossWithBullet(bullet) ||
         this.hitFinalBossWithBullet(bullet) ||
         this.hitHospitalKnightWithBullet(bullet)
@@ -1347,36 +1808,193 @@ export class PixiWastelandGame {
         hazard.lifeMs <= 0 ||
         hazard.x < 0 ||
         hazard.y < 0 ||
-        hazard.x > MAP_WIDTH ||
-        hazard.y > MAP_HEIGHT
+        hazard.x > this.getMapWidth() ||
+        hazard.y > this.getMapHeight()
       ) {
         if (hazard.expiresIntoFire) {
           this.spawnFirePit(hazard.x, hazard.y);
         }
+        if (hazard.kind === "sedativeDart") {
+          this.spawnMedicineMist(hazard.x, hazard.y);
+        }
         this.removeBossHazard(hazard);
         continue;
       }
-      if (
-        this.player &&
-        this.isSameVisibilityZone(this.player, hazard) &&
-        distance(this.player, hazard) <= hazard.radius + 16
-      ) {
-        if (hazard.kind === "firePit" || hazard.kind === "bigFirePit") {
+      const player = this.player;
+      const playerDistanceToHazard = player ? distance(player, hazard) : Infinity;
+      const playerTouchesHazard =
+        player &&
+        this.isSameVisibilityZone(player, hazard) &&
+        (hazard.kind === "courierParcel"
+          ? getCourierParcelOutcome(playerDistanceToHazard, hazard.radius) === "detonate"
+          : playerDistanceToHazard <= hazard.radius + 16);
+      if (playerTouchesHazard) {
+        if (hazard.kind === "magneticMine") {
+          const pullAngle = Math.atan2(hazard.y - player.y, hazard.x - player.x);
+          this.setActorPosition(
+            player,
+            clamp(player.x + Math.cos(pullAngle) * 4.8, 24, MAP_WIDTH - 24),
+            clamp(player.y + Math.sin(pullAngle) * 4.8, 24, MAP_HEIGHT - 24),
+          );
+          this.playerSlowMs = Math.max(this.playerSlowMs, 260);
+          if (distance(player, hazard) <= 46 || hazard.lifeMs <= 620) {
+            this.applyPlayerDamage(hazard.damage);
+            this.addScreenShake(180, 6);
+            this.spawnHitSparks(hazard.x, hazard.y, 0x68e1fd, 18);
+            this.removeBossHazard(hazard);
+          }
+        } else if (hazard.kind === "firePit" || hazard.kind === "bigFirePit") {
           const tickMs = hazard.kind === "bigFirePit" ? BIG_FIRE_PIT.tickMs : 450;
           if (hazard.tickElapsedMs >= tickMs) {
             hazard.tickElapsedMs = 0;
             this.applyPlayerDamage(hazard.damage);
           }
+        } else if (hazard.kind === "toxicCloud") {
+          if (hazard.tickElapsedMs >= 520) {
+            hazard.tickElapsedMs = 0;
+            this.playerSlowMs = Math.max(this.playerSlowMs, 520);
+            this.applyPlayerDamage(hazard.damage);
+          }
+        } else if (hazard.kind === "medicineMist") {
+          this.playerSlowMs = Math.max(this.playerSlowMs, 160);
+        } else if (hazard.kind === "sedativeDart") {
+          this.applyPlayerDamage(hazard.damage);
+          this.playerSlowMs = Math.max(this.playerSlowMs, 2600);
+          this.skillSuppressMs = Math.max(this.skillSuppressMs, 1200);
+          this.showDamageNumber(player.x, player.y - 42, 0, "#a7c957", "SED ");
+          this.removeBossHazard(hazard);
         } else if (hazard.kind === "magicBox") {
           this.triggerMagicBoxEffect(hazard);
           this.removeBossHazard(hazard);
+        } else if (hazard.kind === "courierParcel") {
+          this.applyPlayerDamage(hazard.damage);
+          this.spawnDelayedBossBlast(hazard.x, hazard.y, hazard.radius + 28, Math.round(hazard.damage * 0.7), 40, 0xffd166, "parcel blast");
+          this.removeBossHazard(hazard);
         } else {
           this.applyPlayerDamage(hazard.damage);
+          if (hazard.kind === "electricOrb") {
+            this.playerSlowMs = Math.max(this.playerSlowMs, 900);
+          }
           if (hazard.expiresIntoFire) {
             this.spawnFirePit(hazard.x, hazard.y);
           }
           this.removeBossHazard(hazard);
         }
+      }
+      if (hazard.kind === "medicineMist" && hazard.tickElapsedMs >= 700) {
+        hazard.tickElapsedMs = 0;
+        this.healActorsNear(hazard.x, hazard.y, hazard.radius, 10);
+      }
+    }
+  }
+
+  private updateInfusionStands(deltaMs: number): void {
+    for (const stand of [...this.infusionStands]) {
+      stand.lifeMs -= deltaMs;
+      stand.tickElapsedMs += deltaMs;
+      stand.view.rotation += deltaMs / 1200;
+      stand.view.alpha = Math.max(0.35, stand.lifeMs / 12000);
+      if (!this.bosses.includes(stand.boss) || stand.lifeMs <= 0 || stand.health <= 0) {
+        this.removeInfusionStand(stand);
+        continue;
+      }
+      if (stand.tickElapsedMs >= 1000) {
+        stand.tickElapsedMs = 0;
+        stand.boss.health = Math.min(stand.boss.maxHealth, stand.boss.health + 55);
+        this.showDamageNumber(stand.boss.x, stand.boss.y - 58, 55, "#a7c957", "+");
+        this.spawnToxicCloud(stand.x, stand.y, 86, 4, 1800);
+      }
+    }
+  }
+
+  private updateTeslaDevices(deltaMs: number): void {
+    if (!this.player) return;
+    for (const device of [...this.teslaDevices]) {
+      device.lifeMs -= deltaMs;
+      device.tickElapsedMs += deltaMs;
+      device.view.rotation += deltaMs / (device.kind === "turret" ? 700 : 1200);
+      device.view.alpha = Math.max(0.4, device.lifeMs / 14000);
+      if (!this.bosses.includes(device.boss) || device.lifeMs <= 0 || device.health <= 0) {
+        this.removeTeslaDevice(device);
+        continue;
+      }
+      if (device.kind === "turret" && device.tickElapsedMs >= 980) {
+        device.tickElapsedMs = 0;
+        const angle = Math.atan2(this.player.y - device.y, this.player.x - device.x);
+        this.spawnBossHazard(device.x, device.y, angle, 480, 0x68e1fd, 1800, 10, "electricOrb", 8);
+      }
+    }
+  }
+
+  private updateTeslaGrids(deltaMs: number): void {
+    if (!this.player) return;
+    for (const grid of [...this.teslaGrids]) {
+      grid.lifeMs -= deltaMs;
+      grid.tickElapsedMs += deltaMs;
+      grid.view.alpha = Math.max(0.18, grid.lifeMs / 9000);
+      if (grid.lifeMs <= 0 || !this.teslaDevices.includes(grid.start) || !this.teslaDevices.includes(grid.end)) {
+        this.removeTeslaGrid(grid);
+        continue;
+      }
+      grid.view.clear();
+      grid.view
+        .moveTo(grid.start.x, grid.start.y)
+        .lineTo(grid.end.x, grid.end.y)
+        .stroke({ color: 0x68e1fd, alpha: 0.34, width: 28 })
+        .moveTo(grid.start.x, grid.start.y)
+        .lineTo(grid.end.x, grid.end.y)
+        .stroke({ color: 0xd9f7ff, alpha: 0.82, width: 5 });
+      if (grid.tickElapsedMs >= 420 && distancePointToSegment(this.player, grid.start, grid.end) <= 28) {
+        grid.tickElapsedMs = 0;
+        this.applyPlayerDamage(grid.damage);
+        this.playerSlowMs = Math.max(this.playerSlowMs, 650);
+      }
+    }
+  }
+
+  private updateConvoyVehicles(deltaMs: number): void {
+    for (const vehicle of [...this.convoyVehicles]) {
+      vehicle.lifeMs -= deltaMs;
+      vehicle.tickElapsedMs += deltaMs;
+      vehicle.view.alpha = Math.max(0.35, vehicle.lifeMs / (vehicle.kind === "escort" ? 18000 : 12000));
+      if (!this.bosses.includes(vehicle.boss) || vehicle.lifeMs <= 0 || vehicle.health <= 0) {
+        this.detonateConvoyVehicle(vehicle);
+        continue;
+      }
+
+      if (vehicle.kind === "escort") {
+        vehicle.orbitAngle = (vehicle.orbitAngle ?? 0) + deltaMs / 2400;
+        const targetX = clamp(vehicle.boss.x + Math.cos(vehicle.orbitAngle) * (vehicle.orbitRadius ?? 230), 24, MAP_WIDTH - 24);
+        const targetY = clamp(vehicle.boss.y + Math.sin(vehicle.orbitAngle) * (vehicle.orbitRadius ?? 230), 24, MAP_HEIGHT - 24);
+        this.setActorPosition(vehicle, lerp(vehicle.x, targetX, 0.08), lerp(vehicle.y, targetY, 0.08));
+        vehicle.view.rotation = vehicle.orbitAngle;
+        if (vehicle.tickElapsedMs >= 1050 && this.player) {
+          vehicle.tickElapsedMs = 0;
+          const angle = Math.atan2(this.player.y - vehicle.y, this.player.x - vehicle.x);
+          this.spawnBossHazard(vehicle.x, vehicle.y, angle, 520, 0xffd166, 1500, 10, "bossProjectile", vehicle.damage);
+        }
+        continue;
+      }
+
+      if (this.player) {
+        const angle = Math.atan2(this.player.y - vehicle.y, this.player.x - vehicle.x);
+        const speed = vehicle.speed ?? 180;
+        this.setActorPosition(
+          vehicle,
+          clamp(vehicle.x + Math.cos(angle) * speed * (deltaMs / 1000), 24, MAP_WIDTH - 24),
+          clamp(vehicle.y + Math.sin(angle) * speed * (deltaMs / 1000), 24, MAP_HEIGHT - 24),
+        );
+        vehicle.view.rotation = angle;
+        if (distance(vehicle, this.player) <= vehicle.radius + 28) {
+          this.detonateConvoyVehicle(vehicle);
+          continue;
+        }
+      }
+
+      if (vehicle.tickElapsedMs >= 1300) {
+        vehicle.tickElapsedMs = 0;
+        vehicle.boss.health = Math.min(vehicle.boss.maxHealth, vehicle.boss.health + 70);
+        this.showDamageNumber(vehicle.boss.x, vehicle.boss.y - 58, 70, "#ff9f1c", "+");
       }
     }
   }
@@ -1423,6 +2041,7 @@ export class PixiWastelandGame {
 
   private updateSpawning(deltaMs: number): void {
     if (this.isBossRushMode()) return;
+    if (this.shouldDisableStoryEncounters()) return;
     if (
       !shouldAllowSmallEnemySpawning({
         experimentalDisabled: EXPERIMENTAL_DISABLE_SMALL_ENEMIES,
@@ -1453,7 +2072,7 @@ export class PixiWastelandGame {
     this.autoAttackElapsed = 0;
     const target = this.getNearestTarget(620);
     if (target) {
-      this.fireProjectile(target, "basic", this.getBasicGunDamage(), BASIC_GUN.projectileSpeed, "自动普攻");
+      this.fireProjectile(target, "basic", this.getBasicGunDamage(), BASIC_GUN.projectileSpeed, "鑷姩鏅敾");
     }
   }
 
@@ -1592,7 +2211,7 @@ export class PixiWastelandGame {
     }
     this.playShotSound();
     if (label) {
-      this.emitState(`${label}：发射子弹。`);
+      this.emitState(`${label}: projectile fired.`);
     }
   }
 
@@ -1681,7 +2300,7 @@ export class PixiWastelandGame {
       }
     }
     this.addScreenShake(55, 2.5);
-    this.emitState("聚能激光：穿透扫射");
+    this.emitState("Focused laser: piercing sweep.");
   }
 
   private drawLaserEffect(start: { x: number; y: number }, end: { x: number; y: number }, color: number): void {
@@ -1733,6 +2352,139 @@ export class PixiWastelandGame {
         this.damageHospitalKnight(boss, damage);
       }
     }
+  }
+
+  private updateCourierRoutes(deltaMs: number): void {
+    for (const route of [...this.courierRoutes]) {
+      route.lifeMs -= deltaMs;
+      route.tickElapsedMs += deltaMs;
+      route.view.alpha = Math.max(0, route.lifeMs / COURIER_ROUTE_RESIDUE_LIFE_MS);
+      if (this.player && route.tickElapsedMs >= COURIER_ROUTE_RESIDUE_TICK_MS) {
+        route.tickElapsedMs = 0;
+        if (distancePointToSegment(this.player, route.start, route.end) <= COURIER_ROUTE_RESIDUE_RADIUS) {
+          this.playerSlowMs = Math.max(this.playerSlowMs, 900);
+          this.applyPlayerDamage(route.damage);
+        }
+      }
+      if (route.lifeMs <= 0) {
+        this.removeCourierRoute(route);
+      }
+    }
+  }
+
+  private updateMagicianStageProps(deltaMs: number): void {
+    if (!this.player) return;
+    const now = performance.now();
+    for (const prop of [...this.magicianStageProps]) {
+      if (prop.expiresAtMs && now >= prop.expiresAtMs) {
+        this.removeMagicianStageProp(prop);
+        continue;
+      }
+      if ((prop.kind === "spotlight" || prop.kind === "mirror") && prop.centerX !== undefined && prop.centerY !== undefined) {
+        if (prop.kind === "mirror") {
+          prop.centerX = this.player.x;
+          prop.centerY = this.player.y;
+        }
+        const speed = prop.orbitSpeed ?? 0;
+        const direction = prop.orbitDirection ?? 1;
+        prop.orbitAngle = (prop.orbitAngle ?? 0) + speed * direction * deltaMs / 1000;
+        const x = clamp(prop.centerX + Math.cos(prop.orbitAngle) * (prop.orbitRadiusX ?? 220), 24, this.getMapWidth() - 24);
+        const y = clamp(prop.centerY + Math.sin(prop.orbitAngle) * (prop.orbitRadiusY ?? 160), 24, this.getMapHeight() - 24);
+        this.setActorPosition(prop, x, y);
+        prop.view.rotation += direction * 0.018 * deltaMs / 16.67;
+      }
+      if (prop.kind === "mirror" && prop.storyRemote && !prop.real) {
+        const playerDistance = distance(this.player, prop);
+        if (playerDistance <= (prop.proximityBurstRadius ?? STORY_MAGICIAN_REMOTE_MIRROR_PROXIMITY_BURST_RADIUS)) {
+          this.spawnMagicianMirrorShardBurst(prop.x, prop.y, prop.damage ?? STORY_MAGICIAN_REMOTE_MIRROR_PROJECTILE_DAMAGE);
+          this.removeMagicianStageProp(prop);
+          continue;
+        }
+        prop.attackElapsedMs = (prop.attackElapsedMs ?? 0) + deltaMs;
+        if (prop.attackElapsedMs >= STORY_MAGICIAN_REMOTE_MIRROR_ATTACK_COOLDOWN_MS) {
+          prop.attackElapsedMs = 0;
+          const angle = Math.atan2(this.player.y - prop.y, this.player.x - prop.x);
+          this.spawnBossHazard(
+            prop.x,
+            prop.y,
+            angle,
+            STORY_MAGICIAN_REMOTE_MIRROR_PROJECTILE_SPEED,
+            0xd9f7ff,
+            1400,
+            8,
+            "bossProjectile",
+            prop.damage ?? STORY_MAGICIAN_REMOTE_MIRROR_PROJECTILE_DAMAGE,
+          );
+        }
+      }
+      if (prop.kind === "spotlight" && prop.revealAtMs && now >= prop.revealAtMs) {
+        this.drawMagicianSpotlight(prop.view, prop.radius ?? 120, Boolean(prop.real), true);
+      }
+      if (prop.kind === "curtain" && prop.solid && Math.abs(this.player.x - prop.x) < 28 && Math.abs(this.player.y - prop.y) < (prop.radius ?? 280)) {
+        this.playerSlowMs = Math.max(this.playerSlowMs, 240);
+        this.applyPlayerDamage(prop.damage ?? 1);
+      }
+      if (prop.kind === "spotlight" && prop.revealAtMs && now < prop.revealAtMs) {
+        continue;
+      }
+      if (prop.kind === "spotlight" && !prop.real && distance(this.player, prop) <= (prop.radius ?? 92)) {
+        this.playerSlowMs = Math.max(this.playerSlowMs, 180);
+      }
+    }
+  }
+
+  private updateStoryMagicianInterference(deltaMs: number): void {
+    if (!this.isStoryMode() || !this.player) return;
+    if (!this.storyMagicianInterferenceActive && isStoryMagicianInterferencePoint(this.player)) {
+      this.storyMagicianInterferenceActive = true;
+      this.storyMagicianInterferenceCooldownMs = 0;
+      this.emitState("魔术师远程锁定：分身开始干扰路线。");
+    }
+    if (!this.storyMagicianInterferenceActive) return;
+
+    this.storyMagicianInterferenceCooldownMs -= deltaMs;
+    if (this.storyMagicianInterferenceCooldownMs > 0) return;
+    this.spawnStoryMagicianInterference();
+    this.storyMagicianInterferenceCooldownMs = STORY_MAGICIAN_INTERFERENCE_COOLDOWN_MS;
+  }
+
+  private spawnStoryMagicianInterference(): void {
+    if (!this.player) return;
+    const now = performance.now();
+    const angle = this.spawnSeed * 2.399963229728653;
+
+    for (let index = 0; index < STORY_MAGICIAN_REMOTE_MIRROR_COUNT; index += 1) {
+      const mirror = new Graphics();
+      mirror.alpha = 0.58;
+      this.drawBossSprite(mirror, "magician");
+      const orbitAngle = angle + index * Math.PI;
+      const x = clamp(this.player.x + Math.cos(orbitAngle) * 320, 24, this.getMapWidth() - 24);
+      const y = clamp(this.player.y + Math.sin(orbitAngle) * 220, 24, this.getMapHeight() - 24);
+      mirror.position.set(x, y);
+      this.world.addChild(mirror);
+      this.magicianStageProps.push({
+        view: mirror,
+        kind: "mirror",
+        real: false,
+        x,
+        y,
+        centerX: this.player.x,
+        centerY: this.player.y,
+        orbitAngle,
+        orbitRadiusX: 320,
+        orbitRadiusY: 220,
+        orbitSpeed: 1.5,
+        orbitDirection: index === 0 ? 1 : -1,
+        radius: 84,
+        damage: STORY_MAGICIAN_REMOTE_MIRROR_PROJECTILE_DAMAGE,
+        storyRemote: true,
+        attackElapsedMs: index * 360,
+        proximityBurstRadius: STORY_MAGICIAN_REMOTE_MIRROR_PROXIMITY_BURST_RADIUS,
+        expiresAtMs: now + 4200,
+      });
+    }
+    this.spawnSeed += 1;
+    this.storyMagicianInterferenceCount += 1;
   }
 
   private spawnEnergyStrike(x: number, y: number, radius: number, damage: number): void {
@@ -1798,7 +2550,7 @@ export class PixiWastelandGame {
 
   private tryManualPhaseBlink(): boolean {
     if (this.skillSuppressMs > 0) {
-      this.emitState("技能被抑制中：相位闪现失效");
+      this.emitState("鎶€鑳借鎶戝埗涓細鐩镐綅闂幇澶辨晥");
       return true;
     }
     const skill = ENERGY_SKILL_DEFINITIONS.find((candidate) => candidate.id === "phase-blink");
@@ -1806,7 +2558,7 @@ export class PixiWastelandGame {
     this.energySkillElapsedMs["phase-blink"] = (this.energySkillElapsedMs["phase-blink"] ?? skill.cooldownMs) + 0;
     if (!isEnergySkillReady(skill, this.energySkillElapsedMs["phase-blink"] ?? 0)) {
       const seconds = Math.ceil((skill.cooldownMs - (this.energySkillElapsedMs["phase-blink"] ?? 0)) / 1000);
-      this.emitState(`相位闪现冷却中：${seconds}s`);
+      this.emitState(`鐩镐綅闂幇鍐峰嵈涓細${seconds}s`);
       return true;
     }
 
@@ -1845,12 +2597,12 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + Math.cos(angle) * range, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + Math.sin(angle) * range, 24, MAP_HEIGHT - 24),
     };
-    const resolved = resolveBlockedMovement(this.player, desired, 16);
+    const resolved = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
     this.drawPhaseRing(this.player.x, this.player.y, radius);
     this.setActorPosition(this.player, resolved.x, resolved.y);
     this.drawPhaseRing(this.player.x, this.player.y, radius);
     this.detonateAutoWeapon(this.player.x, this.player.y, radius, damage, 0xb56cff);
-    this.emitState("相位闪现：折跃脱离");
+    this.emitState("Phase blink: escaped by folding space.");
   }
 
   private temporalRewind(skill: EnergySkillDefinition): boolean {
@@ -1865,7 +2617,7 @@ export class PixiWastelandGame {
       health: Math.min(this.state.maxHealth, Math.max(this.state.health, snapshot.health) + skill.basePower),
     };
     this.callbacks.onRunState(this.state);
-    this.emitState("时间回溯：返回安全坐标");
+    this.emitState("Time rewind: returned to a safe position.");
     return true;
   }
 
@@ -1883,7 +2635,7 @@ export class PixiWastelandGame {
     view.position.set(x, y);
     this.world.addChild(view);
     this.warpMines.push({ view, x, y, radius, damage, lifeMs: 9000 });
-    this.emitState("折跃地雷：后方布设");
+    this.emitState("Fold mine: deployed behind you.");
   }
 
   private drawPhaseRing(x: number, y: number, radius: number): void {
@@ -1904,12 +2656,12 @@ export class PixiWastelandGame {
 
   private castSkill(index: number): void {
     if (this.skillSuppressMs > 0) {
-      this.emitState("技能被抑制中");
+      this.emitState("Skills are suppressed.");
       return;
     }
     const skillId = this.state.activeSkillIds[index];
     if (!skillId) {
-      this.emitState(`技能槽 ${index + 1} 为空。`);
+      this.emitState(`Skill slot ${index + 1} is empty.`);
       return;
     }
     this.state = useRunSkill(this.state, skillId);
@@ -1930,22 +2682,22 @@ export class PixiWastelandGame {
         820,
       );
     }
-    this.emitState(`释放技能槽 ${index + 1}：扇形弹幕。`);
+    this.emitState(`Cast skill slot ${index + 1}: fan bullet wave.`);
   }
 
   private castUltimate(): void {
     if (this.skillSuppressMs > 0) {
-      this.emitState("技能被抑制中：终极技无法释放");
+      this.emitState("鎶€鑳借鎶戝埗涓細缁堟瀬鎶€鏃犳硶閲婃斁");
       return;
     }
     if (!this.player || !this.state.selectedMechFormId) {
-      this.emitState("终极形态尚未上线。");
+      this.emitState("Ultimate form is not online yet.");
       return;
     }
     const ultimate = getUltimateDefinition(this.state.selectedMechFormId);
     if (this.ultimateElapsedMs < ultimate.cooldownMs) {
       const seconds = Math.ceil((ultimate.cooldownMs - this.ultimateElapsedMs) / 1000);
-      this.emitState(`终极技冷却中：${seconds}s`);
+      this.emitState(`缁堟瀬鎶€鍐峰嵈涓細${seconds}s`);
       return;
     }
 
@@ -1980,7 +2732,7 @@ export class PixiWastelandGame {
       }, index * 110);
     });
     this.addScreenShake(280, 7);
-    this.emitState(`${ultimate.name}：轨道激光矩阵锁定。`);
+    this.emitState(`${ultimate.name}: orbital laser matrix locked.`);
   }
 
   private castMissileUltimate(ultimate: UltimateDefinition): void {
@@ -1996,7 +2748,7 @@ export class PixiWastelandGame {
       window.setTimeout(() => this.spawnEnergyStrike(x, y, ultimate.radius, ultimate.damage), index * 90);
     }
     this.addScreenShake(360, 8);
-    this.emitState(`${ultimate.name}：导弹舱全开，区域饱和覆盖。`);
+    this.emitState(`${ultimate.name}: missile bay opened, area saturation incoming.`);
   }
 
   private castBladeUltimate(ultimate: UltimateDefinition): void {
@@ -2010,7 +2762,7 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + Math.cos(angle) * 820, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + Math.sin(angle) * 820, 24, MAP_HEIGHT - 24),
     };
-    const end = resolveBlockedMovement(this.player, desired, 16);
+    const end = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
     this.drawPhaseRing(start.x, start.y, ultimate.radius * 0.55);
     this.drawLaserEffect(start, end, 0xff4d6d);
     this.damageTargetsAlongLine(start, end, ultimate.radius, ultimate.damage);
@@ -2018,26 +2770,26 @@ export class PixiWastelandGame {
     this.drawPhaseRing(end.x, end.y, ultimate.radius * 0.7);
     this.detonateAutoWeapon(end.x, end.y, ultimate.radius * 0.55, Math.round(ultimate.damage * 0.75), 0xff4d6d);
     this.addScreenShake(260, 8);
-    this.emitState(`${ultimate.name}：高热刀刃贯穿战场。`);
+    this.emitState(`${ultimate.name}: heated blade crosses the battlefield.`);
   }
 
   private castEndgameUltimate(): void {
     if (this.skillSuppressMs > 0) {
-      this.emitState("技能被抑制中：超级大招无法释放");
+      this.emitState("鎶€鑳借鎶戝埗涓細瓒呯骇澶ф嫑鏃犳硶閲婃斁");
       return;
     }
     if (!this.player || !this.state.selectedMechFormId) {
-      this.emitState("终局大招尚未解锁。");
+      this.emitState("Endgame ultimate is not unlocked yet.");
       return;
     }
     if (!isEndgameReady(this.state)) {
-      this.emitState("终局阶段尚未开始。");
+      this.emitState("Endgame phase has not started yet.");
       return;
     }
     const ultimate = getEndgameUltimateDefinition(this.state.selectedMechFormId);
     if (this.endgameUltimateElapsedMs < ultimate.cooldownMs) {
       const seconds = Math.ceil((ultimate.cooldownMs - this.endgameUltimateElapsedMs) / 1000);
-      this.emitState(`超级大招冷却中：${seconds}s`);
+      this.emitState(`瓒呯骇澶ф嫑鍐峰嵈涓細${seconds}s`);
       return;
     }
     this.endgameUltimateElapsedMs = 0;
@@ -2070,7 +2822,7 @@ export class PixiWastelandGame {
       }, index * 80);
     });
     this.addScreenShake(520, 10);
-    this.emitState(`${ultimate.name}：整片天空被光柱贯穿。`);
+    this.emitState(`${ultimate.name}: sky beams pierce the battlefield.`);
   }
 
   private castNukeUltimate(ultimate: EndgameUltimateDefinition): void {
@@ -2094,7 +2846,7 @@ export class PixiWastelandGame {
       this.drawNukeCloud(target.x, target.y, ultimate.radius);
     }, 650);
     this.addScreenShake(700, 12);
-    this.emitState(`${ultimate.name}：核弹坐标已确认。`);
+    this.emitState(`${ultimate.name}: nuclear coordinates confirmed.`);
   }
 
   private castMechTransformUltimate(ultimate: EndgameUltimateDefinition): void {
@@ -2104,7 +2856,7 @@ export class PixiWastelandGame {
     this.drawPhaseRing(this.player.x, this.player.y, ultimate.radius);
     this.detonateAutoWeapon(this.player.x, this.player.y, ultimate.radius, ultimate.damage, 0xff4d6d);
     this.addScreenShake(420, 9);
-    this.emitState(`${ultimate.name}：突击装甲展开，近身碾压启动。`);
+    this.emitState(`${ultimate.name}: assault armor deployed for close suppression.`);
   }
 
   private hitEnemyWithBullet(bullet: BulletActor): boolean {
@@ -2122,11 +2874,90 @@ export class PixiWastelandGame {
     return false;
   }
 
+  private hitInfusionStandWithBullet(bullet: BulletActor): boolean {
+    for (const stand of [...this.infusionStands]) {
+      if (!projectileHitsCircle(bullet.projectile, { x: stand.x, y: stand.y, radius: stand.radius })) continue;
+      stand.health -= bullet.projectile.damage;
+      this.showDamageNumber(stand.x, stand.y - 28, bullet.projectile.damage, "#a7c957");
+      this.spawnHitSparks(stand.x, stand.y, 0xa7c957, 8);
+      if (stand.health <= 0) {
+        this.removeInfusionStand(stand);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private hitTeslaDeviceWithBullet(bullet: BulletActor): boolean {
+    for (const device of [...this.teslaDevices]) {
+      if (!projectileHitsCircle(bullet.projectile, { x: device.x, y: device.y, radius: device.radius })) continue;
+      device.health -= bullet.projectile.damage;
+      this.showDamageNumber(device.x, device.y - 30, bullet.projectile.damage, "#68e1fd");
+      this.spawnHitSparks(device.x, device.y, 0x68e1fd, 8);
+      if (device.health <= 0) {
+        this.removeTeslaDevice(device);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private hitConvoyVehicleWithBullet(bullet: BulletActor): boolean {
+    for (const vehicle of [...this.convoyVehicles]) {
+      if (!projectileHitsCircle(bullet.projectile, { x: vehicle.x, y: vehicle.y, radius: vehicle.radius })) continue;
+      vehicle.health -= bullet.projectile.damage;
+      this.showDamageNumber(vehicle.x, vehicle.y - 32, bullet.projectile.damage, "#ff9f1c");
+      this.spawnHitSparks(vehicle.x, vehicle.y, vehicle.kind === "escort" ? 0xffd166 : 0xff9f1c, 8);
+      if (vehicle.health <= 0) {
+        this.detonateConvoyVehicle(vehicle);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private hitMagicianStagePropWithBullet(bullet: BulletActor): boolean {
+    for (const prop of [...this.magicianStageProps]) {
+      if (prop.kind !== "hat" && prop.kind !== "mirror") continue;
+      if (!projectileHitsCircle(bullet.projectile, { x: prop.x, y: prop.y, radius: prop.radius ?? 30 })) continue;
+      if (prop.real) {
+        for (const fakeMirror of this.magicianStageProps.filter((candidate) => candidate.kind === "mirror" && !candidate.real)) {
+          this.spawnMagicianMirrorShardBurst(fakeMirror.x, fakeMirror.y, fakeMirror.damage ?? 8);
+        }
+        this.removeMagicianStageProps();
+        this.startMagicianCurtainCall(prop.x, prop.y, this.magicianFinaleInProgress ? "finale-revealed" : "revealed");
+        this.showDamageNumber(prop.x, prop.y - 34, 0, "#fff3b0", "REVEAL ");
+        this.spawnHitSparks(prop.x, prop.y, 0xfff3b0, 18);
+      } else {
+        if (prop.kind === "mirror") {
+          this.spawnMagicianMirrorShardBurst(prop.x, prop.y, prop.damage ?? 8);
+        }
+        this.spawnDelayedBossBlast(prop.x, prop.y, 82, prop.damage ?? 12, 80, 0x9d4edd, "鍋囪薄纰庤");
+        this.showDamageNumber(prop.x, prop.y - 28, 0, "#9d4edd", "FAKE ");
+        this.spawnHitSparks(prop.x, prop.y, 0x9d4edd, 10);
+        this.removeMagicianStageProp(prop);
+      }
+      return true;
+    }
+    return false;
+  }
+
   private hitBossWithBullet(bullet: BulletActor): boolean {
     for (const boss of [...this.bosses]) {
       if (!this.isSameVisibilityZone(bullet, boss)) continue;
       if (!this.isPointInsideCurrentStoryVision(boss)) continue;
       if (!projectileHitsCircle(bullet.projectile, { x: boss.x, y: boss.y, radius: 34 })) continue;
+      if (this.shouldChefBlockBullet(boss, bullet)) {
+        this.showDamageNumber(boss.x, boss.y - 46, 0, "#68e1fd", "IMM ");
+        this.spawnHitSparks(
+          boss.x + Math.cos(boss.view.rotation) * (CHEF_WOK_MODEL_RADIUS + 16),
+          boss.y + Math.sin(boss.view.rotation) * (CHEF_WOK_MODEL_RADIUS + 16),
+          0xc8d5d9,
+          10,
+        );
+        this.addScreenShake(40, 2.4);
+        return true;
+      }
       this.spawnHitSparks(boss.x, boss.y, 0xfff3b0, 9);
       this.addScreenShake(55, 3.2);
       this.damageRoamingBoss(boss, bullet.projectile.damage, "#ff9f1c");
@@ -2192,7 +3023,22 @@ export class PixiWastelandGame {
   }
 
   private isRoamingBossInvulnerable(boss: BossActor): boolean {
-    return boss.bossId === "magician" && boss.skillElapsedMs < boss.skillCooldownMs * 0.68;
+    return boss.bossId === "magician" && performance.now() > this.magicianCurtainCallUntilMs;
+  }
+
+  private shouldChefBlockBullet(boss: BossActor, bullet: BulletActor): boolean {
+    if (boss.bossId !== "chef") return false;
+    const incomingAngle = Math.atan2(bullet.y - boss.y, bullet.x - boss.x);
+    return shouldChefBlockBasicAttack({
+      chefRotation: boss.view.rotation,
+      incomingAngle,
+      isBasicAttack: bullet.projectile.kind === "basic",
+      isBusy: this.isChefBusy(boss),
+    });
+  }
+
+  private isChefBusy(boss: BossActor): boolean {
+    return boss.mode === "windup" || boss.mode === "charge" || Boolean(boss.chefAirborne) || (boss.chefMeatGrinderMs ?? 0) > 0;
   }
 
   private damageFinalBoss(boss: FinalBossActor, amount: number, kind: "direct" | "explosive" = "direct"): void {
@@ -2242,25 +3088,42 @@ export class PixiWastelandGame {
     this.completeBossRushIfCleared();
   }
 
-  private defeatFinalBoss(boss: FinalBossActor): void {
-    this.world.removeChild(boss.view);
-    this.world.removeChild(boss.label);
-    boss.view.destroy();
-    boss.label.destroy();
+  private removeFinalBossActor(boss: FinalBossActor): void {
+    if (!boss.view.destroyed) {
+      this.world.removeChild(boss.view);
+      boss.view.destroy();
+    }
+    if (!boss.label.destroyed) {
+      this.world.removeChild(boss.label);
+      boss.label.destroy();
+    }
     if (this.finalBoss === boss) {
       this.finalBoss = undefined;
     } else {
       this.extraFinalBosses = this.extraFinalBosses.filter((candidate) => candidate !== boss);
     }
+  }
+
+  private defeatFinalBoss(boss: FinalBossActor): void {
+    const outcome = getWarCoreDefeatOutcome({
+      phase: boss.phase,
+      armoryActive: this.warCoreArmoryActive,
+      collapseMs: this.warCoreCollapseMs,
+    });
+    this.removeFinalBossActor(boss);
+    if (outcome === "start-collapse") {
+      this.startWarCoreCollapse();
+      return;
+    }
     if (this.isBossRushMode()) {
       this.addScreenShake(800, 12);
-      this.emitState("Boss Rush：失控核心已击破。");
+      this.emitState("Boss Rush: war core destroyed.");
       this.completeBossRushIfCleared();
       return;
     }
     this.gameOver = true;
     this.addScreenShake(800, 12);
-    this.emitState("任务完成：最终 Boss 已击杀");
+    this.emitState("Mission complete: final Boss defeated.");
     this.callbacks.onRunState(this.state);
     this.callbacks.onMissionSuccess(this.state);
   }
@@ -2269,12 +3132,15 @@ export class PixiWastelandGame {
     if (enemy.kind === "bone" || enemy.kind === "boneSoldier") {
       this.spawnBonePile(enemy.x, enemy.y);
     }
+    if (enemy.plaguePatient) {
+      this.spawnToxicCloud(enemy.x, enemy.y, 74, 5, 3600);
+    }
     this.world.removeChild(enemy.view);
     enemy.view.destroy();
     this.enemies = this.enemies.filter((candidate) => candidate !== enemy);
     this.state = recordRunEnemyKill(gainRunExperience(this.state, 6));
     if (this.state.pendingSkillChoiceIds.length > 0) {
-      this.emitState("击杀充能完成，选择一个机甲强化。");
+      this.emitState("Kill charge full. Choose one mech upgrade.");
     } else {
       this.callbacks.onRunState(this.state);
     }
@@ -2325,7 +3191,7 @@ export class PixiWastelandGame {
       targets.forEach((target, index) => {
         window.setTimeout(() => this.spawnEnergyStrike(target.x, target.y, skill.radius, power), index * 120);
       });
-      this.emitState(`${skill.name}：轨道校准`);
+      this.emitState(`${skill.name}: orbital calibration.`);
       return true;
     }
     if (skill.mode === "blink") {
@@ -2358,7 +3224,7 @@ export class PixiWastelandGame {
       const target = this.getAutoWeaponTarget(weapon);
       if (!target) return false;
       this.spawnAutoStrike(target.x, target.y, weapon.radius, damage);
-      this.emitState(`${weapon.name}：目标锁定`);
+      this.emitState(`${weapon.name}: target locked.`);
       return true;
     }
 
@@ -2371,24 +3237,28 @@ export class PixiWastelandGame {
           this.spawnHeavyProjectile(weapon, target, damage, index);
         }, index * 90);
       });
-      this.emitState(`${weapon.name}：蜂群发射`);
+      this.emitState(`${weapon.name}: swarm launched.`);
       return true;
     }
 
     const target = this.getAutoWeaponTarget(weapon);
     if (!target) return false;
     this.spawnHeavyProjectile(weapon, target, damage, 0);
-    this.emitState(`${weapon.name}：导弹发射`);
+    this.emitState(`${weapon.name}: missile launched.`);
     return true;
   }
 
   private defeatBoss(boss: BossActor): void {
+    if (boss.chefMeatGrinderView && !boss.chefMeatGrinderView.destroyed) {
+      this.world.removeChild(boss.chefMeatGrinderView);
+      boss.chefMeatGrinderView.destroy();
+    }
     this.world.removeChild(boss.view, boss.label);
     boss.view.destroy();
     boss.label.destroy();
     this.bosses = this.bosses.filter((candidate) => candidate !== boss);
     this.state = killRunBoss(this.state, boss.bossId);
-    this.emitState(`击杀 Boss：${this.getBossName(boss.bossId)}`);
+    this.emitState(`Boss defeated: ${this.getBossName(boss.bossId)}`);
     this.completeBossRushIfCleared();
   }
 
@@ -2437,7 +3307,7 @@ export class PixiWastelandGame {
     overlay.addChild(title);
 
     const subtitle = new Text({
-      text: "击杀充能已满，点击一个选项或按 1-3 继续战斗",
+      text: "击杀充能已满。点击选项或按 1-3 继续。",
       style: new TextStyle({ fill: "#b9c7a7", fontFamily: "Arial", fontSize: 15 }),
     });
     subtitle.anchor.set(0.5, 0);
@@ -2519,7 +3389,7 @@ export class PixiWastelandGame {
       this.drawPlayerMech(this.player.view);
     }
     this.clearSkillChoiceOverlay();
-    this.emitState(`选择强化：${definition?.name ?? upgradeId}`);
+    this.emitState(`Upgrade selected: ${definition?.name ?? upgradeId}`);
   }
 
   private showFormChoiceOverlay(): void {
@@ -2550,7 +3420,7 @@ export class PixiWastelandGame {
     overlay.addChild(title);
 
     const subtitle = new Text({
-      text: "Lv50 形态核心上线。点击一个选项或按 1-3，R 释放终极大招。",
+      text: "Lv50 形态核心已上线。点击选项或按 1-3，按 R 释放终极技。",
       style: new TextStyle({ fill: "#d6dfd1", fontFamily: "Arial", fontSize: 15 }),
     });
     subtitle.anchor.set(0.5, 0);
@@ -2612,7 +3482,7 @@ export class PixiWastelandGame {
       this.drawPlayerMech(this.player.view);
     }
     this.clearFormChoiceOverlay();
-    this.emitState(`最终形态：${this.getMechFormName(formId)}，终极技 ${getUltimateDefinition(formId).name}`);
+    this.emitState(`Final form: ${this.getMechFormName(formId)}, ultimate ${getUltimateDefinition(formId).name}`);
   }
 
   private getMechFormName(formId: NonNullable<RunState["selectedMechFormId"]>): string {
@@ -2623,12 +3493,12 @@ export class PixiWastelandGame {
 
   private getMechFormDescription(formId: NonNullable<RunState["selectedMechFormId"]>): string {
     if (formId === "laser") {
-      return "强化持续激光、折射链路和轨道锁定。终极技召唤多束天基裁决光束。";
+      return "强化持续激光、折射链和轨道锁定。终极技召唤多道天基审判光束。";
     }
     if (formId === "missile") {
-      return "强化爆炸、导弹舱和高射炮覆盖。终极技在目标区进行末日饱和轰炸。";
+      return "强化爆炸、导弹舱和大口径覆盖。终极技对目标区域进行饱和打击。";
     }
-    return "强化冲刺、回溯和近身压制。终极技拔出热熔斩舰刀向指向位置突进斩击。";
+    return "强化冲锋、回溯和近战压迫。终极技冲向目标并连续斩击。";
   }
 
   private detonateAutoWeapon(x: number, y: number, radius: number, damage: number, color = 0xff9f1c): void {
@@ -2712,6 +3582,69 @@ export class PixiWastelandGame {
     this.bossHazards = this.bossHazards.filter((candidate) => candidate !== hazard);
   }
 
+  private removeInfusionStand(stand: InfusionStandActor): void {
+    if (!stand.view.destroyed) {
+      this.world.removeChild(stand.view);
+      stand.view.destroy();
+    }
+    this.infusionStands = this.infusionStands.filter((candidate) => candidate !== stand);
+    this.spawnHitSparks(stand.x, stand.y, 0xa7c957, 10);
+  }
+
+  private removeTeslaDevice(device: TeslaDeviceActor): void {
+    if (!device.view.destroyed) {
+      this.world.removeChild(device.view);
+      device.view.destroy();
+    }
+    this.teslaDevices = this.teslaDevices.filter((candidate) => candidate !== device);
+    for (const grid of [...this.teslaGrids]) {
+      if (grid.start === device || grid.end === device) {
+        this.removeTeslaGrid(grid);
+      }
+    }
+    this.spawnHitSparks(device.x, device.y, 0x68e1fd, 12);
+  }
+
+  private removeTeslaGrid(grid: TeslaGridActor): void {
+    if (!grid.view.destroyed) {
+      this.world.removeChild(grid.view);
+      grid.view.destroy();
+    }
+    this.teslaGrids = this.teslaGrids.filter((candidate) => candidate !== grid);
+  }
+
+  private detonateConvoyVehicle(vehicle: ConvoyVehicleActor): void {
+    if (!this.convoyVehicles.includes(vehicle)) return;
+    this.convoyVehicles = this.convoyVehicles.filter((candidate) => candidate !== vehicle);
+    if (!vehicle.view.destroyed) {
+      this.world.removeChild(vehicle.view);
+      vehicle.view.destroy();
+    }
+    const blastRadius = vehicle.kind === "ammo" ? 190 : 105;
+    this.spawnDelayedBossBlast(vehicle.x, vehicle.y, blastRadius, vehicle.damage, 80, 0xff9f1c, vehicle.kind === "ammo" ? "ammo blast" : "escort wreck");
+    this.spawnHitSparks(vehicle.x, vehicle.y, vehicle.kind === "ammo" ? 0xff9f1c : 0xffd166, 18);
+  }
+
+  private removeCourierRoute(route: CourierRouteActor): void {
+    this.world.removeChild(route.view);
+    route.view.destroy();
+    this.courierRoutes = this.courierRoutes.filter((candidate) => candidate !== route);
+  }
+
+  private removeMagicianStageProp(prop: MagicianStagePropActor): void {
+    if (!prop.view.destroyed) {
+      this.world.removeChild(prop.view);
+      prop.view.destroy();
+    }
+    this.magicianStageProps = this.magicianStageProps.filter((candidate) => candidate !== prop);
+  }
+
+  private removeMagicianStageProps(): void {
+    for (const prop of [...this.magicianStageProps]) {
+      this.removeMagicianStageProp(prop);
+    }
+  }
+
   private getNearestTarget(maxDistance: number): { x: number; y: number } | undefined {
     if (!this.player) return undefined;
     let nearest: { x: number; y: number; distance: number } | undefined;
@@ -2741,6 +3674,20 @@ export class PixiWastelandGame {
       const distanceToHospitalKnight = distance(this.player, boss);
       if (!nearest || distanceToHospitalKnight < nearest.distance) {
         nearest = { x: boss.x, y: boss.y, distance: distanceToHospitalKnight };
+      }
+    }
+    for (const device of this.teslaDevices) {
+      if (!this.canAttackTarget(device, maxDistance)) continue;
+      const distanceToDevice = distance(this.player, device);
+      if (!nearest || distanceToDevice < nearest.distance) {
+        nearest = { x: device.x, y: device.y, distance: distanceToDevice };
+      }
+    }
+    for (const vehicle of this.convoyVehicles) {
+      if (!this.canAttackTarget(vehicle, maxDistance)) continue;
+      const distanceToVehicle = distance(this.player, vehicle);
+      if (!nearest || distanceToVehicle < nearest.distance) {
+        nearest = { x: vehicle.x, y: vehicle.y, distance: distanceToVehicle };
       }
     }
     return nearest ? { x: nearest.x, y: nearest.y } : undefined;
@@ -2775,12 +3722,12 @@ export class PixiWastelandGame {
 
   private getVisibleCombatTargets(maxDistance: number): Actor[] {
     if (!this.player) return [];
-    const targets: Actor[] = [...this.enemies, ...this.bosses, ...this.getFinalBosses(), ...this.getHospitalKnights()];
+    const targets: Actor[] = [...this.enemies, ...this.bosses, ...this.getFinalBosses(), ...this.getHospitalKnights(), ...this.teslaDevices, ...this.convoyVehicles];
     return targets.filter((target) => this.canAttackTarget(target, maxDistance));
   }
 
   private countTargetsNear(origin: Actor, radius: number): number {
-    const targets: Actor[] = [...this.enemies, ...this.bosses, ...this.getFinalBosses(), ...this.getHospitalKnights()];
+    const targets: Actor[] = [...this.enemies, ...this.bosses, ...this.getFinalBosses(), ...this.getHospitalKnights(), ...this.teslaDevices, ...this.convoyVehicles];
     return targets.filter(
       (target) => this.isSameVisibilityZone(origin, target) && distance(origin, target) <= radius,
     ).length;
@@ -2892,27 +3839,31 @@ export class PixiWastelandGame {
   private focusNearestBoss(): void {
     const boss = this.getNearestBoss();
     if (!boss) {
-      this.emitState("当前地图上没有常规 Boss。");
+      this.emitState("No roaming Boss exists on the current map.");
       return;
     }
     gsap.fromTo(boss.view.scale, { x: 1.45, y: 1.45 }, { x: 1, y: 1, duration: 0.32 });
-    this.emitState(`最近 Boss：${this.getBossName(boss.bossId)}，正在${boss.mode === "roam" ? "游荡" : "追击"}。`);
+    this.emitState(`Nearest Boss: ${this.getBossName(boss.bossId)}, mode ${boss.mode === "roam" ? "roaming" : "chasing"}.`);
   }
 
   private ensureEndgameBoss(): void {
     if (this.isBossRushMode()) return;
+    if (this.shouldDisableStoryEncounters()) return;
+    if (!shouldAllowWarCoreSpawn({ armoryActive: this.warCoreArmoryActive, collapseMs: this.warCoreCollapseMs })) return;
     if (!this.player || this.finalBoss || !isEndgameReady(this.state)) return;
     this.spawnFinalBoss();
   }
 
-  private spawnFinalBoss(overrides: { x?: number; y?: number; health?: number; phase?: 1 | 2 | 3 } = {}): void {
+  private spawnFinalBoss(overrides: { x?: number; y?: number; health?: number; phase?: FinalBossPhase } = {}): void {
     if (!this.player) return;
     const position = {
       x: overrides.x ?? PLAYER_START.x,
       y: overrides.y ?? PLAYER_START.y,
     };
+    const startingHealth = overrides.health ?? FINAL_BOSS_DEFINITION.maxHealth;
+    const startingPhase = overrides.phase ?? getFinalBossPhase(startingHealth, FINAL_BOSS_DEFINITION.maxHealth);
     const view = new Graphics();
-    this.drawFinalBossSprite(view, overrides.phase ?? 1);
+    this.drawFinalBossSprite(view, startingPhase);
     view.position.set(position.x, position.y);
     this.world.addChild(view);
     const label = new Text({
@@ -2926,9 +3877,9 @@ export class PixiWastelandGame {
       label,
       x: position.x,
       y: position.y,
-      health: overrides.health ?? FINAL_BOSS_DEFINITION.maxHealth,
-      maxHealth: overrides.health ?? FINAL_BOSS_DEFINITION.maxHealth,
-      phase: overrides.phase ?? 1,
+      health: startingHealth,
+      maxHealth: FINAL_BOSS_DEFINITION.maxHealth,
+      phase: startingPhase,
       skillElapsedMs: 0,
       skillCooldownMs: 2600,
       contactDamageElapsedMs: 650,
@@ -2943,7 +3894,10 @@ export class PixiWastelandGame {
     }
     this.addScreenShake(500, 9);
     this.engageRoamingBossesForFinalFight();
-    this.emitState(`${FINAL_BOSS_DEFINITION.name} 已降临，终局阶段开始。按 T 释放超级大招。`);
+    if (boss.phase === 4) {
+      this.enterWarCoreArmory(boss);
+    }
+    this.emitState(`${FINAL_BOSS_DEFINITION.name}已降临。当前阶段：P${boss.phase}。按 T 释放超级大招。`);
   }
 
   private engageRoamingBossesForFinalFight(): void {
@@ -2957,9 +3911,19 @@ export class PixiWastelandGame {
     }
   }
 
-  private drawFinalBossSprite(view: Graphics, phase: 1 | 2 | 3): void {
+  private drawFinalBossSprite(view: Graphics, phase: FinalBossPhase): void {
     const accent = phase === 1 ? 0xff9f1c : phase === 2 ? 0x68e1fd : 0xff4d6d;
     view.clear();
+    if (phase === 4) {
+      view.circle(0, 0, 54).fill(0x1a1010).stroke({ color: 0xff4d6d, width: 7 });
+      view.rect(-80, -16, 160, 32).fill(0x293241).stroke({ color: 0xff9f1c, width: 4 });
+      view.rect(-18, -92, 36, 184).fill(0x3a0f12).stroke({ color: 0xffd166, width: 3 });
+      view.circle(-72, -54, 16).fill(0xd90429);
+      view.circle(72, -54, 16).fill(0xd90429);
+      view.circle(-72, 54, 16).fill(0xd90429);
+      view.circle(72, 54, 16).fill(0xd90429);
+      return;
+    }
     view
       .circle(0, 0, 54)
       .fill(0x161923)
@@ -2998,6 +3962,10 @@ export class PixiWastelandGame {
       this.triggerFinalBossPhaseTwoSkill(boss);
       return;
     }
+    if (boss.phase === 4) {
+      this.triggerFinalBossPhaseFourSkill(boss);
+      return;
+    }
     this.triggerFinalBossPhaseThreeSkill(boss);
   }
 
@@ -3029,6 +3997,222 @@ export class PixiWastelandGame {
     }
   }
 
+  private triggerFinalBossPhaseFourSkill(boss: FinalBossActor): void {
+    const cursor = boss.skillCursor % 3;
+    boss.skillCursor += 1;
+    if (cursor === 0) {
+      this.castWarCoreArmoryBarrage();
+    } else if (cursor === 1) {
+      this.castWarCoreAmmoRackChain();
+    } else {
+      this.castWarCoreTurretCrossfire(boss);
+    }
+  }
+
+  private enterWarCoreArmory(boss: FinalBossActor): void {
+    if (this.warCoreArmoryActive) return;
+    this.warCoreArmoryActive = true;
+    this.warCoreCollapseMs = 0;
+    this.warCoreCollapseTickMs = 0;
+    this.warCoreArmoryPressureMs = 0;
+    this.clearSniperBuildings();
+    for (const bomb of [...this.finalBossBombs]) this.removeFinalBossBomb(bomb);
+    for (const missile of [...this.finalBossMissiles]) this.removeFinalBossMissile(missile);
+    for (const crawler of [...this.finalBossCrawlers]) this.removeFinalBossCrawler(crawler);
+    this.drawWarCoreArmoryOverlay();
+    const centerX = this.getMapWidth() / 2;
+    const centerY = this.getMapHeight() / 2;
+    this.setActorPosition(boss, centerX, centerY - 220);
+    if (this.player) {
+      this.setActorPosition(this.player, centerX, centerY + 260);
+    }
+    this.addScreenShake(700, 14);
+    this.emitState("战争核心炸毁城市地表，将你拖入地下军火库。");
+  }
+
+  private drawWarCoreArmoryOverlay(): void {
+    if (this.warCoreArmoryOverlay && !this.warCoreArmoryOverlay.destroyed) {
+      this.world.removeChild(this.warCoreArmoryOverlay);
+      this.warCoreArmoryOverlay.destroy();
+    }
+    const overlay = new Graphics();
+    const centerX = this.getMapWidth() / 2;
+    const centerY = this.getMapHeight() / 2;
+    const width = FINAL_BOSS_PHASE_FOUR_SKILL.armoryWidth;
+    const height = FINAL_BOSS_PHASE_FOUR_SKILL.armoryHeight;
+    overlay
+      .rect(centerX - width / 2, centerY - height / 2, width, height)
+      .fill({ color: 0x17130f, alpha: 0.88 })
+      .stroke({ color: 0xff9f1c, alpha: 0.7, width: 8 });
+    overlay
+      .rect(centerX - width / 2 + 80, centerY - height / 2 + 80, width - 160, height - 160)
+      .stroke({ color: 0x8d99ae, alpha: 0.35, width: 4 });
+    this.world.addChildAt(overlay, 1);
+    this.warCoreArmoryOverlay = overlay;
+  }
+
+  private startWarCoreCollapse(): void {
+    if (this.warCoreCollapseMs > 0) return;
+    this.warCoreCollapseMs = FINAL_BOSS_PHASE_FOUR_SKILL.collapseEscapeMs;
+    this.warCoreCollapseTickMs = 0;
+    this.warCoreArmoryPressureMs = 0;
+    this.spawnWarCoreExtraction();
+    this.addScreenShake(900, 16);
+    this.emitState("War Core destroyed. The underground armory is collapsing. Evacuate now.");
+  }
+
+  private spawnWarCoreExtraction(): void {
+    if (this.warCoreExtraction && !this.warCoreExtraction.view.destroyed) {
+      this.world.removeChild(this.warCoreExtraction.view);
+      this.warCoreExtraction.view.destroy();
+    }
+    const x = this.getMapWidth() / 2;
+    const y = this.getMapHeight() / 2 + FINAL_BOSS_PHASE_FOUR_SKILL.armoryHeight / 2 - 160;
+    const view = new Graphics();
+    view
+      .circle(0, 0, FINAL_BOSS_PHASE_FOUR_SKILL.exitRadius)
+      .fill({ color: 0xa7c957, alpha: 0.22 })
+      .stroke({ color: 0xf8f4e3, alpha: 0.9, width: 5 })
+      .rect(-42, -18, 84, 36)
+      .fill({ color: 0xf8f4e3, alpha: 0.18 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.warCoreExtraction = { view, x, y, radius: FINAL_BOSS_PHASE_FOUR_SKILL.exitRadius };
+  }
+
+  private updateWarCoreCollapse(deltaMs: number): void {
+    if (this.warCoreCollapseMs <= 0 || !this.player || !this.warCoreExtraction || this.gameOver) return;
+    this.warCoreCollapseMs = Math.max(0, this.warCoreCollapseMs - deltaMs);
+    this.warCoreCollapseTickMs += deltaMs;
+
+    const outcome = getWarCoreEvacuationOutcome({
+      collapseMs: this.warCoreCollapseMs,
+      distanceToExit: distance(this.player, this.warCoreExtraction),
+      exitRadius: this.warCoreExtraction.radius,
+    });
+
+    if (outcome === "escaped") {
+      this.finishWarCoreEvacuation();
+      return;
+    }
+
+    if (this.warCoreCollapseTickMs >= FINAL_BOSS_PHASE_FOUR_SKILL.collapseTickMs) {
+      this.warCoreCollapseTickMs = 0;
+      this.applyPlayerDamage(FINAL_BOSS_PHASE_FOUR_SKILL.collapseDamage);
+      this.addScreenShake(180, 6);
+      this.emitState(`Armory collapsing: ${Math.ceil(this.warCoreCollapseMs / 1000)}s left.`);
+    }
+
+    if (outcome === "buried") {
+      this.warCoreCollapseMs = 0;
+      this.applyPlayerDamage(99999);
+      this.emitState("War Core is destroyed, but you were buried in the underground armory.");
+    }
+  }
+
+  private finishWarCoreEvacuation(): void {
+    this.warCoreCollapseMs = 0;
+    this.warCoreCollapseTickMs = 0;
+    this.warCoreArmoryPressureMs = 0;
+    this.warCoreArmoryActive = false;
+    if (this.warCoreExtraction && !this.warCoreExtraction.view.destroyed) {
+      this.world.removeChild(this.warCoreExtraction.view);
+      this.warCoreExtraction.view.destroy();
+    }
+    this.warCoreExtraction = undefined;
+    if (this.warCoreArmoryOverlay && !this.warCoreArmoryOverlay.destroyed) {
+      this.world.removeChild(this.warCoreArmoryOverlay);
+      this.warCoreArmoryOverlay.destroy();
+    }
+    this.warCoreArmoryOverlay = undefined;
+    this.addScreenShake(500, 9);
+    this.emitState("You escaped the underground armory. War Core has been annihilated.");
+    if (this.isBossRushMode()) {
+      this.completeBossRushIfCleared();
+      return;
+    }
+    this.gameOver = true;
+    this.callbacks.onRunState(this.state);
+    this.callbacks.onMissionSuccess(this.state);
+  }
+
+  private updateWarCoreArmoryPressure(deltaMs: number): void {
+    if (!this.warCoreArmoryActive || this.warCoreCollapseMs > 0 || !this.player) return;
+    this.warCoreArmoryPressureMs += deltaMs;
+    if (this.warCoreArmoryPressureMs < FINAL_BOSS_PHASE_FOUR_SKILL.pressureTickMs) return;
+    this.warCoreArmoryPressureMs = 0;
+    const side = this.spawnSeed % 2 === 0 ? -1 : 1;
+    const x = clamp(this.player.x + side * 420, 24, this.getMapWidth() - 24);
+    const y = clamp(this.player.y + ((this.spawnSeed % 3) - 1) * 140, 24, this.getMapHeight() - 24);
+    this.spawnDelayedBossBlast(
+      x,
+      y,
+      FINAL_BOSS_PHASE_FOUR_SKILL.barrageRadius,
+      FINAL_BOSS_PHASE_FOUR_SKILL.barrageDamage,
+      420,
+      0xff9f1c,
+      "armory pressure",
+    );
+    this.spawnSeed += 1;
+  }
+
+  private castWarCoreArmoryBarrage(): void {
+    if (!this.player) return;
+    const skill = FINAL_BOSS_PHASE_FOUR_SKILL;
+    const center = { x: this.player.x, y: this.player.y };
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (Math.PI * 2 * index) / 8 + this.spawnSeed * 0.17;
+      const ring = 140 + (index % 3) * 85;
+      const x = clamp(center.x + Math.cos(angle) * ring, 24, this.getMapWidth() - 24);
+      const y = clamp(center.y + Math.sin(angle) * ring, 24, this.getMapHeight() - 24);
+      this.spawnDelayedBossBlast(x, y, skill.barrageRadius, skill.barrageDamage, skill.barrageWarningMs + index * 60, 0xff9f1c, "armory barrage");
+    }
+    this.spawnSeed += 1;
+  }
+
+  private castWarCoreAmmoRackChain(): void {
+    if (!this.player) return;
+    const skill = FINAL_BOSS_PHASE_FOUR_SKILL;
+    const startX = this.player.x - 360;
+    const y = this.player.y + (this.spawnSeed % 2 === 0 ? -180 : 180);
+    for (let index = 0; index < 7; index += 1) {
+      const x = clamp(startX + index * 120, 24, this.getMapWidth() - 24);
+      this.spawnDelayedBossBlast(
+        x,
+        clamp(y, 24, this.getMapHeight() - 24),
+        skill.ammoRackRadius,
+        skill.ammoRackDamage,
+        500 + index * 120,
+        0xff4d6d,
+        "ammo rack",
+      );
+    }
+    this.spawnSeed += 1;
+  }
+
+  private castWarCoreTurretCrossfire(boss: FinalBossActor): void {
+    if (!this.player) return;
+    const skill = FINAL_BOSS_PHASE_FOUR_SKILL;
+    const offsets = [
+      { x: -520, y: -320 },
+      { x: 520, y: -320 },
+      { x: -520, y: 320 },
+      { x: 520, y: 320 },
+    ];
+    for (let index = 0; index < 20; index += 1) {
+      const sourceOffset = offsets[index % offsets.length];
+      window.setTimeout(() => {
+        if (!this.getFinalBosses().includes(boss) || !this.player) return;
+        const source = {
+          x: clamp(boss.x + sourceOffset.x, 24, this.getMapWidth() - 24),
+          y: clamp(boss.y + sourceOffset.y, 24, this.getMapHeight() - 24),
+        };
+        const angle = Math.atan2(this.player.y - source.y, this.player.x - source.x);
+        this.spawnBossHazard(source.x, source.y, angle, skill.turretProjectileSpeed, 0xffd166, 1500, 10, "bossProjectile", skill.turretDamage);
+      }, index * 70);
+    }
+  }
+
   private castFinalBossCoreRay(boss: FinalBossActor): void {
     const skill = FINAL_BOSS_PHASE_ONE_SKILL;
     this.drawExpandingRing(boss.x, boss.y, skill.interferenceRadius, 0xff1744, skill.beamDelayMs);
@@ -3038,7 +4222,7 @@ export class PixiWastelandGame {
     }
     this.drawExpandingRing(boss.x, boss.y, 132, 0xffffff, skill.beamDelayMs);
     window.setTimeout(() => {
-      if (!this.player || !this.getFinalBosses().includes(boss) || boss.phase === 3 || boss.view.destroyed) return;
+      if (!this.player || !this.getFinalBosses().includes(boss) || boss.phase >= 3 || boss.view.destroyed) return;
       const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
       const end = {
         x: clamp(boss.x + Math.cos(angle) * skill.beamRange, 24, MAP_WIDTH - 24),
@@ -3050,7 +4234,7 @@ export class PixiWastelandGame {
       }
       this.addScreenShake(180, 6);
     }, skill.beamDelayMs);
-    this.emitState(`${FINAL_BOSS_DEFINITION.name}: 干扰波展开，红色射线锁定中`);
+    this.emitState(`${FINAL_BOSS_DEFINITION.name}: interference wave deployed, red lasers locking.`);
   }
 
   private castFinalBossBombing(): void {
@@ -3067,7 +4251,7 @@ export class PixiWastelandGame {
       this.world.addChild(view);
       this.finalBossBombs.push({ view, x, y, radius, lifeMs: skill.bombWarningMs, damage: skill.bombDamage });
     }
-    this.emitState(`${FINAL_BOSS_DEFINITION.name}: 轰炸区域已标记`);
+    this.emitState(FINAL_BOSS_DEFINITION.name + ": bombardment zones marked.");
   }
 
   private updateFinalBossBombs(deltaMs: number): void {
@@ -3104,7 +4288,7 @@ export class PixiWastelandGame {
         .circle(building.x, building.y, 18)
         .fill({ color: 0xff1744, alpha: 0.72 });
     }
-    this.emitState(`${FINAL_BOSS_DEFINITION.name}: 全城通缉，狙击手占领楼顶`);
+    this.emitState(FINAL_BOSS_DEFINITION.name + ": citywide wanted order, hunters taking rooftops.");
   }
 
   private clearSniperBuildings(): void {
@@ -3115,7 +4299,7 @@ export class PixiWastelandGame {
     }
   }
 
-  private updateFinalBossBuildings(deltaMs: number, phase: 1 | 2 | 3): void {
+  private updateFinalBossBuildings(deltaMs: number, phase: FinalBossPhase): void {
     this.finalBossBuildingCollisionElapsedMs = Math.min(
       FINAL_BOSS_PHASE_ONE_SKILL.buildingCollisionIntervalMs,
       this.finalBossBuildingCollisionElapsedMs + deltaMs,
@@ -3170,7 +4354,7 @@ export class PixiWastelandGame {
     }
   }
 
-  private updateSniperBuilding(building: BuildingVisual, phase: 1 | 2 | 3): void {
+  private updateSniperBuilding(building: BuildingVisual, phase: FinalBossPhase): void {
     if (!this.player || phase !== 2 || !building.isSniperNest || building.sniperCooldownMs > 0) return;
     const skill = FINAL_BOSS_PHASE_TWO_SKILL;
     if (distancePointToRect(this.player, building) > skill.sniperRange) return;
@@ -3188,7 +4372,7 @@ export class PixiWastelandGame {
     building.weaponCooldownMs = skill.buildingWeaponCooldownMs;
     this.drawBuildingDash(building, this.player, 0xff9f1c, 300);
     this.applyPlayerDamage(skill.buildingWeaponDamage);
-    this.emitState(`${FINAL_BOSS_DEFINITION.name}: 操控楼房砸向玩家`);
+    this.emitState(FINAL_BOSS_DEFINITION.name + ": building control strike.");
   }
 
   private castFinalBossOrangeBeam(boss: FinalBossActor): void {
@@ -3204,7 +4388,7 @@ export class PixiWastelandGame {
       this.applyPlayerDamage(skill.orangeBeamDamage);
     }
     this.addScreenShake(240, 8);
-    this.emitState(`${FINAL_BOSS_DEFINITION.name}: 橙色贯城光束`);
+    this.emitState(FINAL_BOSS_DEFINITION.name + ": orange city beam.");
   }
 
   private castFinalBossMissiles(boss: FinalBossActor): void {
@@ -3234,7 +4418,7 @@ export class PixiWastelandGame {
         lifeMs: 3600,
       });
     }
-    this.emitState(`${FINAL_BOSS_DEFINITION.name}: 背部导弹锁定`);
+    this.emitState(FINAL_BOSS_DEFINITION.name + ": back missiles locked.");
   }
 
   private drawMissileWarning(x: number, y: number, radius: number, lifeMs: number): void {
@@ -3292,7 +4476,7 @@ export class PixiWastelandGame {
       this.world.addChild(view);
       this.finalBossCrawlers.push({ view, x, y, damage: skill.crawlerDamage, armMs: skill.crawlerArmMs, suppressMs: skill.suppressMs, armed: false });
     }
-    this.emitState(`${FINAL_BOSS_DEFINITION.name}: 抑制爬虫释放`);
+    this.emitState(FINAL_BOSS_DEFINITION.name + ": suppression crawlers released.");
   }
 
   private updateFinalBossCrawlers(deltaMs: number): void {
@@ -3334,7 +4518,7 @@ export class PixiWastelandGame {
   private castFinalBossAnnihilationBeam(boss: FinalBossActor): void {
     if (!this.player) return;
     const startAngle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x) - Math.PI / 3;
-    this.emitState(`${FINAL_BOSS_DEFINITION.name}: 最终毁灭光束`);
+    this.emitState(FINAL_BOSS_DEFINITION.name + ": final annihilation beam.");
     this.addScreenShake(1400, 16);
     for (let index = 0; index < 6; index += 1) {
       window.setTimeout(() => {
@@ -3346,10 +4530,7 @@ export class PixiWastelandGame {
         };
         this.drawWideBeam(boss, end, 0x8b0016, 150, 360);
         if (distancePointToSegment(this.player, boss, end) <= 150) {
-          this.gameOver = true;
-          this.state = { ...this.state, health: 0 };
-          this.callbacks.onRunState(this.state);
-          this.callbacks.onGameOver(this.state);
+          this.applyPlayerDamage(99999);
         }
       }, index * 180);
     }
@@ -3495,12 +4676,12 @@ export class PixiWastelandGame {
     }
   }
 
-  private spawnBoneEnemy(x: number, y: number, kind: "bone" | "boneSoldier"): void {
+  private spawnBoneEnemy(x: number, y: number, kind: "bone" | "boneSoldier"): EnemyActor {
     const view = new Graphics();
     this.drawBoneEnemy(view, kind);
     view.position.set(x, y);
     this.world.addChild(view);
-    this.enemies.push({
+    const enemy: EnemyActor = {
       view,
       kind,
       x,
@@ -3511,7 +4692,9 @@ export class PixiWastelandGame {
       dashElapsedMs: 0,
       dashMs: 0,
       guardTarget: getHospitalKnightGuardRoamTarget(this.spawnSeed + Math.round(x + y)),
-    });
+    };
+    this.enemies.push(enemy);
+    return enemy;
   }
 
   private drawBoneEnemy(view: Graphics, kind: "bone" | "boneSoldier", hit = false): void {
@@ -3586,7 +4769,7 @@ export class PixiWastelandGame {
       x: clamp(knight.x + Math.cos(moveAngle) * speed * seconds, 24, MAP_WIDTH - 24),
       y: clamp(knight.y + Math.sin(moveAngle) * speed * seconds, 24, MAP_HEIGHT - 24),
     };
-    const resolved = resolveBlockedMovement(knight, desired, 44);
+    const resolved = resolveBlockedMovement(knight, desired, 44, this.getActiveBuildings());
     this.setActorPosition(knight, resolved.x, resolved.y);
     knight.view.rotation = angleToPlayer;
 
@@ -3602,7 +4785,7 @@ export class PixiWastelandGame {
     const soldiers = this.getActiveBoneSoldierCount();
     const shield = knight.phase === 2 && soldiers > 0 ? " IMMUNE" : "";
     knight.label.position.set(knight.x - 92, knight.y - 84);
-    knight.label.text = `${HOSPITAL_KNIGHT_DEFINITION.name} P${knight.phase} ${Math.ceil(knight.health)}/${knight.maxHealth}${shield}`;
+    knight.label.text = `${HOSPITAL_KNIGHT_DEFINITION.name} ${Math.ceil(knight.health)}/${knight.maxHealth}${shield}`;
   }
 
   private updateDormantHospitalKnight(knight: HospitalKnightActor, deltaMs: number): void {
@@ -3624,7 +4807,7 @@ export class PixiWastelandGame {
     );
     knight.view.rotation = angle;
     knight.label.position.set(knight.x - 92, knight.y - 84);
-    knight.label.text = `${HOSPITAL_KNIGHT_DEFINITION.name} GUARD ${Math.ceil(knight.health)}/${knight.maxHealth}`;
+    knight.label.text = `${HOSPITAL_KNIGHT_DEFINITION.name} ${Math.ceil(knight.health)}/${knight.maxHealth}`;
   }
 
   private aggroHospitalKnight(knight = this.hospitalKnight): void {
@@ -3638,20 +4821,107 @@ export class PixiWastelandGame {
   private triggerHospitalKnightSkill(knight: HospitalKnightActor): void {
     knight.skillElapsedMs = 0;
     if (!this.player) return;
-    if (knight.phase === 2 && shouldConvertZombieToBoneSoldier(knight.holyShroudCasts)) {
-      knight.holyShroudCasts += 1;
-      this.convertNearbyZombiesToBoneSoldiers(knight, 12);
-      this.drawHolyShroud(knight);
-      this.emitState(`Holy shroud ${knight.holyShroudCasts}/3: nearby zombies become bone soldiers.`);
-      return;
-    }
-
-    if (knight.skillCursor % 2 === 0) {
-      this.castGiantSwordShackle();
-    } else {
-      this.castHolyCharge(knight);
-    }
+    const skill = getNextHospitalKnightSkill(knight.phase, knight.skillCursor);
     knight.skillCursor += 1;
+
+    if (skill === "bone-command") {
+      this.castBoneCommand(knight);
+    } else if (skill === "giant-sword-judgment") {
+      this.castGiantSwordShackle();
+    } else if (skill === "holy-lance-charge") {
+      this.castHolyCharge(knight);
+    } else if (skill === "royal-guard") {
+      this.castRoyalGuard(knight);
+    } else {
+      this.castDeadFormation(knight);
+    }
+  }
+
+  private castBoneCommand(knight: HospitalKnightActor): void {
+    if (!this.player) return;
+    const center = this.player;
+    const bones: EnemyActor[] = [];
+    for (let index = 0; index < HOSPITAL_KNIGHT_BONE_COMMAND_COUNT; index += 1) {
+      const wave = index % 2;
+      const rank = Math.floor(index / 2);
+      const side = wave === 0 ? -1 : 1;
+      const x = clamp(center.x + side * 390, 24, MAP_WIDTH - 24);
+      const y = clamp(center.y - 210 + rank * 84, 24, MAP_HEIGHT - 24);
+      const bone = this.spawnBoneEnemy(x, y, "boneSoldier");
+      bone.speed = 34;
+      bone.invulnerableMs = 650;
+      bones.push(bone);
+      this.drawBoneFormationMarker(x, y, wave);
+    }
+    for (const [index, bone] of bones.entries()) {
+      const delay = index % 2 === 0 ? 650 : 1120;
+      window.setTimeout(() => {
+        if (!this.player || !this.enemies.includes(bone)) return;
+        bone.dashAngle = Math.atan2(this.player.y - bone.y, this.player.x - bone.x);
+        bone.dashMs = 760;
+        bone.dashSpeed = HOSPITAL_KNIGHT_BONE_COMMAND_DASH_SPEED;
+        bone.dashElapsedMs = 0;
+      }, delay);
+    }
+    this.spawnHitSparks(knight.x, knight.y, 0xd9f7ff, 16);
+    this.emitState("Bone Knight: skeleton command.");
+  }
+
+  private castRoyalGuard(knight: HospitalKnightActor): void {
+    if (!this.player) return;
+    if (shouldConvertZombieToBoneSoldier(knight.holyShroudCasts)) {
+      knight.holyShroudCasts += 1;
+      this.convertNearbyZombiesToBoneSoldiers(knight, HOSPITAL_KNIGHT_ROYAL_GUARD_COUNT);
+    }
+    const existing = this.enemies.filter((enemy) => enemy.kind === "boneSoldier").slice(0, HOSPITAL_KNIGHT_ROYAL_GUARD_COUNT);
+    while (existing.length < HOSPITAL_KNIGHT_ROYAL_GUARD_COUNT) {
+      const angle = (Math.PI * 2 * existing.length) / HOSPITAL_KNIGHT_ROYAL_GUARD_COUNT;
+      existing.push(this.spawnBoneEnemy(knight.x + Math.cos(angle) * 170, knight.y + Math.sin(angle) * 170, "boneSoldier"));
+    }
+    for (const [index, guard] of existing.entries()) {
+      const angle = (Math.PI * 2 * index) / HOSPITAL_KNIGHT_ROYAL_GUARD_COUNT;
+      this.setActorPosition(guard, clamp(knight.x + Math.cos(angle) * 165, 24, MAP_WIDTH - 24), clamp(knight.y + Math.sin(angle) * 165, 24, MAP_HEIGHT - 24));
+      guard.health = Math.max(guard.health, 72);
+      guard.speed = 38;
+      guard.invulnerableMs = 450;
+      this.drawBoneEnemy(guard.view, "boneSoldier");
+    }
+    this.drawHolyShroud(knight);
+    this.emitState("Bone Knight: royal guard.");
+  }
+
+  private castDeadFormation(knight: HospitalKnightActor): void {
+    if (!this.player) return;
+    const center = this.player;
+    for (let lane = 0; lane < HOSPITAL_KNIGHT_DEAD_FORMATION_LANES; lane += 1) {
+      const angle = (Math.PI * 2 * lane) / HOSPITAL_KNIGHT_DEAD_FORMATION_LANES;
+      for (let index = 0; index < 5; index += 1) {
+        const sideOffset = (index - 2) * 46;
+        const spawn = {
+          x: clamp(center.x + Math.cos(angle) * 620 + Math.cos(angle + Math.PI / 2) * sideOffset, 24, MAP_WIDTH - 24),
+          y: clamp(center.y + Math.sin(angle) * 620 + Math.sin(angle + Math.PI / 2) * sideOffset, 24, MAP_HEIGHT - 24),
+        };
+        const bone = this.spawnBoneEnemy(spawn.x, spawn.y, "boneSoldier");
+        bone.speed = 28;
+        bone.invulnerableMs = 500;
+        window.setTimeout(() => {
+          if (!this.player || !this.enemies.includes(bone)) return;
+          bone.dashAngle = Math.atan2(this.player.y - bone.y, this.player.x - bone.x);
+          bone.dashMs = 1150;
+          bone.dashSpeed = 540;
+        }, 650 + lane * 180);
+      }
+    }
+    const angle = Math.atan2(center.y - knight.y, center.x - knight.x);
+    this.spawnHospitalChargeTelegraph(knight, angle);
+    window.setTimeout(() => {
+      if (!this.getHospitalKnights().includes(knight)) return;
+      knight.chargeAngle = angle;
+      knight.chargeMs = 920;
+      this.spawnHolyLanceSpikes(knight, angle);
+    }, 760);
+    this.addScreenShake(240, 6);
+    this.emitState("Bone Knight: dead formation.");
   }
 
   private castGiantSwordShackle(): void {
@@ -3736,15 +5006,53 @@ export class PixiWastelandGame {
     if (!this.player) return;
     const angle = Math.atan2(this.player.y - knight.y, this.player.x - knight.x);
     knight.chargeAngle = angle;
-    knight.chargeMs = 620;
+    knight.chargeMs = knight.phase === 2 ? 820 : 620;
     this.spawnHospitalChargeTelegraph(knight, angle);
+    window.setTimeout(() => {
+      if (!this.getHospitalKnights().includes(knight)) return;
+      this.spawnHolyLanceSpikes(knight, angle);
+    }, 520);
     for (const bone of this.enemies) {
       if (bone.kind === "zombie" || distance(bone, this.player) > 520) continue;
       bone.dashAngle = Math.atan2(this.player.y - bone.y, this.player.x - bone.x);
       bone.dashMs = bone.kind === "boneSoldier" ? 340 : 240;
+      bone.dashSpeed = bone.kind === "boneSoldier" ? 620 : 520;
       bone.dashElapsedMs = 0;
     }
-    this.emitState("Hospital knight casts Holy Charge.");
+    this.emitState("Bone Knight: holy lance charge.");
+  }
+
+  private spawnHolyLanceSpikes(knight: HospitalKnightActor, angle: number): void {
+    const normal = angle + Math.PI / 2;
+    for (let index = 0; index < HOSPITAL_KNIGHT_HOLY_LANCE_SPIKES; index += 1) {
+      const forward = 170 + index * 115;
+      const side = index % 2 === 0 ? -82 : 82;
+      const x = clamp(knight.x + Math.cos(angle) * forward + Math.cos(normal) * side, 24, MAP_WIDTH - 24);
+      const y = clamp(knight.y + Math.sin(angle) * forward + Math.sin(normal) * side, 24, MAP_HEIGHT - 24);
+      this.spawnDelayedBossBlast(x, y, 78, HOSPITAL_KNIGHT_HOLY_LANCE_SPIKE_DAMAGE, 160, 0xd9f7ff, "bone spike");
+    }
+  }
+
+  private drawBoneFormationMarker(x: number, y: number, wave: number): void {
+    const view = new Graphics();
+    const color = wave === 0 ? 0xd9f7ff : 0xfff3b0;
+    view
+      .rect(-28, -22, 56, 44)
+      .fill({ color, alpha: 0.1 })
+      .stroke({ color, alpha: 0.62, width: 2 })
+      .moveTo(-36, 0)
+      .lineTo(36, 0)
+      .stroke({ color, alpha: 0.55, width: 3 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    gsap.to(view, {
+      alpha: 0,
+      duration: 1.1,
+      onComplete: () => {
+        this.world.removeChild(view);
+        view.destroy();
+      },
+    });
   }
 
   private spawnHospitalChargeTelegraph(knight: HospitalKnightActor, angle: number): void {
@@ -3858,7 +5166,7 @@ export class PixiWastelandGame {
       }
     }
 
-    this.emitState(`Boss Rush：${scenario.name}`);
+    this.emitState("Boss Rush: " + scenario.name);
   }
 
   private spawnBoss(bossId: BossId): void {
@@ -3910,6 +5218,16 @@ export class PixiWastelandGame {
       pendingChargeAngle: 0,
       contactDamageElapsedMs: 700,
       beastmasterFrenzyUsed: false,
+      chefMeatGrinderUsed: false,
+      chefMeatGrinderMs: 0,
+      chefMeatGrinderTickMs: 0,
+      chefMeatGrinderAngle: 0,
+      chefAirborne: false,
+      clownSpiralKnifeMs: 0,
+      clownSpiralKnifeTickMs: 0,
+      clownSpiralKnifeAngle: 0,
+      courierCitywideMs: 0,
+      courierCitywideTickMs: 0,
     };
     this.bosses.push(boss);
     return boss;
@@ -3930,8 +5248,13 @@ export class PixiWastelandGame {
 
     if (bossId === "chef") {
       view.rect(3, -24, 18, 48).fill({ color: 0xf1faee, alpha: 0.78 });
-      view.rect(37, -30, 8, 62).fill(theme.weaponColor).stroke({ color: 0x4a1717, width: 2 });
-      view.poly([45, -34, 63, -22, 48, -5]).fill(0xc8d5d9);
+      view.ellipse(43, 0, CHEF_WOK_MODEL_RADIUS, CHEF_WOK_MODEL_RADIUS * 0.76)
+        .fill({ color: 0x2b2f33, alpha: 0.94 })
+        .stroke({ color: 0xc8d5d9, width: 4 });
+      view.circle(35, -7, 5).fill({ color: 0xf1faee, alpha: 0.52 });
+      view.rect(66, -5, 30, 10).fill(0x5a3d2b).stroke({ color: 0xfff3b0, alpha: 0.7, width: 2 });
+      view.rect(20, -30, 8, 60).fill(theme.weaponColor).stroke({ color: 0x4a1717, width: 2 });
+      view.poly([28, -34, 48, -22, 31, -5]).fill(0xc8d5d9);
       view.rect(-30, -12, 13, 24).fill(0x6b1f1f);
     }
 
@@ -3976,11 +5299,17 @@ export class PixiWastelandGame {
     }
 
     if (bossId === "war-convoy") {
-      view.roundRect(-44, -32, 88, 64, 6).fill(theme.bodyColor).stroke({ color: theme.accentColor, width: 4 });
-      view.rect(26, -46, 20, 24).fill(theme.weaponColor);
-      view.rect(26, 22, 20, 24).fill(theme.weaponColor);
-      view.circle(-36, -34, 9).fill(0x111111);
-      view.circle(-36, 34, 9).fill(0x111111);
+      view.roundRect(-56, -38, 112, 76, 6).fill(theme.bodyColor).stroke({ color: theme.accentColor, width: 5 });
+      view.roundRect(-18, -28, 44, 56, 4).fill({ color: 0x293241, alpha: 0.92 }).stroke({ color: 0xfff3b0, width: 2 });
+      view.rect(34, -50, 24, 28).fill(theme.weaponColor).stroke({ color: 0xfff3b0, width: 2 });
+      view.rect(34, 22, 24, 28).fill(theme.weaponColor).stroke({ color: 0xfff3b0, width: 2 });
+      view.rect(-64, -18, 18, 36).fill(0x8d99ae).stroke({ color: theme.accentColor, width: 2 });
+      view.moveTo(-12, -34).lineTo(-28, -66).stroke({ color: 0xffd166, width: 3 });
+      view.circle(-30, -70, 5).fill(0xff4d6d);
+      view.circle(-42, -40, 10).fill(0x111111);
+      view.circle(-42, 40, 10).fill(0x111111);
+      view.circle(42, -40, 10).fill(0x111111);
+      view.circle(42, 40, 10).fill(0x111111);
     }
   }
 
@@ -4030,11 +5359,23 @@ export class PixiWastelandGame {
       skill = getNextAdvancedBossSkill(boss.bossId, boss.advancedSkillCursor);
       boss.advancedSkillCursor += 1;
     }
+    if (
+      boss.bossId === "chef" &&
+      skill.id === "meat-grinder" &&
+      !shouldTriggerChefMeatGrinder({
+        health: boss.health,
+        maxHealth: boss.maxHealth,
+        used: boss.chefMeatGrinderUsed ?? false,
+      })
+    ) {
+      skill = getNextAdvancedBossSkill(boss.bossId, boss.advancedSkillCursor);
+      boss.advancedSkillCursor += 1;
+    }
     this.triggerAdvancedBossSkill(boss, skill);
     return;
     if (boss.bossId === "chef") {
       this.throwChiliOil(boss);
-      this.emitState(`${this.getBossName(boss.bossId)} 发起冲锋。`);
+      this.emitState(this.getBossName(boss.bossId) + " starts a charge.");
       return;
     }
     if (boss.bossId === "clown") {
@@ -4042,7 +5383,7 @@ export class PixiWastelandGame {
         const angle = (Math.PI * 2 * index) / 12;
         this.spawnKnifeHazard(boss.x, boss.y, angle, 440);
       }
-      this.emitState(`${this.getBossName(boss.bossId)} 释放环形弹幕。`);
+      this.emitState(this.getBossName(boss.bossId) + " releases a ring barrage.");
       return;
     }
     const angle = Math.atan2(this.player!.y - boss.y, this.player!.x - boss.x);
@@ -4050,27 +5391,36 @@ export class PixiWastelandGame {
     boss.windupMs = 650;
     boss.pendingChargeAngle = angle;
     this.spawnChargeTelegraph(boss, angle);
-    this.emitState(`${this.getBossName(boss.bossId)} 投出爆炸包。`);
+    this.emitState(this.getBossName(boss.bossId) + " throws explosive parcels.");
   }
 
   private triggerAdvancedBossSkill(boss: BossActor, skill: AdvancedBossSkill): void {
     if (!this.player) return;
-    if (skill.id === "pressure-cooker-bomb") {
-      this.spawnPressureCookerBomb(boss, skill);
-    } else if (skill.id === "chopping-board-charge") {
-      this.startBossCharge(boss, skill.warningMs, 520, skill.damage, 0xff9f1c);
-    } else if (skill.id === "cauldron-descend") {
-      this.spawnCauldronDescend(boss, skill);
-    } else if (skill.id === "jack-in-the-box") {
-      this.spawnJackInTheBox(boss, skill);
-    } else if (skill.id === "clone-trick") {
-      this.spawnClownClones(boss, skill);
-    } else if (skill.id === "knife-gala") {
-      this.spawnKnifeGala(boss, skill);
-    } else if (skill.id === "drone-airdrop") {
-      this.spawnCourierDroneAirdrop(skill);
-    } else if (skill.id === "delivery-lock") {
-      this.spawnDeliveryLock(boss, skill);
+    if (skill.id === "chili-oil-cover") {
+      this.spawnChefChiliOilCover(boss, skill);
+    } else if (skill.id === "crash-landing") {
+      this.spawnChefCrashLanding(boss, skill);
+    } else if (skill.id === "meat-grinder") {
+      if (boss.chefMeatGrinderUsed) return;
+      this.startChefMeatGrinder(boss);
+    } else if (skill.id === "hidden-magic-box") {
+      this.spawnHiddenMagicBox(boss, skill);
+    } else if (skill.id === "knife-burst") {
+      this.spawnClownKnifeBurst(boss, skill);
+    } else if (skill.id === "surprise-drop") {
+      this.spawnClownSurpriseDrop(boss, skill);
+    } else if (skill.id === "spiral-knife-ultimate") {
+      this.startClownSpiralKnives(boss, skill);
+    } else if (skill.id === "delivery-route") {
+      this.spawnCourierDeliveryRoute(boss, skill);
+    } else if (skill.id === "explosive-parcel") {
+      this.spawnCourierExplosiveParcels(skill);
+    } else if (skill.id === "locker-teleport") {
+      this.spawnCourierLockerTeleport(boss, skill);
+    } else if (skill.id === "signature-lock") {
+      this.spawnCourierSignatureLock(boss, skill);
+    } else if (skill.id === "citywide-delivery") {
+      this.startCourierCitywideDelivery(boss, skill);
     } else if (skill.id === "zombie-siege") {
       this.spawnBeastmasterZombieSiege(skill);
     } else if (skill.id === "hound-rush") {
@@ -4083,10 +5433,50 @@ export class PixiWastelandGame {
       if (boss.beastmasterFrenzyUsed) return;
       boss.beastmasterFrenzyUsed = true;
       this.spawnBeastmasterTotalFrenzy(boss);
+    } else if (skill.id === "toxic-cloud") {
+      this.spawnPlagueDoctorToxicClouds(boss, skill);
+    } else if (skill.id === "infected-patients") {
+      this.spawnPlagueDoctorPatients(boss, skill);
+    } else if (skill.id === "sedative-dart") {
+      this.firePlagueDoctorSedativeDart(boss, skill);
+    } else if (skill.id === "infusion-stand") {
+      this.spawnPlagueDoctorInfusionStands(boss, skill, 3);
+    } else if (skill.id === "quarantine-ward") {
+      this.castPlagueDoctorQuarantineWard(boss, skill);
+    } else if (skill.id === "tesla-turret") {
+      this.spawnTeslaEngineerTurrets(boss, skill);
+    } else if (skill.id === "magnetic-mine") {
+      this.spawnTeslaEngineerMagneticMines(boss, skill);
+    } else if (skill.id === "electric-grid") {
+      this.spawnTeslaEngineerElectricGrid(boss, skill);
+    } else if (skill.id === "overload-repair") {
+      this.castTeslaEngineerOverloadRepair(boss, skill);
+    } else if (skill.id === "blackout-field") {
+      this.castTeslaEngineerBlackoutField(boss, skill);
+    } else if (skill.id === "commander-deploy") {
+      this.castWarConvoyCommanderDeploy(boss, skill);
+    } else if (skill.id === "armored-corridor") {
+      this.castWarConvoyArmoredCorridor(boss, skill);
+    } else if (skill.id === "escort-crossfire") {
+      this.castWarConvoyEscortCrossfire(boss, skill);
+    } else if (skill.id === "ammo-truck-sacrifice") {
+      this.castWarConvoyAmmoTruckSacrifice(boss, skill);
+    } else if (skill.id === "iron-encirclement") {
+      this.castWarConvoyIronEncirclement(boss, skill);
+    } else if (skill.id === "curtain-shift") {
+      this.castMagicianCurtainShift(boss, skill);
+    } else if (skill.id === "spotlight-judgement") {
+      this.castMagicianSpotlightJudgement(boss, skill);
+    } else if (skill.id === "hat-maze") {
+      this.castMagicianHatMaze(boss, skill);
+    } else if (skill.id === "mirror-hall") {
+      this.castMagicianMirrorHall(boss, skill);
+    } else if (skill.id === "finale-theater") {
+      this.castMagicianFinaleTheater(boss, skill);
     } else {
       this.triggerGenericBossSkill(boss, skill);
     }
-    this.emitState(`${this.getBossName(boss.bossId)}: ${skill.name}`);
+    this.emitState(this.getBossName(boss.bossId) + ": " + skill.name);
   }
 
   private triggerGenericBossSkill(boss: BossActor, skill: AdvancedBossSkill): void {
@@ -4113,6 +5503,527 @@ export class PixiWastelandGame {
       const y = clamp(target.y + (spread.length > 1 ? (Math.random() - 0.5) * 120 : 0), 24, MAP_HEIGHT - 24);
       this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, BOSS_VISUAL_THEMES[boss.bossId].accentColor, skill.name);
     }
+  }
+
+  private castWarConvoyCommanderDeploy(boss: BossActor, skill: AdvancedBossSkill): void {
+    for (const vehicle of [...this.convoyVehicles].filter((candidate) => candidate.boss === boss && candidate.kind === "escort")) {
+      this.detonateConvoyVehicle(vehicle);
+    }
+    const count = 4;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + this.spawnSeed * 0.24;
+      this.createConvoyVehicle("escort", boss, angle, skill.radius, 190, 21000, skill.damage);
+    }
+    this.spawnSeed += 1;
+    this.addScreenShake(180, 4);
+  }
+
+  private castWarConvoyArmoredCorridor(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    this.startBossCharge(boss, skill.warningMs, 980, skill.damage, 0xff9f1c, 1250);
+    const laneOffsets = [-170, 170];
+    for (let step = 0; step < 8; step += 1) {
+      for (const side of laneOffsets) {
+        const forward = 160 + step * 110;
+        const x = clamp(boss.x + Math.cos(angle) * forward + Math.cos(angle + Math.PI / 2) * side, 24, MAP_WIDTH - 24);
+        const y = clamp(boss.y + Math.sin(angle) * forward + Math.sin(angle + Math.PI / 2) * side, 24, MAP_HEIGHT - 24);
+        this.spawnDelayedBossBlast(x, y, 86, Math.round(skill.damage * 0.5), skill.warningMs + step * 80, 0xff9f1c, "fire corridor");
+      }
+    }
+  }
+
+  private castWarConvoyEscortCrossfire(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const firePoints = this.getActiveConvoyFirePoints(boss);
+    const total = 28;
+    for (let index = 0; index < total; index += 1) {
+      const source = firePoints[index % firePoints.length];
+      window.setTimeout(() => {
+        if (!this.bosses.includes(boss)) return;
+        const target = this.player ?? boss;
+        const wobble = ((index % 7) - 3) * 0.055;
+        const angle = Math.atan2(target.y - source.y, target.x - source.x) + wobble;
+        this.spawnBossHazard(source.x, source.y, angle, 620, 0xffd166, 1450, 8, "bossProjectile", skill.damage);
+      }, skill.warningMs + index * 42);
+    }
+  }
+
+  private castWarConvoyAmmoTruckSacrifice(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const count = 3;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + this.spawnSeed * 0.31;
+      const vehicle = this.createConvoyVehicle("ammo", boss, angle, skill.radius, 125, 12000, skill.damage);
+      vehicle.speed = 230 + index * 24;
+    }
+    this.spawnSeed += 1;
+  }
+
+  private castWarConvoyIronEncirclement(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const center = { x: this.player.x, y: this.player.y };
+    const count = 6;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count;
+      const x = clamp(center.x + Math.cos(angle) * 360, 24, MAP_WIDTH - 24);
+      const y = clamp(center.y + Math.sin(angle) * 300, 24, MAP_HEIGHT - 24);
+      this.spawnDelayedBossBlast(x, y, 116, Math.round(skill.damage * 0.55), skill.warningMs + index * 90, 0xffd166, "encirclement vehicle");
+      window.setTimeout(() => {
+        if (!this.bosses.includes(boss) || !this.player) return;
+        const fireAngle = Math.atan2(center.y - y, center.x - x);
+        this.spawnBossHazard(x, y, fireAngle, 540, 0xff9f1c, 1600, 12, "bossProjectile", 12);
+      }, skill.warningMs + index * 90);
+    }
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss) || !this.player) return;
+      const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+      boss.pendingChargeAngle = angle;
+      this.startBossCharge(boss, 260, 1160, skill.damage, 0xff4d6d, 950);
+    }, skill.warningMs + 650);
+    this.addScreenShake(360, 9);
+  }
+
+  private createConvoyVehicle(
+    kind: ConvoyVehicleActor["kind"],
+    boss: BossActor,
+    angle: number,
+    radius: number,
+    health: number,
+    lifeMs: number,
+    damage: number,
+  ): ConvoyVehicleActor {
+    const x = clamp(boss.x + Math.cos(angle) * radius, 24, MAP_WIDTH - 24);
+    const y = clamp(boss.y + Math.sin(angle) * radius, 24, MAP_HEIGHT - 24);
+    const view = new Graphics();
+    this.drawConvoyVehicle(view, kind);
+    view.position.set(x, y);
+    view.rotation = angle;
+    this.world.addChild(view);
+    const vehicle: ConvoyVehicleActor = {
+      kind,
+      view,
+      boss,
+      x,
+      y,
+      health,
+      radius: kind === "escort" ? 32 : 36,
+      lifeMs,
+      tickElapsedMs: kind === "escort" ? 760 : 1200,
+      damage,
+      orbitAngle: angle,
+      orbitRadius: radius,
+      speed: kind === "ammo" ? 210 : undefined,
+    };
+    this.convoyVehicles.push(vehicle);
+    return vehicle;
+  }
+
+  private getActiveConvoyFirePoints(boss: BossActor): { x: number; y: number }[] {
+    const escorts = this.convoyVehicles.filter((vehicle) => vehicle.boss === boss && vehicle.kind === "escort");
+    if (escorts.length > 0) return escorts.map((vehicle) => ({ x: vehicle.x, y: vehicle.y }));
+    return [
+      { x: boss.x - 80, y: boss.y - 54 },
+      { x: boss.x - 80, y: boss.y + 54 },
+      { x: boss.x + 80, y: boss.y - 54 },
+      { x: boss.x + 80, y: boss.y + 54 },
+    ];
+  }
+
+  private drawConvoyVehicle(view: Graphics, kind: ConvoyVehicleActor["kind"]): void {
+    view.clear();
+    view
+      .roundRect(-38, -24, 76, 48, 5)
+      .fill({ color: kind === "escort" ? 0x293241 : 0x3a2f24, alpha: 0.95 })
+      .stroke({ color: kind === "escort" ? 0xffd166 : 0xff9f1c, alpha: 0.88, width: 3 })
+      .rect(-18, -34, 36, 20)
+      .fill(kind === "escort" ? 0x577590 : 0x8d99ae)
+      .circle(-24, 26, 8)
+      .fill(0x111111)
+      .circle(24, 26, 8)
+      .fill(0x111111)
+      .rect(-24, -8, 48, 16)
+      .fill({ color: kind === "escort" ? 0xfff3b0 : 0xffd166, alpha: 0.72 });
+    if (kind === "escort") {
+      view.rect(28, -10, 28, 8).fill(0xd90429);
+      view.rect(28, 4, 28, 8).fill(0xd90429);
+    } else {
+      view.rect(-28, -6, 56, 12).fill({ color: 0xff4d6d, alpha: 0.72 });
+    }
+  }
+
+  private spawnTeslaEngineerTurrets(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const count = 3;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + this.spawnSeed * 0.23;
+      const x = clamp(this.player.x + Math.cos(angle) * 260, 24, MAP_WIDTH - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * 230, 24, MAP_HEIGHT - 24);
+      this.createTeslaDevice(boss, "turret", x, y, 110, 16000);
+    }
+    this.spawnHitSparks(boss.x, boss.y, 0x68e1fd, 18);
+    this.spawnSeed += 1;
+  }
+
+  private spawnTeslaEngineerMagneticMines(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const count = 4;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + this.spawnSeed * 0.41;
+      const x = clamp(this.player.x + Math.cos(angle) * (170 + (index % 2) * 90), 24, MAP_WIDTH - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * (170 + (index % 2) * 90), 24, MAP_HEIGHT - 24);
+      const marker = new Graphics();
+      marker.circle(0, 0, skill.radius).fill({ color: 0x68e1fd, alpha: 0.08 }).stroke({ color: 0xd9f7ff, alpha: 0.68, width: 3 });
+      marker.position.set(x, y);
+      this.world.addChild(marker);
+      window.setTimeout(() => {
+        if (!marker.destroyed) {
+          this.world.removeChild(marker);
+          marker.destroy();
+        }
+        if (!this.bosses.includes(boss)) return;
+        this.spawnBossHazard(x, y, 0, 0, 0x68e1fd, 4200, skill.radius, "magneticMine", skill.damage);
+      }, skill.warningMs);
+    }
+    this.spawnSeed += 1;
+  }
+
+  private spawnTeslaEngineerElectricGrid(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const nodes: TeslaDeviceActor[] = [];
+    const count = 4;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + Math.PI / 4 + this.spawnSeed * 0.13;
+      const node = this.createTeslaDevice(
+        boss,
+        "node",
+        clamp(this.player.x + Math.cos(angle) * 330, 24, MAP_WIDTH - 24),
+        clamp(this.player.y + Math.sin(angle) * 270, 24, MAP_HEIGHT - 24),
+        70,
+        10500,
+      );
+      nodes.push(node);
+    }
+    for (let index = 0; index < nodes.length; index += 1) {
+      this.createTeslaGrid(nodes[index], nodes[(index + 1) % nodes.length], skill.damage, 9500);
+    }
+    this.spawnSeed += 1;
+  }
+
+  private castTeslaEngineerOverloadRepair(boss: BossActor, skill: AdvancedBossSkill): void {
+    const devices = this.teslaDevices.filter((device) => device.boss === boss);
+    if (devices.length === 0) {
+      boss.health = Math.min(boss.maxHealth, boss.health + 420);
+      this.showDamageNumber(boss.x, boss.y - 50, 420, "#68e1fd", "+");
+      this.spawnTeslaEngineerTurrets(boss, { ...skill, damage: 8, radius: 9999 });
+      return;
+    }
+    for (const device of devices) {
+      device.health += 65;
+      device.lifeMs += 4500;
+      device.tickElapsedMs = Math.max(device.tickElapsedMs, 900);
+      this.spawnHitSparks(device.x, device.y, 0xd9f7ff, 10);
+    }
+    for (const grid of this.teslaGrids.filter((candidate) => candidate.start.boss === boss || candidate.end.boss === boss)) {
+      grid.lifeMs += 3600;
+      grid.damage += 2;
+    }
+    this.spawnDelayedBossBlast(boss.x, boss.y, skill.radius, skill.damage, skill.warningMs, 0x68e1fd, "overload repair");
+  }
+
+  private castTeslaEngineerBlackoutField(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const center = { x: this.player.x, y: this.player.y };
+    const safeZones = [0, 1, 2].map((index) => {
+      const angle = (Math.PI * 2 * index) / 3 + this.spawnSeed * 0.37;
+      return {
+        x: clamp(center.x + Math.cos(angle) * 310, 24, MAP_WIDTH - 24),
+        y: clamp(center.y + Math.sin(angle) * 250, 24, MAP_HEIGHT - 24),
+        radius: 105,
+      };
+    });
+    const field = new Graphics();
+    field
+      .circle(0, 0, 720)
+      .fill({ color: 0x05070d, alpha: 0.36 })
+      .stroke({ color: 0x68e1fd, alpha: 0.72, width: 7 });
+    for (const zone of safeZones) {
+      field
+        .circle(zone.x - center.x, zone.y - center.y, zone.radius)
+        .fill({ color: 0xd9f7ff, alpha: 0.16 })
+        .stroke({ color: 0xd9f7ff, alpha: 0.85, width: 4 });
+    }
+    field.position.set(center.x, center.y);
+    this.world.addChild(field);
+    this.spawnTeslaEngineerTurrets(boss, { ...skill, damage: 8 });
+    this.spawnTeslaEngineerElectricGrid(boss, { ...skill, damage: 10 });
+    window.setTimeout(() => {
+      if (!field.destroyed) {
+        this.world.removeChild(field);
+        field.destroy();
+      }
+      if (!this.player || !this.bosses.includes(boss)) return;
+      const safe = safeZones.some((zone) => distance(this.player!, zone) <= zone.radius);
+      if (!safe && distance(this.player, center) <= 760) {
+        this.applyPlayerDamage(skill.damage);
+        this.playerSlowMs = Math.max(this.playerSlowMs, 1800);
+        this.addScreenShake(420, 10);
+      }
+    }, 5200);
+    this.spawnSeed += 1;
+  }
+
+  private createTeslaDevice(boss: BossActor, kind: "turret" | "node", x: number, y: number, health: number, lifeMs: number): TeslaDeviceActor {
+    const view = new Graphics();
+    this.drawTeslaDevice(view, kind);
+    view.position.set(x, y);
+    this.world.addChild(view);
+    const device: TeslaDeviceActor = {
+      view,
+      kind,
+      boss,
+      x,
+      y,
+      health,
+      radius: kind === "turret" ? 32 : 26,
+      lifeMs,
+      tickElapsedMs: kind === "turret" ? 900 : 0,
+    };
+    this.teslaDevices.push(device);
+    return device;
+  }
+
+  private createTeslaGrid(start: TeslaDeviceActor, end: TeslaDeviceActor, damage: number, lifeMs: number): void {
+    const view = new Graphics();
+    this.world.addChild(view);
+    this.teslaGrids.push({
+      view,
+      start,
+      end,
+      lifeMs,
+      tickElapsedMs: 420,
+      damage,
+    });
+  }
+
+  private drawTeslaDevice(view: Graphics, kind: "turret" | "node"): void {
+    view.clear();
+    if (kind === "turret") {
+      view
+        .rect(-24, -18, 48, 36)
+        .fill({ color: 0x1f2937, alpha: 0.94 })
+        .stroke({ color: 0x68e1fd, alpha: 0.9, width: 3 })
+        .rect(10, -6, 38, 12)
+        .fill(0xc8d5d9)
+        .circle(0, 0, 10)
+        .fill(0x68e1fd);
+      return;
+    }
+    view
+      .circle(0, 0, 24)
+      .fill({ color: 0x111827, alpha: 0.92 })
+      .stroke({ color: 0xd9f7ff, alpha: 0.86, width: 3 })
+      .circle(0, 0, 9)
+      .fill(0x68e1fd)
+      .rect(-4, -42, 8, 84)
+      .fill({ color: 0xc8d5d9, alpha: 0.74 });
+  }
+
+  private spawnPlagueDoctorToxicClouds(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const lowHealth = boss.health <= (skill.lowHealthThreshold ?? 0);
+    const count = lowHealth ? 5 : 3;
+    for (let index = 0; index < count; index += 1) {
+      const angle = this.spawnSeed * 0.71 + (Math.PI * 2 * index) / count;
+      const ring = index === 0 ? 0 : 150 + (index % 2) * 115;
+      const x = clamp(this.player.x + Math.cos(angle) * ring, 24, MAP_WIDTH - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * ring, 24, MAP_HEIGHT - 24);
+      this.spawnDelayedBossBlast(x, y, skill.radius + (lowHealth ? 45 : 0), 1, skill.warningMs, 0xa7c957, "toxic cloud", () =>
+        this.spawnToxicCloud(x, y, skill.radius + (lowHealth ? 70 : 25), lowHealth ? (skill.lowHealthDamage ?? skill.damage) : skill.damage, lowHealth ? 7200 : 5600),
+      );
+    }
+    this.spawnSeed += 1;
+  }
+
+  private spawnPlagueDoctorPatients(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const count = 7;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + this.spawnSeed * 0.17;
+      const x = clamp(boss.x + Math.cos(angle) * (210 + (index % 3) * 42), 24, MAP_WIDTH - 24);
+      const y = clamp(boss.y + Math.sin(angle) * (210 + (index % 3) * 42), 24, MAP_HEIGHT - 24);
+      const patient = this.spawnEnemyActor(x, y, "zombie", 42, 42);
+      patient.plaguePatient = true;
+      patient.contactDamageElapsedMs = 700;
+      this.drawPlaguePatient(patient.view);
+    }
+    this.spawnHitSparks(boss.x, boss.y, 0xa7c957, 18);
+  }
+
+  private firePlagueDoctorSedativeDart(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    this.spawnBossHazard(boss.x, boss.y, angle, 560, 0xa7c957, 1800, 12, "sedativeDart", skill.damage);
+    this.spawnHitSparks(boss.x, boss.y, 0xc8d5d9, 8);
+  }
+
+  private spawnPlagueDoctorInfusionStands(boss: BossActor, skill: AdvancedBossSkill, count: number): void {
+    if (!this.player) return;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + this.spawnSeed * 0.31;
+      const x = clamp(this.player.x + Math.cos(angle) * skill.radius, 24, MAP_WIDTH - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * skill.radius, 24, MAP_HEIGHT - 24);
+      const view = new Graphics();
+      this.drawInfusionStand(view);
+      view.position.set(x, y);
+      this.world.addChild(view);
+      this.infusionStands.push({
+        view,
+        boss,
+        x,
+        y,
+        health: 90,
+        radius: 28,
+        lifeMs: 12000,
+        tickElapsedMs: 1000,
+      });
+      this.spawnToxicCloud(x, y, 76, Math.max(3, Math.round(skill.damage * 0.5)), 2200);
+    }
+    this.spawnSeed += 1;
+  }
+
+  private castPlagueDoctorQuarantineWard(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const center = { x: this.player.x, y: this.player.y };
+    const radius = 520;
+    const ward = new Graphics();
+    ward
+      .circle(0, 0, radius)
+      .fill({ color: 0x142315, alpha: 0.1 })
+      .stroke({ color: 0xa7c957, alpha: 0.88, width: 8 })
+      .circle(0, 0, radius - 64)
+      .stroke({ color: 0xc8d5d9, alpha: 0.28, width: 3 });
+    ward.position.set(center.x, center.y);
+    this.world.addChild(ward);
+    this.spawnPlagueDoctorInfusionStands(boss, { ...skill, radius: 300, damage: 10 }, 3);
+    for (let index = 0; index < 10; index += 1) {
+      const angle = (Math.PI * 2 * index) / 10;
+      const patient = this.spawnEnemyActor(
+        clamp(center.x + Math.cos(angle) * 390, 24, MAP_WIDTH - 24),
+        clamp(center.y + Math.sin(angle) * 390, 24, MAP_HEIGHT - 24),
+        "zombie",
+        36,
+        48,
+      );
+      patient.plaguePatient = true;
+      this.drawPlaguePatient(patient.view);
+    }
+    for (let index = 0; index < 12; index += 1) {
+      const angle = (Math.PI * 2 * index) / 12;
+      this.spawnToxicCloud(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius, 92, 10, 8200);
+    }
+    window.setTimeout(() => {
+      if (!ward.destroyed) {
+        this.world.removeChild(ward);
+        ward.destroy();
+      }
+      if (!this.player || !this.bosses.includes(boss)) return;
+      const activeStands = this.infusionStands.filter((stand) => stand.boss === boss && distance(stand, center) <= radius + 60).length;
+      if (activeStands > 0 && distance(this.player, center) <= radius) {
+        this.applyPlayerDamage(skill.damage + activeStands * 6);
+        this.playerSlowMs = Math.max(this.playerSlowMs, 2400);
+        this.addScreenShake(360, 9);
+      }
+    }, 8200);
+    this.addScreenShake(220, 5);
+  }
+
+  private spawnToxicCloud(x: number, y: number, radius: number, damage: number, lifeMs: number): void {
+    const view = new Graphics();
+    view
+      .circle(0, 0, radius)
+      .fill({ color: 0x4f772d, alpha: 0.22 })
+      .stroke({ color: 0xa7c957, alpha: 0.58, width: 4 });
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (Math.PI * 2 * index) / 9;
+      view.circle(Math.cos(angle) * radius * 0.48, Math.sin(angle) * radius * 0.42, radius * 0.12).fill({ color: 0xa7c957, alpha: 0.16 });
+    }
+    view.position.set(clamp(x, 24, MAP_WIDTH - 24), clamp(y, 24, MAP_HEIGHT - 24));
+    this.world.addChild(view);
+    this.bossHazards.push({
+      view,
+      kind: "toxicCloud",
+      x: view.position.x,
+      y: view.position.y,
+      radius,
+      lifeMs,
+      damage,
+      tickElapsedMs: 520,
+      expiresIntoFire: false,
+      velocityX: 0,
+      velocityY: 0,
+    });
+  }
+
+  private spawnMedicineMist(x: number, y: number): void {
+    const radius = 130;
+    const view = new Graphics();
+    view
+      .circle(0, 0, radius)
+      .fill({ color: 0xc8d5d9, alpha: 0.14 })
+      .stroke({ color: 0xa7c957, alpha: 0.44, width: 3 })
+      .circle(0, 0, 32)
+      .fill({ color: 0xa7c957, alpha: 0.16 });
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.bossHazards.push({
+      view,
+      kind: "medicineMist",
+      x,
+      y,
+      radius,
+      lifeMs: 5200,
+      damage: 0,
+      tickElapsedMs: 700,
+      expiresIntoFire: false,
+      velocityX: 0,
+      velocityY: 0,
+    });
+  }
+
+  private healActorsNear(x: number, y: number, radius: number, amount: number): void {
+    for (const enemy of this.enemies) {
+      if (distance(enemy, { x, y }) > radius) continue;
+      enemy.health += amount;
+      this.showDamageNumber(enemy.x, enemy.y - 24, amount, "#a7c957", "+");
+    }
+    for (const boss of this.bosses) {
+      if (distance(boss, { x, y }) > radius + 34) continue;
+      boss.health = Math.min(boss.maxHealth, boss.health + amount * 3);
+      this.showDamageNumber(boss.x, boss.y - 46, amount * 3, "#a7c957", "+");
+    }
+  }
+
+  private drawInfusionStand(view: Graphics): void {
+    view.clear();
+    view
+      .rect(-4, -54, 8, 102)
+      .fill({ color: 0xc8d5d9, alpha: 0.94 })
+      .circle(0, -62, 10)
+      .fill(0xa7c957)
+      .rect(-28, -18, 56, 36)
+      .fill({ color: 0x142315, alpha: 0.86 })
+      .stroke({ color: 0xa7c957, alpha: 0.82, width: 3 })
+      .circle(-12, 0, 8)
+      .fill(0x4f772d)
+      .circle(12, 0, 8)
+      .fill(0xc8d5d9);
+  }
+
+  private drawPlaguePatient(view: Graphics): void {
+    this.drawZombieEnemy(view);
+    view.circle(0, -18, 6).fill({ color: 0xa7c957, alpha: 0.8 });
+    view.circle(7, -13, 4).fill({ color: 0xc8d5d9, alpha: 0.72 });
   }
 
   private spawnBeastmasterZombieSiege(skill: AdvancedBossSkill): void {
@@ -4205,6 +6116,164 @@ export class PixiWastelandGame {
     this.spawnHitSparks(boss.x, boss.y, BOSS_VISUAL_THEMES[boss.bossId].accentColor, 18);
   }
 
+  private spawnChefChiliOilCover(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    for (let index = 0; index < CHEF_CHILI_OIL_BOTTLE_COUNT; index += 1) {
+      const angle = (Math.PI * 2 * index) / CHEF_CHILI_OIL_BOTTLE_COUNT + this.spawnSeed * 0.31;
+      const ring = index % 2 === 0 ? CHEF_CHILI_OIL_SPREAD_RADIUS * 0.34 : CHEF_CHILI_OIL_SPREAD_RADIUS * 0.62;
+      const x = clamp(this.player.x + Math.cos(angle) * ring, 24, this.getMapWidth() - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * ring, 24, this.getMapHeight() - 24);
+      this.spawnChefChiliOilBottle(boss.x, boss.y, x, y, index);
+      this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs + CHEF_CHILI_OIL_BOTTLE_FLIGHT_MS + index * 70, 0xff6b00, "chili oil", () =>
+        this.spawnFirePit(x, y),
+      );
+    }
+    this.spawnSeed += 1;
+  }
+
+  private spawnChefChiliOilBottle(startX: number, startY: number, targetX: number, targetY: number, index: number): void {
+    const bottle = new Graphics();
+    this.drawChiliOilBottle(bottle);
+    bottle.position.set(startX, startY - 30);
+    bottle.rotation = Math.atan2(targetY - startY, targetX - startX);
+    this.world.addChild(bottle);
+    gsap.to(bottle.position, {
+      x: targetX,
+      y: targetY,
+      duration: (CHEF_CHILI_OIL_BOTTLE_FLIGHT_MS + index * 70) / 1000,
+      ease: "power2.out",
+      onUpdate: () => {
+        bottle.rotation += 0.24;
+      },
+      onComplete: () => {
+        if (bottle.destroyed) return;
+        this.world.removeChild(bottle);
+        bottle.destroy();
+      },
+    });
+  }
+
+  private drawChiliOilBottle(view: Graphics): void {
+    view.clear();
+    view
+      .roundRect(-8, -18, 16, 34, 5)
+      .fill({ color: 0xff6b00, alpha: 0.9 })
+      .stroke({ color: 0xfff3b0, width: 2 })
+      .rect(-5, -26, 10, 10)
+      .fill(0x5a1f08)
+      .circle(0, 2, 5)
+      .fill({ color: 0xffba08, alpha: 0.7 });
+  }
+
+  private spawnChefCrashLanding(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    this.spawnSeed += 1;
+    const angle = this.spawnSeed * 2.399963229728653;
+    const x = clamp(this.player.x + Math.cos(angle) * 120, 24, this.getMapWidth() - 24);
+    const y = clamp(this.player.y + Math.sin(angle) * 120, 24, this.getMapHeight() - 24);
+    boss.chefAirborne = true;
+    boss.mode = "windup";
+    boss.windupMs = skill.warningMs + 180;
+    boss.view.visible = true;
+    boss.label.visible = true;
+    gsap.killTweensOf(boss.view.position);
+    gsap.to(boss.view.position, {
+      y: boss.y + CHEF_CRASH_AIRBORNE_OFFSET_Y,
+      duration: 0.28,
+      ease: "power2.in",
+      onUpdate: () => {
+        boss.y = boss.view.position.y;
+        boss.label.position.set(boss.x - 64, boss.y - 62);
+      },
+      onComplete: () => {
+        if (!this.bosses.includes(boss)) return;
+        boss.view.visible = false;
+        boss.label.visible = false;
+      },
+    });
+    this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, 0xc8d5d9, "鍧犳満", () => {
+      if (!this.bosses.includes(boss)) return;
+      gsap.killTweensOf(boss.view.position);
+      boss.chefAirborne = false;
+      boss.mode = "chase";
+      boss.windupMs = 0;
+      boss.chargeMs = 0;
+      boss.view.visible = true;
+      boss.label.visible = true;
+      this.setActorPosition(boss, x, y);
+      this.spawnHitSparks(x, y, 0xfff3b0, 24);
+    });
+  }
+
+  private startChefMeatGrinder(boss: BossActor): void {
+    boss.chefMeatGrinderUsed = true;
+    boss.chefMeatGrinderMs = CHEF_MEAT_GRINDER_DURATION_MS;
+    boss.chefMeatGrinderTickMs = 0;
+    boss.chefMeatGrinderAngle = boss.view.rotation;
+    if (!boss.chefMeatGrinderView || boss.chefMeatGrinderView.destroyed) {
+      boss.chefMeatGrinderView = new Graphics();
+      this.world.addChild(boss.chefMeatGrinderView);
+    }
+    this.drawChefMeatGrinder(boss);
+    this.addScreenShake(260, 6);
+  }
+
+  private updateChefMeatGrinder(boss: BossActor, deltaMs: number): void {
+    if ((boss.chefMeatGrinderMs ?? 0) <= 0) return;
+    boss.chefMeatGrinderMs = Math.max(0, (boss.chefMeatGrinderMs ?? 0) - deltaMs);
+    boss.chefMeatGrinderTickMs = (boss.chefMeatGrinderTickMs ?? 0) + deltaMs;
+    boss.chefMeatGrinderAngle = (boss.chefMeatGrinderAngle ?? 0) + deltaMs * 0.009;
+    this.drawChefMeatGrinder(boss);
+
+    if (this.player && boss.chefMeatGrinderTickMs >= CHEF_MEAT_GRINDER_TICK_MS) {
+      boss.chefMeatGrinderTickMs = 0;
+      if (this.isPlayerInsideChefMeatGrinder(boss)) {
+        this.applyPlayerDamage(CHEF_MEAT_GRINDER_DAMAGE);
+      }
+    }
+
+    if ((boss.chefMeatGrinderMs ?? 0) <= 0 && boss.chefMeatGrinderView && !boss.chefMeatGrinderView.destroyed) {
+      this.world.removeChild(boss.chefMeatGrinderView);
+      boss.chefMeatGrinderView.destroy();
+      boss.chefMeatGrinderView = undefined;
+    }
+  }
+
+  private drawChefMeatGrinder(boss: BossActor): void {
+    if (!boss.chefMeatGrinderView) return;
+    const view = boss.chefMeatGrinderView;
+    view.clear();
+    view.position.set(boss.x, boss.y);
+    const baseAngle = boss.chefMeatGrinderAngle ?? 0;
+    for (let index = 0; index < CHEF_MEAT_GRINDER_ARM_COUNT; index += 1) {
+      const angle = baseAngle + (Math.PI * 2 * index) / CHEF_MEAT_GRINDER_ARM_COUNT;
+      const endX = Math.cos(angle) * CHEF_MEAT_GRINDER_ARM_LENGTH;
+      const endY = Math.sin(angle) * CHEF_MEAT_GRINDER_ARM_LENGTH;
+      view
+        .moveTo(0, 0)
+        .lineTo(endX, endY)
+        .stroke({ color: 0xff6b00, alpha: 0.88, width: 16 })
+        .circle(endX, endY, 18)
+        .fill({ color: 0xc8d5d9, alpha: 0.95 })
+        .stroke({ color: 0xfff3b0, alpha: 0.78, width: 3 });
+    }
+    view.circle(0, 0, 34).fill({ color: 0x6b1f1f, alpha: 0.72 }).stroke({ color: 0xff6b00, width: 4 });
+  }
+
+  private isPlayerInsideChefMeatGrinder(boss: BossActor): boolean {
+    if (!this.player) return false;
+    const baseAngle = boss.chefMeatGrinderAngle ?? 0;
+    for (let index = 0; index < CHEF_MEAT_GRINDER_ARM_COUNT; index += 1) {
+      const angle = baseAngle + (Math.PI * 2 * index) / CHEF_MEAT_GRINDER_ARM_COUNT;
+      const end = {
+        x: boss.x + Math.cos(angle) * CHEF_MEAT_GRINDER_ARM_LENGTH,
+        y: boss.y + Math.sin(angle) * CHEF_MEAT_GRINDER_ARM_LENGTH,
+      };
+      if (distancePointToSegment(this.player, boss, end) <= 32) return true;
+    }
+    return distance(this.player, boss) <= 46;
+  }
+
   private spawnPressureCookerBomb(boss: BossActor, skill: AdvancedBossSkill): void {
     const target = this.player ?? boss;
     const lowHealth = boss.health <= (skill.lowHealthThreshold ?? 0);
@@ -4215,9 +6284,150 @@ export class PixiWastelandGame {
       lowHealth ? (skill.lowHealthDamage ?? skill.damage) : skill.damage,
       skill.warningMs,
       0xc8d5d9,
-      "高压锅",
+      "pressure cooker",
       () => (lowHealth ? this.spawnBigFirePit(target.x, target.y) : this.spawnFirePit(target.x, target.y)),
     );
+  }
+
+  private spawnHiddenMagicBox(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x) + (this.spawnSeed % 2 === 0 ? 0.65 : -0.65);
+    const x = clamp(this.player.x + Math.cos(angle) * 110, 24, this.getMapWidth() - 24);
+    const y = clamp(this.player.y + Math.sin(angle) * 110, 24, this.getMapHeight() - 24);
+    const view = new Graphics();
+    this.drawHiddenMagicBox(view);
+    view.position.set(x, y);
+    this.world.addChild(view);
+    this.spawnSeed += 1;
+    this.bossHazards.push({
+      view,
+      kind: "magicBox",
+      x,
+      y,
+      radius: CLOWN_MAGIC_BOX_TRIGGER_RADIUS,
+      lifeMs: 9000,
+      damage: skill.damage,
+      tickElapsedMs: 0,
+      expiresIntoFire: false,
+      velocityX: 0,
+      velocityY: 0,
+      effect: "freeze",
+    });
+  }
+
+  private drawHiddenMagicBox(view: Graphics): void {
+    view.clear();
+    view
+      .roundRect(-24, -22, 48, 44, 7)
+      .fill({ color: 0x241433, alpha: 0.42 })
+      .stroke({ color: 0xfff3b0, alpha: 0.28, width: 2 })
+      .rect(-18, -4, 36, 8)
+      .fill({ color: 0xff4d6d, alpha: 0.36 })
+      .rect(-4, -18, 8, 36)
+      .fill({ color: 0x68e1fd, alpha: 0.28 });
+  }
+
+  private spawnClownKnifeBurst(boss: BossActor, skill: AdvancedBossSkill): void {
+    this.drawPhaseRing(boss.x, boss.y, 150);
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss)) return;
+      for (let index = 0; index < CLOWN_KNIFE_BURST_COUNT; index += 1) {
+        const angle = (Math.PI * 2 * index) / CLOWN_KNIFE_BURST_COUNT;
+        this.spawnKnifeHazard(boss.x, boss.y, angle, 460, skill.damage);
+      }
+    }, skill.warningMs);
+  }
+
+  private spawnClownSurpriseDrop(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const approachAngle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    const target = {
+      x: clamp(this.player.x - Math.cos(approachAngle) * 76, 24, this.getMapWidth() - 24),
+      y: clamp(this.player.y - Math.sin(approachAngle) * 76, 24, this.getMapHeight() - 24),
+    };
+    this.spawnClownSurpriseMarker(target.x, target.y, skill.radius, skill.warningMs);
+    window.setTimeout(() => {
+      if (!this.player || !this.bosses.includes(boss)) return;
+      this.setActorPosition(boss, target.x, target.y);
+      boss.view.rotation = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+      this.spawnHitSparks(boss.x, boss.y, 0xff4d6d, 18);
+      for (let index = 0; index < CLOWN_SURPRISE_SLASH_COUNT; index += 1) {
+        window.setTimeout(() => {
+          if (!this.player || !this.bosses.includes(boss)) return;
+          this.spawnClownSlashVisual(boss.x, boss.y, boss.view.rotation + (index === 0 ? -0.22 : 0.22));
+          if (distance(this.player, boss) <= skill.radius + 18) {
+            this.applyPlayerDamage(CLOWN_SURPRISE_SLASH_DAMAGE);
+          }
+        }, index * 170);
+      }
+      window.setTimeout(() => {
+        if (!this.player || !this.bosses.includes(boss)) return;
+        const retreatAngle = Math.atan2(boss.y - this.player.y, boss.x - this.player.x);
+        const x = clamp(this.player.x + Math.cos(retreatAngle) * CLOWN_SURPRISE_RETREAT_DISTANCE, 24, this.getMapWidth() - 24);
+        const y = clamp(this.player.y + Math.sin(retreatAngle) * CLOWN_SURPRISE_RETREAT_DISTANCE, 24, this.getMapHeight() - 24);
+        this.setActorPosition(boss, x, y);
+      }, CLOWN_SURPRISE_SLASH_COUNT * 170 + 140);
+    }, skill.warningMs);
+  }
+
+  private spawnClownSlashVisual(x: number, y: number, angle: number): void {
+    const slash = new Graphics();
+    slash
+      .moveTo(0, 0)
+      .lineTo(96, 0)
+      .stroke({ color: 0xfff3b0, alpha: 0.95, width: 8 })
+      .moveTo(12, -14)
+      .lineTo(82, 14)
+      .stroke({ color: 0xff4d6d, alpha: 0.72, width: 4 });
+    slash.position.set(x, y);
+    slash.rotation = angle;
+    this.world.addChild(slash);
+    window.setTimeout(() => {
+      if (slash.destroyed) return;
+      this.world.removeChild(slash);
+      slash.destroy();
+    }, 160);
+  }
+
+  private spawnClownSurpriseMarker(x: number, y: number, radius: number, lifeMs: number): void {
+    const marker = new Graphics();
+    marker
+      .circle(0, 0, radius)
+      .fill({ color: 0xff4d6d, alpha: 0.12 })
+      .stroke({ color: 0xfff3b0, alpha: 0.78, width: 3 })
+      .moveTo(-radius * 0.45, 0)
+      .lineTo(radius * 0.45, 0)
+      .stroke({ color: 0xff4d6d, alpha: 0.85, width: 5 });
+    marker.position.set(x, y);
+    this.world.addChild(marker);
+    window.setTimeout(() => {
+      if (marker.destroyed) return;
+      this.world.removeChild(marker);
+      marker.destroy();
+    }, lifeMs);
+  }
+
+  private startClownSpiralKnives(boss: BossActor, skill: AdvancedBossSkill): void {
+    this.drawPhaseRing(boss.x, boss.y, 230);
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss)) return;
+      boss.clownSpiralKnifeMs = CLOWN_SPIRAL_KNIFE_DURATION_MS;
+      boss.clownSpiralKnifeTickMs = 0;
+      boss.clownSpiralKnifeAngle = boss.view.rotation;
+      this.spawnHitSparks(boss.x, boss.y, 0xfff3b0, 24);
+    }, skill.warningMs);
+  }
+
+  private updateClownSpiralKnives(boss: BossActor, deltaMs: number): void {
+    if ((boss.clownSpiralKnifeMs ?? 0) <= 0) return;
+    boss.clownSpiralKnifeMs = Math.max(0, (boss.clownSpiralKnifeMs ?? 0) - deltaMs);
+    boss.clownSpiralKnifeTickMs = (boss.clownSpiralKnifeTickMs ?? 0) + deltaMs;
+    if (boss.clownSpiralKnifeTickMs < CLOWN_SPIRAL_KNIFE_TICK_MS) return;
+    boss.clownSpiralKnifeTickMs = 0;
+    const baseAngle = boss.clownSpiralKnifeAngle ?? 0;
+    boss.clownSpiralKnifeAngle = baseAngle + CLOWN_SPIRAL_KNIFE_STEP;
+    this.spawnKnifeHazard(boss.x, boss.y, baseAngle, 360, 8);
+    this.spawnKnifeHazard(boss.x, boss.y, baseAngle + Math.PI, 360, 8);
   }
 
   private spawnJackInTheBox(boss: BossActor, skill: AdvancedBossSkill): void {
@@ -4263,16 +6473,16 @@ export class PixiWastelandGame {
     if (effect === "blast") {
       this.applyPlayerDamage(80);
       this.spawnHitSparks(hazard.x, hazard.y, 0xff4d6d, 24);
-      this.emitState("魔盒爆炸：玩家受到重创。");
+      this.emitState("Magic box blast: player took heavy damage.");
       return;
     }
     if (effect === "freeze") {
-      this.playerFreezeMs = Math.max(this.playerFreezeMs, 3000);
-      this.emitState("魔盒冰冻：玩家无法移动。");
+      this.playerFreezeMs = Math.max(this.playerFreezeMs, CLOWN_MAGIC_BOX_FREEZE_MS);
+      this.emitState("Magic box freeze: player cannot move.");
       return;
     }
     this.playerVisionNarrowMs = Math.max(this.playerVisionNarrowMs, 5000);
-    this.emitState("魔盒幻术：玩家视野被压缩。");
+    this.emitState("Magic box illusion: player vision narrowed.");
   }
 
   private spawnCauldronDescend(boss: BossActor, skill: AdvancedBossSkill): void {
@@ -4281,11 +6491,482 @@ export class PixiWastelandGame {
     const angle = this.spawnSeed * 2.399963229728653;
     const x = clamp(this.player.x + Math.cos(angle) * 160, 24, MAP_WIDTH - 24);
     const y = clamp(this.player.y + Math.sin(angle) * 160, 24, MAP_HEIGHT - 24);
-    this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, 0xc8d5d9, "太锅", () => {
+    this.spawnDelayedBossBlast(x, y, skill.radius, skill.damage, skill.warningMs, 0xc8d5d9, "澶攨", () => {
       if (!this.bosses.includes(boss)) return;
       this.setActorPosition(boss, x, y);
       this.spawnHitSparks(x, y, 0xfff3b0, 20);
     });
+  }
+
+  private castMagicianCurtainShift(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    this.removeMagicianStageProps();
+    const curtains = createMagicianCurtains(this.spawnSeed);
+    const centerX = this.getMapWidth() / 2;
+    const centerY = this.getMapHeight() / 2;
+    const laneWidth = this.getMapWidth() / (curtains.length + 1);
+    const curtainHeight = this.getMapHeight() + 400;
+    for (const curtain of curtains) {
+      const x = clamp(centerX + curtain.lane * laneWidth, 24, this.getMapWidth() - 24);
+      const y = centerY;
+      const view = new Graphics();
+      view
+        .rect(-22, -curtainHeight / 2, 44, curtainHeight)
+        .fill({ color: 0x180d26, alpha: curtain.kind === 'solid' ? 0.78 : 0.34 })
+        .stroke({ color: curtain.kind === 'solid' ? 0xfff3b0 : 0x9d4edd, alpha: curtain.kind === 'solid' ? 0.9 : 0.38, width: curtain.kind === 'solid' ? 3 : 2 });
+      view.position.set(x, y);
+      this.world.addChild(view);
+      this.magicianStageProps.push({
+        view,
+        kind: 'curtain',
+        solid: curtain.kind === 'solid',
+        x,
+        y,
+        radius: curtainHeight / 2,
+        damage: curtain.kind === 'solid' ? 2 : 0,
+        expiresAtMs: performance.now() + 3600,
+      });
+    }
+    window.setTimeout(() => {
+      if (!this.player || !this.bosses.includes(boss)) return;
+      for (const prop of this.magicianStageProps.filter((candidate) => candidate.kind === 'curtain' && candidate.solid)) {
+        this.spawnDelayedBossBlast(prop.x, this.player.y, 180, skill.damage, 80, 0xfff3b0, '幕布合拢');
+      }
+      this.startMagicianCurtainCall(boss.x, boss.y, 'standard');
+    }, skill.warningMs + 1200);
+    this.spawnSeed += 1;
+  }
+
+  private castMagicianSpotlightJudgement(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    this.removeMagicianStageProps();
+    const spotlights = createMagicianSpotlights(this.spawnSeed);
+    const orbitDurationMs = Math.max(3000, skill.warningMs);
+    const orbitSpeed = Math.PI * 2 * MAGICIAN_SPOTLIGHT_ORBIT_ROUNDS / (orbitDurationMs / 1000);
+    const now = performance.now();
+    const centerX = this.player.x;
+    const centerY = this.player.y;
+    const radius = Math.max(MAGICIAN_SPOTLIGHT_STAGE_RADIUS, skill.radius);
+    const orbitRadiusX = Math.min(980, Math.max(760, radius * 3.85));
+    const orbitRadiusY = Math.min(700, Math.max(520, radius * 2.75));
+    for (const spotlight of spotlights) {
+      const angle = (Math.PI * 2 * spotlight.index) / spotlights.length - Math.PI / 2;
+      const x = clamp(centerX + Math.cos(angle) * orbitRadiusX, 24, this.getMapWidth() - 24);
+      const y = clamp(centerY + Math.sin(angle) * orbitRadiusY, 24, this.getMapHeight() - 24);
+      const view = new Graphics();
+      this.drawMagicianSpotlight(view, radius, false, false);
+      view.position.set(x, y);
+      this.world.addChild(view);
+      this.magicianStageProps.push({
+        view,
+        kind: 'spotlight',
+        real: spotlight.safe,
+        x,
+        y,
+        radius,
+        damage: skill.damage,
+        birthMs: now,
+        revealAtMs: now + orbitDurationMs,
+        expiresAtMs: now + orbitDurationMs + MAGICIAN_SPOTLIGHT_CHOOSE_MS + 650,
+        centerX,
+        centerY,
+        orbitRadiusX,
+        orbitRadiusY,
+        orbitAngle: angle,
+        orbitSpeed,
+        orbitDirection: 1,
+      });
+    }
+    window.setTimeout(() => {
+      if (!this.player || !this.bosses.includes(boss)) return;
+      const safe = this.magicianStageProps.find((prop) => prop.kind === 'spotlight' && prop.real);
+      for (const fake of this.magicianStageProps.filter((prop) => prop.kind === 'spotlight' && !prop.real)) {
+        this.spawnDelayedBossBlast(
+          fake.x,
+          fake.y,
+          MAGICIAN_SPOTLIGHT_FALSE_BLAST_RADIUS,
+          Math.max(5, Math.round(skill.damage * 0.45)),
+          80,
+          0x9d4edd,
+          "fake light",
+        );
+      }
+      if (!safe || distance(this.player, safe) > (safe.radius ?? 92)) {
+        this.applyPlayerDamage(skill.damage);
+        this.addScreenShake(260, 7);
+      } else {
+        this.startMagicianCurtainCall(boss.x, boss.y, 'revealed');
+        return;
+      }
+      this.startMagicianCurtainCall(boss.x, boss.y, 'standard');
+    }, orbitDurationMs + MAGICIAN_SPOTLIGHT_CHOOSE_MS);
+    this.spawnSeed += 1;
+  }
+
+  private castMagicianHatMaze(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    this.removeMagicianStageProps();
+    const hats = createMagicianHatMaze(this.spawnSeed);
+    for (const hat of hats) {
+      const angle = (Math.PI * 2 * hat.index) / hats.length + this.spawnSeed * 0.17;
+      const x = clamp(this.player.x + Math.cos(angle) * 270, 24, this.getMapWidth() - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * 210, 24, this.getMapHeight() - 24);
+      const view = new Graphics();
+      this.drawMagicianHat(view, hat.real ? 0.78 : 0.48);
+      view.position.set(x, y);
+      this.world.addChild(view);
+      this.magicianStageProps.push({
+        view,
+        kind: 'hat',
+        real: hat.real,
+        x,
+        y,
+        radius: 34,
+        damage: skill.damage,
+        expiresAtMs: performance.now() + 4200,
+      });
+    }
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss)) return;
+      const realHat = this.magicianStageProps.find((prop) => prop.kind === 'hat' && prop.real);
+      if (realHat) this.setActorPosition(boss, realHat.x, realHat.y);
+      this.startMagicianCurtainCall(realHat?.x ?? boss.x, realHat?.y ?? boss.y, 'standard');
+    }, 4200);
+    this.spawnSeed += 1;
+  }
+
+  private castMagicianMirrorHall(boss: BossActor, skill: AdvancedBossSkill): void {
+    this.removeMagicianStageProps();
+    const bodies = createMagicianMirrorHall(this.spawnSeed);
+    const center = this.player ?? boss;
+    for (const body of bodies) {
+      const angle = body.orbitOffset + 0.52;
+      const x = clamp(center.x + Math.cos(angle) * 470, 24, this.getMapWidth() - 24);
+      const y = clamp(center.y + Math.sin(angle) * 310, 24, this.getMapHeight() - 24);
+      const view = new Graphics();
+      this.drawBossSprite(view, 'magician');
+      view.alpha = body.real ? 0.88 : 0.5;
+      if (body.real) {
+        view.circle(0, 34, 24).stroke({ color: 0xfff3b0, alpha: 0.36, width: 2 });
+      }
+      view.position.set(x, y);
+      this.world.addChild(view);
+      this.magicianStageProps.push({
+        view,
+        kind: 'mirror',
+        real: body.real,
+        x,
+        y,
+        radius: 34,
+        damage: skill.damage,
+        centerX: center.x,
+        centerY: center.y,
+        orbitRadiusX: 470,
+        orbitRadiusY: 310,
+        orbitAngle: angle,
+        orbitSpeed: MAGICIAN_MIRROR_ORBIT_SPEED,
+        orbitDirection: body.orbitDirection,
+        expiresAtMs: performance.now() + 3800,
+      });
+    }
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss)) return;
+      const realMirror = this.magicianStageProps.find((prop) => prop.kind === 'mirror' && prop.real);
+      this.startMagicianCurtainCall(realMirror?.x ?? boss.x, realMirror?.y ?? boss.y, 'standard');
+    }, 3800);
+    this.spawnSeed += 1;
+  }
+
+  private castMagicianFinaleTheater(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player || this.magicianFinaleInProgress) return;
+    this.magicianFinaleInProgress = true;
+    this.removeMagicianStageProps();
+    this.drawPhaseRing(this.player.x, this.player.y, 620);
+    this.emitState('终幕剧场：三幕演出开始。');
+    window.setTimeout(() => this.castMagicianCurtainShift(boss, { ...skill, warningMs: 520, damage: skill.damage, radius: 190 }), 200);
+    window.setTimeout(() => this.castMagicianSpotlightJudgement(boss, { ...skill, warningMs: 620, damage: skill.damage + 4, radius: 230 }), 2600);
+    window.setTimeout(() => {
+      this.castMagicianHatMaze(boss, { ...skill, warningMs: 560, damage: skill.damage, radius: 130 });
+      this.castMagicianMirrorHall(boss, { ...skill, warningMs: 560, damage: skill.damage, radius: 170 });
+    }, 14600);
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss)) return;
+      this.magicianFinaleInProgress = false;
+      this.removeMagicianStageProps();
+      this.startMagicianCurtainCall(boss.x, boss.y, 'finale');
+    }, 18800);
+    this.spawnSeed += 1;
+  }
+
+  private startMagicianCurtainCall(x: number, y: number, kind: MagicianCurtainCallKind): void {
+    const boss = this.bosses.find((candidate) => candidate.bossId === 'magician');
+    if (!boss) return;
+    const duration = getMagicianCurtainCallMs(kind);
+    this.magicianCurtainCallUntilMs = Math.max(this.magicianCurtainCallUntilMs, performance.now() + duration);
+    if (kind === 'finale-revealed') this.magicianFinaleInProgress = false;
+    this.setActorPosition(boss, clamp(x, 24, this.getMapWidth() - 24), clamp(y, 24, this.getMapHeight() - 24));
+    this.drawBossSprite(boss.view, 'magician');
+    this.spawnHitSparks(boss.x, boss.y, kind.includes('finale') ? 0xff4d6d : 0xfff3b0, kind.includes('finale') ? 28 : 16);
+    this.emitState("Magician curtain call: " + Math.round(duration / 1000) + " seconds.");
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss) || performance.now() < this.magicianCurtainCallUntilMs) return;
+      this.drawMagicianHat(boss.view, 0.86);
+    }, duration);
+  }
+
+  private drawMagicianHat(view: Graphics, alpha: number): void {
+    view.clear();
+    view
+      .ellipse(0, 14, 46, 16)
+      .fill({ color: 0x22122f, alpha })
+      .stroke({ color: 0xfff3b0, alpha: 0.65, width: 3 })
+      .rect(-22, -42, 44, 52)
+      .fill({ color: 0x2b1740, alpha })
+      .stroke({ color: 0x9d4edd, alpha: 0.7, width: 3 })
+      .rect(-26, -4, 52, 10)
+      .fill({ color: 0xff4d6d, alpha: 0.62 });
+  }
+
+  private drawMagicianSpotlight(view: Graphics, radius: number, safe: boolean, revealed: boolean): void {
+    view.clear();
+    if (!revealed) {
+      view
+        .circle(0, 0, radius)
+        .fill({ color: 0xfff3b0, alpha: 0.08 })
+        .stroke({ color: 0xfff3b0, alpha: 0.26, width: 2 })
+        .circle(0, 0, radius * 0.62)
+        .stroke({ color: 0xfff3b0, alpha: 0.12, width: 3 })
+        .circle(0, 0, radius * 0.26)
+        .fill({ color: 0xfff3b0, alpha: 0.045 });
+      return;
+    }
+    view
+      .circle(0, 0, radius)
+      .fill({ color: 0xfff3b0, alpha: safe ? 0.13 : 0.115 })
+      .stroke({ color: safe ? 0xfff3b0 : 0xe6c56b, alpha: safe ? 0.46 : 0.38, width: 3 })
+      .circle(0, 0, radius * 0.66)
+      .stroke({ color: safe ? 0xfff3b0 : 0x9d4edd, alpha: safe ? 0.18 : 0.2, width: 4 })
+      .circle(0, 0, radius * 0.22)
+      .fill({ color: safe ? 0xfff3b0 : 0x9d4edd, alpha: safe ? 0.18 : 0.09 });
+  }
+
+  private spawnMagicianMirrorShardBurst(x: number, y: number, damage: number): void {
+    for (let index = 0; index < MAGICIAN_MIRROR_SHARD_COUNT; index += 1) {
+      const angle = (Math.PI * 2 * index) / MAGICIAN_MIRROR_SHARD_COUNT;
+      this.spawnBossHazard(x, y, angle, MAGICIAN_MIRROR_SHARD_SPEED, 0xd9f7ff, 1200, 6, "bossProjectile", Math.max(4, Math.round(damage * 0.7)));
+    }
+    this.spawnHitSparks(x, y, 0xd9f7ff, 22);
+    this.addScreenShake(110, 4);
+  }
+
+  private spawnCourierDeliveryRoute(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+    const target = {
+      x: clamp(this.player.x + Math.cos(angle) * 90, 24, this.getMapWidth() - 24),
+      y: clamp(this.player.y + Math.sin(angle) * 90, 24, this.getMapHeight() - 24),
+    };
+    this.drawCourierRouteTelegraph(boss, target, skill.warningMs, 0xffd166);
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss)) return;
+      this.spawnCourierRouteResidue({ x: boss.x, y: boss.y }, target, skill.damage);
+      const chargeAngle = Math.atan2(target.y - boss.y, target.x - boss.x);
+      boss.mode = "charge";
+      boss.chargeMs = 360;
+      boss.chargeAngle = chargeAngle;
+      boss.chargeDamage = skill.damage;
+      boss.chargeSpeed = COURIER_LOCKED_CHARGE_SPEED;
+    }, skill.warningMs);
+  }
+
+  private spawnCourierExplosiveParcels(skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    for (let index = 0; index < COURIER_EXPLOSIVE_PARCEL_COUNT; index += 1) {
+      const angle = (Math.PI * 2 * index) / COURIER_EXPLOSIVE_PARCEL_COUNT + this.spawnSeed * 0.41;
+      const parcelDistance = COURIER_EXPLOSIVE_PARCEL_MIN_DISTANCE + index * COURIER_EXPLOSIVE_PARCEL_DISTANCE_STEP;
+      const x = clamp(this.player.x + Math.cos(angle) * parcelDistance, 24, this.getMapWidth() - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * parcelDistance, 24, this.getMapHeight() - 24);
+      this.spawnCourierParcel(x, y, skill.damage, skill.radius);
+    }
+    this.spawnSeed += 1;
+  }
+
+  private spawnCourierParcel(x: number, y: number, damage: number, radius: number): void {
+    const view = new Graphics();
+    this.drawCourierParcel(view);
+    view.position.set(x, y);
+    this.world.addChild(view);
+    const hazard: HazardActor = {
+      view,
+      kind: "courierParcel",
+      x,
+      y,
+      radius: Math.max(radius, COURIER_PARCEL_TRIGGER_RADIUS),
+      lifeMs: 6200,
+      damage,
+      tickElapsedMs: 0,
+      expiresIntoFire: false,
+      velocityX: 0,
+      velocityY: 0,
+    };
+    this.bossHazards.push(hazard);
+  }
+
+  private spawnCourierLockerTeleport(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const lockers: Actor[] = [];
+    for (let index = 0; index < COURIER_LOCKER_COUNT; index += 1) {
+      const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x) + (index === 0 ? -1.2 : 1.2);
+      const x = clamp(this.player.x + Math.cos(angle) * 240, 24, this.getMapWidth() - 24);
+      const y = clamp(this.player.y + Math.sin(angle) * 240, 24, this.getMapHeight() - 24);
+      const view = new Graphics();
+      this.drawCourierLocker(view);
+      view.position.set(x, y);
+      this.world.addChild(view);
+      lockers.push({ view, x, y });
+    }
+    window.setTimeout(() => {
+      for (const locker of lockers) {
+        if (!locker.view.destroyed) {
+          this.world.removeChild(locker.view);
+          locker.view.destroy();
+        }
+      }
+      if (!this.player || !this.bosses.includes(boss) || lockers.length < 2) return;
+      const exit = lockers[1];
+      this.setActorPosition(boss, exit.x, exit.y);
+      const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+      this.spawnChargeTelegraph(boss, angle, 560, 0xffd166);
+      window.setTimeout(() => {
+        if (!this.bosses.includes(boss)) return;
+        boss.mode = "charge";
+        boss.chargeMs = 300;
+        boss.chargeAngle = angle;
+        boss.chargeDamage = skill.damage;
+        boss.chargeSpeed = COURIER_LOCKED_CHARGE_SPEED * 0.82;
+      }, 260);
+    }, skill.warningMs);
+  }
+
+  private spawnCourierSignatureLock(boss: BossActor, skill: AdvancedBossSkill): void {
+    if (!this.player) return;
+    const x = this.player.x;
+    const y = this.player.y;
+    const marker = new Graphics();
+    marker
+      .circle(0, 0, skill.radius)
+      .fill({ color: 0xffd166, alpha: 0.16 })
+      .stroke({ color: 0xd90429, alpha: 0.88, width: 4 })
+      .rect(-48, -18, 96, 36)
+      .fill({ color: 0xfff3b0, alpha: 0.18 })
+      .stroke({ color: 0xfff3b0, alpha: 0.72, width: 2 });
+    marker.position.set(x, y);
+    this.world.addChild(marker);
+    window.setTimeout(() => {
+      if (!marker.destroyed) {
+        this.world.removeChild(marker);
+        marker.destroy();
+      }
+      if (!this.player || !this.bosses.includes(boss)) return;
+      if (getCourierSignatureLockOutcome(distance(this.player, { x, y }), skill.radius) === "safe") {
+        this.showDamageNumber(x, y - 42, 0, "#fff3b0", "SAFE ");
+        return;
+      }
+      const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
+      boss.mode = "charge";
+      boss.chargeMs = 320;
+      boss.chargeAngle = angle;
+      boss.chargeDamage = Math.round(skill.damage * 0.75);
+      boss.chargeSpeed = COURIER_LOCKED_CHARGE_SPEED * 0.78;
+      this.spawnChargeTelegraph(boss, angle, 260, 0xffd166);
+      this.showDamageNumber(this.player.x, this.player.y - 42, 0, "#ff9f1c", "AMBUSH ");
+    }, COURIER_SIGNATURE_LOCK_MS);
+  }
+
+  private startCourierCitywideDelivery(boss: BossActor, skill: AdvancedBossSkill): void {
+    this.drawPhaseRing(boss.x, boss.y, 260);
+    window.setTimeout(() => {
+      if (!this.bosses.includes(boss)) return;
+      boss.courierCitywideMs = COURIER_CITYWIDE_DELIVERY_DURATION_MS;
+      boss.courierCitywideTickMs = COURIER_CITYWIDE_DELIVERY_TICK_MS;
+      boss.chargeDamage = skill.damage;
+      this.spawnHitSparks(boss.x, boss.y, 0xffd166, 28);
+    }, skill.warningMs);
+  }
+
+  private updateCourierCitywideDelivery(boss: BossActor, deltaMs: number): void {
+    if ((boss.courierCitywideMs ?? 0) <= 0) return;
+    boss.courierCitywideMs = Math.max(0, (boss.courierCitywideMs ?? 0) - deltaMs);
+    boss.courierCitywideTickMs = (boss.courierCitywideTickMs ?? 0) + deltaMs;
+    if (boss.courierCitywideTickMs < COURIER_CITYWIDE_DELIVERY_TICK_MS || !this.player) return;
+    boss.courierCitywideTickMs = 0;
+    const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x) + (this.spawnSeed % 3 - 1) * 0.42;
+    const target = {
+      x: clamp(this.player.x + Math.cos(angle) * 180, 24, this.getMapWidth() - 24),
+      y: clamp(this.player.y + Math.sin(angle) * 180, 24, this.getMapHeight() - 24),
+    };
+    this.spawnCourierRouteResidue({ x: boss.x, y: boss.y }, target, boss.chargeDamage || 10);
+    boss.mode = "charge";
+    boss.chargeMs = 240;
+    boss.chargeAngle = Math.atan2(target.y - boss.y, target.x - boss.x);
+    boss.chargeDamage = 10;
+    boss.chargeSpeed = COURIER_LOCKED_CHARGE_SPEED;
+    if (this.spawnSeed % 2 === 0) {
+      this.spawnCourierParcel(target.x, target.y, 10, COURIER_PARCEL_TRIGGER_RADIUS);
+    }
+    this.spawnSeed += 1;
+  }
+
+  private drawCourierRouteTelegraph(start: { x: number; y: number }, end: { x: number; y: number }, lifeMs: number, color: number): void {
+    const route = new Graphics();
+    route.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke({ color, alpha: 0.38, width: COURIER_ROUTE_RESIDUE_RADIUS * 2 });
+    route.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke({ color: 0xfff3b0, alpha: 0.86, width: 5 });
+    this.world.addChild(route);
+    window.setTimeout(() => {
+      if (route.destroyed) return;
+      this.world.removeChild(route);
+      route.destroy();
+    }, lifeMs);
+  }
+
+  private spawnCourierRouteResidue(start: { x: number; y: number }, end: { x: number; y: number }, damage: number): void {
+    const route = new Graphics();
+    route.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke({ color: 0xffd166, alpha: 0.26, width: COURIER_ROUTE_RESIDUE_RADIUS * 2 });
+    route.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke({ color: 0xd90429, alpha: 0.82, width: 8 });
+    this.world.addChild(route);
+    this.courierRoutes.push({
+      view: route,
+      start,
+      end,
+      lifeMs: COURIER_ROUTE_RESIDUE_LIFE_MS,
+      tickElapsedMs: 0,
+      damage: Math.max(4, Math.round(damage * 0.35)),
+    });
+  }
+
+  private drawCourierParcel(view: Graphics): void {
+    view.clear();
+    view
+      .roundRect(-24, -18, 48, 36, 4)
+      .fill({ color: 0x9b5e2e, alpha: 0.95 })
+      .stroke({ color: 0xfff3b0, alpha: 0.8, width: 2 })
+      .rect(-4, -18, 8, 36)
+      .fill({ color: 0xffd166, alpha: 0.65 })
+      .rect(-24, -4, 48, 8)
+      .fill({ color: 0xffd166, alpha: 0.5 });
+  }
+
+  private drawCourierLocker(view: Graphics): void {
+    view.clear();
+    view
+      .roundRect(-34, -48, 68, 96, 6)
+      .fill({ color: 0x2b2520, alpha: 0.94 })
+      .stroke({ color: 0xffd166, alpha: 0.9, width: 3 });
+    for (let row = 0; row < 3; row += 1) {
+      for (let col = 0; col < 2; col += 1) {
+        view.rect(-26 + col * 28, -36 + row * 25, 22, 18).fill({ color: 0x3d342c, alpha: 0.9 }).stroke({ color: 0xfff3b0, alpha: 0.25, width: 1 });
+      }
+    }
   }
 
   private spawnCourierDroneAirdrop(skill: AdvancedBossSkill): void {
@@ -4300,7 +6981,7 @@ export class PixiWastelandGame {
         skill.damage,
         skill.warningMs,
         offset < 0 ? 0xff6b00 : 0x68e1fd,
-        "无人机",
+        "drone",
         () => {
           if (!this.player || distance(this.player, { x, y }) > skill.radius + 16) return;
           if (index === 0) {
@@ -4379,7 +7060,7 @@ export class PixiWastelandGame {
         const angle = (Math.PI * 2 * index) / count;
         this.spawnKnifeHazard(boss.x, boss.y, angle, 224, skill.damage);
       }
-      this.emitState(`${this.getBossName(boss.bossId)} 释放华丽飞刀。`);
+      this.emitState(this.getBossName(boss.bossId) + " releases knife gala.");
     }, skill.warningMs);
   }
 
@@ -4605,20 +7286,20 @@ export class PixiWastelandGame {
     if (distance(this.player, STORY_CENTER_LIGHTHOUSE.position) > this.getInteractionRadius() + 260) return false;
 
     this.litStoryLighthouseIds.add(STORY_CENTER_LIGHTHOUSE.id);
-    this.emitState("中心灯塔已点亮：视野扩大，附近怪物压力上升。");
+    this.emitState("Center lighthouse lit: vision expanded and nearby monster pressure rises.");
     return true;
   }
 
   private collectNearbyNode(): void {
     const marker = this.getNearbyNode();
     if (!marker) {
-      this.emitState("附近没有可搜索点。");
+      this.emitState("No searchable point nearby.");
       return;
     }
     const node = this.state.exploration.nodes.find((candidate: MapNode) => candidate.id === marker.nodeId);
     this.state = collectNode(this.state, marker.nodeId);
     marker.view.alpha = 0.35;
-    this.emitState(`搜索：${node?.name ?? marker.nodeId}`);
+    this.emitState("Search: " + (node?.name ?? marker.nodeId));
   }
 
   private getNearbyNode(): NodeActor | undefined {
@@ -4752,7 +7433,7 @@ export class PixiWastelandGame {
 
   private emitState(message: string): void {
     this.callbacks.onRunState(this.state);
-    this.callbacks.onMessage(message);
+    this.callbacks.onMessage(localizeGameMessage(message));
     this.emitMetrics();
   }
 
@@ -4768,17 +7449,19 @@ export class PixiWastelandGame {
     const finalBosses = this.getFinalBosses();
     const hospitalKnights = this.getHospitalKnights();
     const currentBuildingId = this.getCurrentBuildingId();
-    const insideBuilding = this.player ? pointInsideBuildings(this.player) : false;
+    const insideBuilding = this.player ? pointInsideBuildings(this.player, this.getActiveBuildings()) : false;
     const metrics = {
       enemyCount: this.enemies.length,
       bossCount: this.bosses.length + finalBosses.length + hospitalKnights.length,
+      bossHazardCount: this.bossHazards.length,
       bulletCount:
         this.bullets.length +
         this.heavyProjectiles.length +
         this.autoStrikes.length +
         this.laserEffects.length +
         this.warpMines.length,
-      buildingCount: BUILDINGS.length,
+      buildingCount: this.getActiveBuildings().length,
+      renderedBuildingCount: this.buildingVisuals.length,
       mapWidth: this.getMapWidth(),
       mapHeight: this.getMapHeight(),
       attackMode: this.attackMode,
@@ -4792,10 +7475,14 @@ export class PixiWastelandGame {
       bossNames,
       insideBuilding,
       currentBuildingId,
+      playerX: this.player?.x,
+      playerY: this.player?.y,
       playerHealth: this.state.health,
       storyVisionRadius: this.isStoryMode() ? this.getCurrentStoryVisionRadius() : undefined,
       storyLitLighthouseCount: this.isStoryMode() ? this.litStoryLighthouseIds.size : undefined,
       storyMonsterPressureMultiplier: this.isStoryMode() ? this.getStoryMonsterPressureMultiplier() : undefined,
+      storyMagicianInterferenceActive: this.isStoryMode() ? this.storyMagicianInterferenceActive : undefined,
+      storyMagicianInterferenceCount: this.isStoryMode() ? this.storyMagicianInterferenceCount : undefined,
       selectedStoryMechId: this.isStoryMode() ? (this.options.storyMechId ?? null) : undefined,
     };
     this.callbacks.onMetrics(metrics);
@@ -4823,7 +7510,8 @@ export class PixiWastelandGame {
 
   private getPlayerMoveSpeed(): number {
     const slow = this.playerSlowMs > 0 ? FINAL_BOSS_PHASE_ONE_SKILL.slowMultiplier : 1;
-    return 260 * getSkillUpgradeStats(this.state.skillUpgradeRanks).moveSpeedMultiplier * (this.mechTransformMs > 0 ? 1.55 : 1) * slow;
+    const storyDebugMultiplier = this.isStoryMode() ? STORY_DEBUG_PLAYER_SPEED_MULTIPLIER : 1;
+    return 260 * storyDebugMultiplier * getSkillUpgradeStats(this.state.skillUpgradeRanks).moveSpeedMultiplier * (this.mechTransformMs > 0 ? 1.55 : 1) * slow;
   }
 
   private getCurrentStoryVisionRadius(): number {
@@ -4878,11 +7566,11 @@ export class PixiWastelandGame {
   }
 
   private getCurrentBuildingId(): string | null {
-    return this.player ? getContainingBuildingId(this.player) : null;
+    return this.player ? getContainingBuildingId(this.player, this.getActiveBuildings()) : null;
   }
 
   private getVisibilityZoneId(point: { x: number; y: number }): string | null {
-    return getContainingBuildingId(point);
+    return getContainingBuildingId(point, this.getActiveBuildings());
   }
 
   private isVisibleFromPlayerZone(actor: { x: number; y: number }): boolean {
@@ -4937,7 +7625,7 @@ export class PixiWastelandGame {
     prefix = "",
   ): void {
     const view = new Text({
-      text: `${prefix}${Math.round(amount)}`,
+      text: prefix + String(Math.round(amount)),
       style: new TextStyle({
         fill: color,
         fontFamily: "Arial",
@@ -5015,8 +7703,37 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function lerp(start: number, end: number, amount: number): number {
+  return start + (end - start) * amount;
+}
+
+function getBuildingAccentColor(id: string): number {
+  if (id === "res-police-hq") return 0x68e1fd;
+  if (id === "res-hospital") return 0xff4d6d;
+  if (id === "res-fire-station") return 0xff9f1c;
+  if (id === "res-courier-station") return 0xffd166;
+  if (id.startsWith("story-gate-wall-")) return 0xffd166;
+  if (id.startsWith("story-passage-wall-")) return 0xffd166;
+  if (id.startsWith("story-region-wall-")) return getStoryWallPalette(id).trim;
+  if (id.startsWith("ent-maze-fake-wall-")) return 0xb8a7ff;
+  if (id.startsWith("ent-maze-wall-")) return 0x9d4edd;
+  if (id.startsWith("res-")) return 0x8d99ae;
+  return 0x9a8c5f;
+}
+
+function getStoryWallPalette(id: string): { base: number; trim: number; detail: number } {
+  if (id.includes("entertainment-zone")) return { base: 0x3c113f, trim: 0xffd166, detail: 0x9d4edd };
+  if (id.includes("residential-zone")) return { base: 0x30353a, trim: 0xffd166, detail: 0x8d99ae };
+  if (id.includes("research-zone")) return { base: 0x30354a, trim: 0x68e1fd, detail: 0xb8a7ff };
+  if (id.includes("industrial-zone")) return { base: 0x3a332b, trim: 0xff9f1c, detail: 0x6c584c };
+  if (id.includes("military-zone")) return { base: 0x25352b, trim: 0x74c69d, detail: 0x8a817c };
+  if (id.includes("central-plaza")) return { base: 0x26342e, trim: 0xf8f4e3, detail: 0xffd166 };
+  return { base: 0x262a2f, trim: 0x9a8c5f, detail: 0x59614f };
+}
+
 declare global {
   interface Window {
     __prototypeDebug?: GameMetrics;
   }
 }
+

@@ -157,7 +157,7 @@ export default defineComponent({
       h("section", { class: "screen-panel start-panel" }, [
         h("div", { class: "screen-kicker" }, "Boss Rush / 副本选择"),
         h("h1", { class: "screen-title" }, "Boss Rush"),
-        h("p", { class: "screen-copy" }, "先选择 10 个单 Boss 单挑；多人挑战副本保留在列表后段。所有 Boss Rush 默认满级、技能点满，普通小怪不自然刷新。"),
+        h("p", { class: "screen-copy" }, "先选择单 Boss 单挑；战争核心额外提供 P1-P4 阶段演示，多人挑战副本保留在列表后段。Boss Rush 会按 Boss 强度设置玩家等级，普通小怪不自然刷新。"),
         h("div", { class: "scenario-grid" }, [
           ...BOSS_RUSH_SCENARIOS.map((scenario) =>
             h("button", { class: "scenario-card", type: "button", "aria-label": scenario.name, onClick: () => startBossRush(scenario.id) }, [
@@ -173,7 +173,7 @@ export default defineComponent({
       h("section", { class: "screen-panel game-over-panel" }, [
         h("div", { class: "screen-kicker danger" }, "信号丢失"),
         h("h1", { class: "screen-title" }, "任务失败"),
-        h("p", { class: "screen-copy" }, `等级 ${store.runState.level}  击杀 Boss ${store.runState.killedBossIds.length}/3  HP 0/${store.runState.maxHealth}`),
+        h("p", { class: "screen-copy" }, `等级 ${store.runState.level}  击杀 Boss ${store.runState.killedBossIds.length}/3  生命 0/${store.runState.maxHealth}`),
         h("button", { class: "primary-action", type: "button", onClick: restartGame }, "重新开始"),
       ]);
 
@@ -181,7 +181,7 @@ export default defineComponent({
       h("section", { class: "screen-panel mission-success-panel" }, [
         h("div", { class: "screen-kicker success" }, "核心摧毁"),
         h("h1", { class: "screen-title" }, "任务成功"),
-        h("p", { class: "screen-copy" }, `失控战争核心已摧毁。等级 ${store.runState.level}  HP ${store.runState.health}/${store.runState.maxHealth}`),
+        h("p", { class: "screen-copy" }, `失控战争核心已摧毁。等级 ${store.runState.level}  生命 ${store.runState.health}/${store.runState.maxHealth}`),
         h("button", { class: "primary-action", type: "button", onClick: restartGame }, "再次挑战"),
       ]);
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOSS_RUSH_CHALLENGE_SCENARIOS,
   BOSS_RUSH_SCENARIOS,
   BOSS_RUSH_SINGLE_DUELS,
   getBossRushPlayerLevel,
@@ -8,7 +9,7 @@ import {
 
 describe("boss rush scenarios", () => {
   it("defines the ten single boss duels first", () => {
-    expect(BOSS_RUSH_SINGLE_DUELS.map((scenario) => scenario.name)).toEqual([
+    expect(BOSS_RUSH_SINGLE_DUELS.slice(0, 10).map((scenario) => scenario.name)).toEqual([
       "单挑：变异厨师",
       "单挑：变异小丑",
       "单挑：变异快递员",
@@ -20,7 +21,7 @@ describe("boss rush scenarios", () => {
       "单挑：军火车队",
       "单挑：失控战争核心",
     ]);
-    expect(BOSS_RUSH_SCENARIOS.slice(0, 10).map((scenario) => scenario.id)).toEqual(
+    expect(BOSS_RUSH_SCENARIOS.slice(0, BOSS_RUSH_SINGLE_DUELS.length).map((scenario) => scenario.id)).toEqual(
       BOSS_RUSH_SINGLE_DUELS.map((scenario) => scenario.id),
     );
   });
@@ -34,7 +35,7 @@ describe("boss rush scenarios", () => {
   });
 
   it("scales player level by single boss strength", () => {
-    expect(BOSS_RUSH_SINGLE_DUELS.map((scenario) => getBossRushPlayerLevel(scenario.id))).toEqual([
+    expect(BOSS_RUSH_SINGLE_DUELS.slice(0, 10).map((scenario) => getBossRushPlayerLevel(scenario.id))).toEqual([
       5,
       10,
       15,
@@ -46,17 +47,38 @@ describe("boss rush scenarios", () => {
       45,
       50,
     ]);
+    for (const scenario of BOSS_RUSH_SINGLE_DUELS.slice(10)) {
+      expect(getBossRushPlayerLevel(scenario.id)).toBe(50);
+    }
     expect(getBossRushPlayerLevel("final-war")).toBe(50);
   });
 
-  it("defines the five requested boss rush dungeons", () => {
-    expect(BOSS_RUSH_SCENARIOS.slice(10).map((scenario) => scenario.name)).toEqual([
+  it("exposes all four war core phases as direct test duels", () => {
+    expect(BOSS_RUSH_SINGLE_DUELS.slice(10).map((scenario) => scenario.id)).toEqual([
+      "duel-war-core-phase-1",
+      "duel-war-core-phase-2",
+      "duel-war-core-phase-3",
+      "duel-war-core-phase-4",
+    ]);
+    expect(BOSS_RUSH_SINGLE_DUELS.slice(10).map((scenario) => scenario.entries[0])).toEqual([
+      { kind: "finalBoss", count: 1, health: 10000, phase: 1 },
+      { kind: "finalBoss", count: 1, health: 7000, phase: 2 },
+      { kind: "finalBoss", count: 1, health: 5000, phase: 3 },
+      { kind: "finalBoss", count: 1, health: 2000, phase: 4 },
+    ]);
+  });
+
+  it("defines the five requested boss rush dungeons after the duel list", () => {
+    expect(BOSS_RUSH_CHALLENGE_SCENARIOS.map((scenario) => scenario.name)).toEqual([
       "终焉之战",
       "厨房混战",
       "远程狙击",
       "圣光审判",
       "杂技表演",
     ]);
+    expect(BOSS_RUSH_SCENARIOS.slice(BOSS_RUSH_SINGLE_DUELS.length).map((scenario) => scenario.id)).toEqual(
+      BOSS_RUSH_CHALLENGE_SCENARIOS.map((scenario) => scenario.id),
+    );
   });
 
   it("keeps scenario combat rosters aligned with the design", () => {

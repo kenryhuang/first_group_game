@@ -15,6 +15,8 @@ import {
   recordSkillChoiceKill,
 } from "./skillChoices";
 
+export const PLAYER_INVINCIBLE_FOR_FINAL_BOSS_TESTING = true;
+
 export function createRunState(): RunState {
   const skillChoiceProgress = createSkillChoiceProgress();
   return {
@@ -170,6 +172,7 @@ export function useRunSkill(state: RunState, skillId: string): RunState {
 }
 
 export function applyRunDamage(state: RunState, amount: number): RunState {
+  if (PLAYER_INVINCIBLE_FOR_FINAL_BOSS_TESTING) return state;
   return {
     ...state,
     health: Math.max(0, state.health - Math.max(0, Math.round(amount))),

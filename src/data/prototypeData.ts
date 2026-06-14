@@ -108,7 +108,7 @@ export const SKILL_UPGRADES: SkillUpgradeDefinition[] = [
   },
   {
     id: "missile-pod",
-    name: "肩载导弹巢",
+    name: "肩载导弹舱",
     description: "自动向怪物密集处发射范围导弹。",
     maxRank: 4,
     effect: {},
