@@ -6,6 +6,10 @@ import {
   getStorySliceAssetPaths,
   STORY_SLICE_ASSETS,
 } from "./storyAssetManifest";
+import {
+  STORY_2_5D_CONFIG,
+  projectStoryPoint,
+} from "./story2_5dProjection";
 
 const canvasContextStub = {
   drawImage: vi.fn(),
@@ -65,6 +69,8 @@ describe("story slice renderer", () => {
       world,
       center: STORY_CENTER_LIGHTHOUSE.position,
       lit: false,
+      projectPoint: (point) =>
+        projectStoryPoint(point, STORY_CENTER_LIGHTHOUSE.position),
     });
 
     expect(world.children).toContain(renderer.root);
@@ -77,6 +83,20 @@ describe("story slice renderer", () => {
     expect(renderer.layers.effect.children).toHaveLength(1);
     expect(renderer.layers.worldUi.children).toHaveLength(0);
     expect(renderer.debugSpriteCount()).toBe(78);
+
+    const firstGroundSprite = renderer.layers.ground.children[0] as PixiSprite;
+    const projectedFirstGroundPosition = projectStoryPoint(
+      {
+        x: STORY_CENTER_LIGHTHOUSE.position.x - 4 * 256,
+        y: STORY_CENTER_LIGHTHOUSE.position.y - 3 * 256,
+      },
+      STORY_CENTER_LIGHTHOUSE.position,
+    );
+
+    expect(firstGroundSprite.position.x).toBe(projectedFirstGroundPosition.x);
+    expect(firstGroundSprite.position.y).toBe(projectedFirstGroundPosition.y);
+    expect(firstGroundSprite.scale.x).toBe(1);
+    expect(firstGroundSprite.scale.y).toBe(STORY_2_5D_CONFIG.groundScaleY);
 
     const lighthouse = renderer.layers.lighthouse.children[0] as PixiSprite;
     const coreGlow = renderer.layers.effect.children[0] as PixiSprite;
