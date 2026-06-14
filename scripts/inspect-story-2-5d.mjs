@@ -23,6 +23,9 @@ console.log(JSON.stringify({
   story2_5dEnabled: metrics?.story2_5dEnabled,
   story2_5dGroundScaleY: metrics?.story2_5dGroundScaleY,
   story2_5dPlayerScreenY: metrics?.story2_5dPlayerScreenY,
+  story2_5dVolumePropCount: metrics?.story2_5dVolumePropCount,
+  story2_5dDepthSortedPropCount: metrics?.story2_5dDepthSortedPropCount,
+  story2_5dProjectedUnderlayEnabled: metrics?.story2_5dProjectedUnderlayEnabled,
   enemyCount: metrics?.enemyCount,
   storyArtSpriteCount: metrics?.storyArtSpriteCount,
 }, null, 2));
