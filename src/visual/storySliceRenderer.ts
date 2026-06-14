@@ -14,6 +14,7 @@ export interface StorySliceRendererOptions {
   world: Container;
   center: StoryPoint;
   lit: boolean;
+  // Enables story 2.5D projection; ground/fog y-scale compression is tied to this mode.
   projectPoint?: (point: StoryPoint) => StoryPoint;
 }
 
@@ -58,6 +59,13 @@ function placeSprite(
 ): void {
   const projected = options.projectPoint?.({ x, y }) ?? { x, y };
   sprite.position.set(projected.x, projected.y);
+}
+
+function getGroundPlaneScaleY(
+  scale: number,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
+): number {
+  return options.projectPoint ? scale * STORY_2_5D_CONFIG.groundScaleY : scale;
 }
 
 function makeSprite(
@@ -114,7 +122,7 @@ function addGround(
           center.y + iy * tileSize,
           1,
           options,
-          STORY_2_5D_CONFIG.groundScaleY,
+          getGroundPlaneScaleY(1, options),
         ),
       );
     }
@@ -180,7 +188,7 @@ function addTexturedFog(
       center.y + offset.y,
       offset.scale,
       options,
-      offset.scale * STORY_2_5D_CONFIG.groundScaleY,
+      getGroundPlaneScaleY(offset.scale, options),
     );
     fog.label = `story-textured-fog-${index}`;
     fog.tint = STORY_ART_PALETTE.beaconHighlight;
