@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { PLAYER_WEAPON_VISUAL_GEOMETRY } from "./playerWeaponVisuals";
+import {
+  PLAYER_WEAPON_MUZZLE_DISTANCE,
+  PLAYER_WEAPON_VISUAL_GEOMETRY,
+} from "./playerWeaponVisuals";
 
 describe("player weapon visuals", () => {
   it("keeps the weapon compact enough to reveal the redrawn story character", () => {
@@ -7,5 +10,9 @@ describe("player weapon visuals", () => {
     expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.height).toBeLessThanOrEqual(10);
     expect(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.tipX).toBeLessThanOrEqual(56);
     expect(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.circleRadius).toBeLessThanOrEqual(5);
+  });
+
+  it("exposes the muzzle distance used by bullets and muzzle sparks", () => {
+    expect(PLAYER_WEAPON_MUZZLE_DISTANCE).toBe(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.tipX);
   });
 });

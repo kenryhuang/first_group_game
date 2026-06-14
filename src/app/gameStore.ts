@@ -105,7 +105,7 @@ export const useGameStore = defineStore("game", {
       ...(state.mode === "story"
         ? [
             `灯塔 ${state.storyLitLighthouseCount ?? 0}/1  视野 ${state.storyVisionRadius ?? 0}  怪物压力 x${state.storyMonsterPressureMultiplier ?? 1}`,
-            `剧情机甲 ${state.selectedStoryMechId ? STORY_MECH_LABELS[state.selectedStoryMechId] : "未选择"}  全城开放调图中  移速 x5  地图 ${state.mapWidth}x${state.mapHeight}`,
+            `剧情机甲 ${state.selectedStoryMechId ? STORY_MECH_LABELS[state.selectedStoryMechId] : "未选择"}  全城开放调图中  移速 x2.5  地图 ${state.mapWidth}x${state.mapHeight}`,
           ]
         : []),
       ...createHudLines(state.runState),
@@ -146,7 +146,7 @@ export const useGameStore = defineStore("game", {
       this.runState = createRunState();
       Object.assign(this, createInitialMetrics());
       this.selectedStoryMechId = selectedMechId;
-      this.message = "剧情模式调图版：全城已开放，移速提高到 5 倍。";
+      this.message = "剧情模式调图版：全城已开放，移速提高到 2.5 倍。";
     },
     openBossRushSelect(): void {
       this.phase = "bossRushSelect";

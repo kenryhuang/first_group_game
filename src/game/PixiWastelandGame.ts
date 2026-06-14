@@ -239,7 +239,10 @@ import {
   getStoryActorDirection,
   type StoryActorVisual,
 } from "../visual/storyActorVisuals";
-import { PLAYER_WEAPON_VISUAL_GEOMETRY } from "../visual/playerWeaponVisuals";
+import {
+  PLAYER_WEAPON_MUZZLE_DISTANCE,
+  PLAYER_WEAPON_VISUAL_GEOMETRY,
+} from "../visual/playerWeaponVisuals";
 import {
   createStorySliceRenderer,
   type StorySliceRenderer,
@@ -716,6 +719,28 @@ export class PixiWastelandGame {
     );
   }
 
+  private getPlayerWeaponMuzzleVisualPoint(): StoryPoint {
+    if (!this.player || !this.playerWeapon) return this.projectPoint(this.getPlayerStart());
+    const angle = this.playerWeapon.container.rotation;
+    const projectedPlayer = this.projectPoint(this.player);
+
+    return {
+      x: projectedPlayer.x + Math.cos(angle) * PLAYER_WEAPON_MUZZLE_DISTANCE,
+      y:
+        projectedPlayer.y +
+        (this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0) +
+        Math.sin(angle) * PLAYER_WEAPON_MUZZLE_DISTANCE,
+    };
+  }
+
+  private getPlayerWeaponProjectileOrigin(): StoryPoint {
+    const muzzle = this.getPlayerWeaponMuzzleVisualPoint();
+    return this.unprojectPoint({
+      x: muzzle.x,
+      y: muzzle.y - (this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0),
+    });
+  }
+
   private shouldDisableStoryBossEncounters(): boolean {
     return this.isStoryMode() && STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING;
   }
@@ -909,13 +934,14 @@ export class PixiWastelandGame {
   ): void {
     if (!visual || !lock) return;
     const direction = getStoryActorDirection(vector);
-    triggerStoryActorOneShotLock(
+    const shouldRestart = triggerStoryActorOneShotLock(
       lock,
       animation,
       direction,
       this.storyAnimationClockMs,
       this.getStoryAnimationDurationMs(visual, animation, direction),
     );
+    if (!shouldRestart) return;
     visual.play(animation, direction);
   }
 
@@ -2589,7 +2615,8 @@ export class PixiWastelandGame {
   ): void {
     if (!this.player) return;
     this.updateWeaponAim(target);
-    const projectile = createProjectileState(this.player, target, kind, speed, damage);
+    const projectileOrigin = kind === "basic" ? this.getPlayerWeaponProjectileOrigin() : this.player;
+    const projectile = createProjectileState(projectileOrigin, target, kind, speed, damage);
     const view = new Graphics();
     if (kind === "basic") {
       view
@@ -2598,7 +2625,7 @@ export class PixiWastelandGame {
         .rect(-45, -1.25, 30, 2.5)
         .fill({ color: 0x68e1fd, alpha: 0.42 });
       view.rotation = this.isStoryMode()
-        ? projectStoryAngle(this.player, target, this.getStoryProjectionOrigin())
+        ? projectStoryAngle(projectileOrigin, target, this.getStoryProjectionOrigin())
         : Math.atan2(projectile.velocityY, projectile.velocityX);
     } else {
       view.circle(0, 0, projectile.radius).fill(0xff9f1c);
@@ -4234,8 +4261,9 @@ export class PixiWastelandGame {
     const recoilAngle = this.playerWeapon.container.rotation + Math.PI;
     const recoilX = Math.cos(recoilAngle) * 3.5;
     const recoilY = Math.sin(recoilAngle) * 3.5;
+    const recoilTarget = this.playerStoryVisual?.sprite ?? this.player.view;
     gsap.fromTo(
-      this.player.view,
+      recoilTarget,
       { x: recoilX, y: recoilY },
       { x: 0, y: 0, duration: 0.06, ease: "power2.out" },
     );
@@ -4244,23 +4272,18 @@ export class PixiWastelandGame {
   private spawnMuzzleSparks(): void {
     if (!this.player || !this.playerWeapon) return;
     const angle = this.playerWeapon.container.rotation;
-    const projectedPlayer = this.projectPoint(this.player);
-    const muzzleX = projectedPlayer.x + Math.cos(angle) * 58;
-    const muzzleY =
-      projectedPlayer.y +
-      (this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0) +
-      Math.sin(angle) * 58;
+    const muzzle = this.getPlayerWeaponMuzzleVisualPoint();
 
     for (let index = 0; index < BASIC_GUN.sparkCount; index += 1) {
       const sparkAngle = angle + (Math.random() - 0.5) * 0.75;
       const spark = new Graphics();
       spark.circle(0, 0, 1.2 + Math.random() * 2.2).fill(index % 2 === 0 ? 0xfff3b0 : 0x68e1fd);
-      spark.position.set(muzzleX, muzzleY);
+      spark.position.set(muzzle.x, muzzle.y);
       spark.zIndex = this.getStoryVisualDepth(this.player, 45);
       this.world.addChild(spark);
       gsap.to(spark, {
-        x: muzzleX + Math.cos(sparkAngle) * (22 + Math.random() * 28),
-        y: muzzleY + Math.sin(sparkAngle) * (22 + Math.random() * 28),
+        x: muzzle.x + Math.cos(sparkAngle) * (22 + Math.random() * 28),
+        y: muzzle.y + Math.sin(sparkAngle) * (22 + Math.random() * 28),
         alpha: 0,
         duration: 0.1 + Math.random() * 0.08,
         ease: "power2.out",

@@ -36,3 +36,6 @@ export const PLAYER_WEAPON_VISUAL_GEOMETRY = {
     circleRadius: 5,
   },
 } as const;
+
+export const PLAYER_WEAPON_MUZZLE_DISTANCE =
+  PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.tipX;
