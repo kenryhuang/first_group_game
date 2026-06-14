@@ -36,6 +36,9 @@ export interface GameMetrics {
   storyArtSliceEnabled?: boolean;
   storyLighthouseVisualState?: "off" | "charging" | "on";
   storyArtSpriteCount?: number;
+  story2_5dEnabled?: boolean;
+  story2_5dGroundScaleY?: number;
+  story2_5dPlayerScreenY?: number;
 }
 
 interface GameStoreState extends GameMetrics {
@@ -74,6 +77,9 @@ function createInitialMetrics(): GameMetrics {
     storyArtSliceEnabled: false,
     storyLighthouseVisualState: undefined,
     storyArtSpriteCount: undefined,
+    story2_5dEnabled: false,
+    story2_5dGroundScaleY: undefined,
+    story2_5dPlayerScreenY: undefined,
   };
 }
 
@@ -99,7 +105,7 @@ export const useGameStore = defineStore("game", {
       ...(state.mode === "story"
         ? [
             `灯塔 ${state.storyLitLighthouseCount ?? 0}/1  视野 ${state.storyVisionRadius ?? 0}  怪物压力 x${state.storyMonsterPressureMultiplier ?? 1}`,
-            `剧情机甲 ${state.selectedStoryMechId ? STORY_MECH_LABELS[state.selectedStoryMechId] : "未选择"}  全城开放调图中  移速 x5  地图 ${state.mapWidth}x${state.mapHeight}`,
+            `剧情机甲 ${state.selectedStoryMechId ? STORY_MECH_LABELS[state.selectedStoryMechId] : "未选择"}  全城开放调图中  移速 x2.5  地图 ${state.mapWidth}x${state.mapHeight}`,
           ]
         : []),
       ...createHudLines(state.runState),
@@ -140,7 +146,7 @@ export const useGameStore = defineStore("game", {
       this.runState = createRunState();
       Object.assign(this, createInitialMetrics());
       this.selectedStoryMechId = selectedMechId;
-      this.message = "剧情模式调图版：全城已开放，移速提高到 5 倍。";
+      this.message = "剧情模式调图版：全城已开放，移速提高到 2.5 倍。";
     },
     openBossRushSelect(): void {
       this.phase = "bossRushSelect";
@@ -204,6 +210,9 @@ export const useGameStore = defineStore("game", {
       this.storyArtSliceEnabled = metrics.storyArtSliceEnabled;
       this.storyLighthouseVisualState = metrics.storyLighthouseVisualState;
       this.storyArtSpriteCount = metrics.storyArtSpriteCount;
+      this.story2_5dEnabled = metrics.story2_5dEnabled;
+      this.story2_5dGroundScaleY = metrics.story2_5dGroundScaleY;
+      this.story2_5dPlayerScreenY = metrics.story2_5dPlayerScreenY;
     },
     setMessage(message: string): void {
       this.message = message;

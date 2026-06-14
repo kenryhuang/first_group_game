@@ -18,7 +18,7 @@ describe("story actor animation locks", () => {
   it("keeps a one-shot animation active until its lock expires", () => {
     const lock = createStoryActorAnimationLock();
 
-    triggerStoryActorOneShot(lock, "attack", "right", 200, 280);
+    expect(triggerStoryActorOneShot(lock, "attack", "right", 200, 280)).toBe(true);
 
     expect(getStoryActorPlayback(lock, "run", "left", 479)).toEqual({
       animation: "attack",
@@ -33,8 +33,8 @@ describe("story actor animation locks", () => {
   it("refreshes the lock when another one-shot animation is triggered", () => {
     const lock = createStoryActorAnimationLock();
 
-    triggerStoryActorOneShot(lock, "attack", "right", 200, 280);
-    triggerStoryActorOneShot(lock, "hit", "down", 320, 140);
+    expect(triggerStoryActorOneShot(lock, "attack", "right", 200, 280)).toBe(true);
+    expect(triggerStoryActorOneShot(lock, "hit", "down", 320, 140)).toBe(true);
 
     expect(getStoryActorPlayback(lock, "idle", "up", 459)).toEqual({
       animation: "hit",
@@ -44,5 +44,14 @@ describe("story actor animation locks", () => {
       animation: "idle",
       direction: "up",
     });
+  });
+
+  it("does not ask callers to restart an active repeated one-shot", () => {
+    const lock = createStoryActorAnimationLock();
+
+    expect(triggerStoryActorOneShot(lock, "attack", "right", 200, 280)).toBe(true);
+    expect(triggerStoryActorOneShot(lock, "attack", "right", 240, 280)).toBe(false);
+
+    expect(lock.lockedUntilMs).toBe(520);
   });
 });

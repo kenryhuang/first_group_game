@@ -6,6 +6,7 @@ import {
   MAP_WIDTH,
   getEnemyMaxAlive,
   getEnemySpawnBatchSize,
+  getEnemySpawnQueueDrainCount,
   getBossSpawnPosition,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
@@ -83,6 +84,13 @@ describe("spawning", () => {
     expect(getEnemySpawnBatchSize(60, ENEMY_SPAWN_TICK_MS)).toBe(69);
     expect(getEnemyMaxAlive(1)).toBe(80);
     expect(getEnemyMaxAlive(60)).toBe(260);
+  });
+
+  it("drains queued enemy spawns across frames to avoid sprite creation spikes", () => {
+    expect(getEnemySpawnQueueDrainCount(0)).toBe(0);
+    expect(getEnemySpawnQueueDrainCount(1)).toBe(1);
+    expect(getEnemySpawnQueueDrainCount(10)).toBe(2);
+    expect(getEnemySpawnQueueDrainCount(10, 3)).toBe(3);
   });
 
   it("uses normal small enemy spawning outside final boss testing", () => {

@@ -9,6 +9,7 @@ import {
   isFakeMazeWall,
   pointInsideBuildings,
   resolveBlockedMovement,
+  resolveBlockedMovementWithBlockingBuildings,
 } from "./terrain";
 import { STORY_REGION_PASSAGES, STORY_REGIONS } from "./storyRegions";
 import type { Rect } from "./terrain";
@@ -369,6 +370,17 @@ describe("terrain", () => {
       x: circusTent.x,
       y: circusTent.y,
     });
+  });
+
+  it("resolves movement with a precomputed blocking list", () => {
+    const mazeWall = BUILDINGS.find((building) => building.id === "ent-maze-wall-01");
+    if (!mazeWall) throw new Error("Missing maze wall");
+    const from = { x: mazeWall.x - 500, y: mazeWall.y };
+    const to = { x: mazeWall.x, y: mazeWall.y };
+
+    expect(resolveBlockedMovementWithBlockingBuildings(from, to, 16, [mazeWall])).toEqual(
+      resolveBlockedMovement(from, to, 16, [mazeWall]),
+    );
   });
 
   it("identifies the containing building for visibility zones", () => {

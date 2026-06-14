@@ -86,7 +86,7 @@ describe("story regions", () => {
 
   it("starts with every district open for story map tuning", () => {
     expect(STORY_INITIAL_UNLOCKED_REGION_IDS).toEqual(STORY_REGIONS.map((region) => region.id));
-    expect(STORY_DEBUG_PLAYER_SPEED_MULTIPLIER).toBe(5);
+    expect(STORY_DEBUG_PLAYER_SPEED_MULTIPLIER).toBe(2.5);
     expect(STORY_DISABLE_FOG_FOR_MAP_TUNING).toBe(true);
     expect(STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING).toBe(true);
     expect(STORY_DISABLE_ZOMBIE_WAVES_FOR_MAP_TUNING).toBe(false);

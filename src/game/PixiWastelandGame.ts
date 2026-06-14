@@ -25,6 +25,7 @@ import {
   PLAYER_START,
   getEnemyMaxAlive,
   getEnemySpawnBatchSize,
+  getEnemySpawnQueueDrainCount,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
   shouldAllowSmallEnemySpawning,
@@ -33,6 +34,7 @@ import {
   STORY_CENTER_LIGHTHOUSE,
   STORY_DEBUG_PLAYER_SPEED_MULTIPLIER,
   STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING,
+  STORY_DISABLE_FOG_FOR_MAP_TUNING,
   STORY_DISABLE_ZOMBIE_WAVES_FOR_MAP_TUNING,
   STORY_FOG_BASE_RADIUS,
   STORY_INITIAL_UNLOCKED_BOUNDS,
@@ -55,8 +57,9 @@ import {
   BUILDING_LABELS,
   getContainingBuildingId,
   getBuildingsForMode,
+  isBlockingBuilding,
   pointInsideBuildings,
-  resolveBlockedMovement,
+  resolveBlockedMovementWithBlockingBuildings,
   type Rect,
 } from "../systems/terrain";
 import {
@@ -214,7 +217,7 @@ import {
   isPointInBossTerritory,
   shouldRoamingBossTargetPlayer,
 } from "../systems/bossTerritories";
-import { BASIC_GUN } from "../systems/weapons";
+import { BASIC_GUN, getBasicGunFireFeedback } from "../systems/weapons";
 import type { GameMetrics, GameMode, StoryMechId } from "../app/gameStore";
 import {
   BOSS_RUSH_SINGLE_DUELS,
@@ -239,11 +242,24 @@ import {
   getStoryActorDirection,
   type StoryActorVisual,
 } from "../visual/storyActorVisuals";
-import { PLAYER_WEAPON_VISUAL_GEOMETRY } from "../visual/playerWeaponVisuals";
+import {
+  PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
+  PLAYER_WEAPON_MUZZLE_DISTANCE,
+  PLAYER_WEAPON_VISUAL_GEOMETRY,
+  getPlayerWeaponDepthOffset,
+} from "../visual/playerWeaponVisuals";
 import {
   createStorySliceRenderer,
   type StorySliceRenderer,
 } from "../visual/storySliceRenderer";
+import {
+  STORY_2_5D_CONFIG,
+  getStoryDepth,
+  projectStoryAngle,
+  projectStoryPoint,
+  unprojectStoryPoint,
+  type StoryPoint,
+} from "../visual/story2_5dProjection";
 
 type AttackMode = "auto" | "manual";
 type BossMode = "roam" | "chase" | "charge" | "windup";
@@ -568,6 +584,7 @@ interface FinalBossCrawlerActor extends Actor {
 
 const BULLET_SOUND =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+const METRICS_EMIT_INTERVAL_MS = 250;
 
 export class PixiWastelandGame {
   private app = new Application();
@@ -619,6 +636,10 @@ export class PixiWastelandGame {
   private playerTrap?: PlayerTrapActor;
   private damageNumbers: DamageNumberActor[] = [];
   private buildingVisuals: BuildingVisual[] = [];
+  private activeBuildingsCache?: Rect[];
+  private activeBlockingBuildingsCache?: Rect[];
+  private visibleBuildingId: string | null | undefined;
+  private storyAllVisibleApplied = false;
   private skillChoiceOverlay?: Container;
   private formChoiceOverlay?: Container;
   private interiorVisibilityMask = new Graphics();
@@ -627,6 +648,8 @@ export class PixiWastelandGame {
   private movementDirection = { x: 1, y: 0 };
   private attackMode: AttackMode = "auto";
   private enemySpawnElapsed = 0;
+  private pendingEnemySpawnCount = 0;
+  private metricsEmitElapsedMs = Number.POSITIVE_INFINITY;
   private autoAttackElapsed = 0;
   private autoWeaponElapsedMs: Partial<Record<AutoWeaponId, number>> = {};
   private energySkillElapsedMs: Partial<Record<EnergySkillId, number>> = {};
@@ -663,12 +686,83 @@ export class PixiWastelandGame {
     return this.options.mode === "story";
   }
 
+  private getStoryProjectionOrigin(): StoryPoint {
+    return STORY_CENTER_LIGHTHOUSE.position;
+  }
+
+  private projectPoint(point: StoryPoint): StoryPoint {
+    if (!this.isStoryMode()) return point;
+    return projectStoryPoint(point, this.getStoryProjectionOrigin());
+  }
+
+  private unprojectPoint(point: StoryPoint): StoryPoint {
+    if (!this.isStoryMode()) return point;
+    return unprojectStoryPoint(point, this.getStoryProjectionOrigin());
+  }
+
+  private setViewPosition(view: Container, x: number, y: number, visualYOffset = 0): void {
+    const projected = this.projectPoint({ x, y });
+    view.position.set(projected.x, projected.y + (this.isStoryMode() ? visualYOffset : 0));
+  }
+
+  private projectEffectPoint(point: StoryPoint): StoryPoint {
+    const projected = this.projectPoint(point);
+    return {
+      x: projected.x,
+      y: projected.y + (this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0),
+    };
+  }
+
+  private setEffectPosition(view: Container, x: number, y: number, depthOffset = 45): void {
+    this.setViewPosition(view, x, y, STORY_2_5D_CONFIG.effectYOffset);
+    view.zIndex = this.getStoryVisualDepth({ x, y }, depthOffset);
+  }
+
+  private getStoryVisualDepth(point: StoryPoint, offset = 0): number {
+    return this.isStoryMode() ? getStoryDepth(point, offset) : 0;
+  }
+
+  private getVisualVelocityAngle(point: StoryPoint, velocityX: number, velocityY: number): number {
+    if (!this.isStoryMode()) return Math.atan2(velocityY, velocityX);
+    return projectStoryAngle(
+      point,
+      { x: point.x + velocityX, y: point.y + velocityY },
+      this.getStoryProjectionOrigin(),
+    );
+  }
+
+  private getPlayerWeaponMuzzleVisualPoint(): StoryPoint {
+    if (!this.player || !this.playerWeapon) return this.projectPoint(this.getPlayerStart());
+    const angle = this.playerWeapon.container.rotation;
+    const projectedPlayer = this.projectPoint(this.player);
+
+    return {
+      x: projectedPlayer.x + Math.cos(angle) * PLAYER_WEAPON_MUZZLE_DISTANCE,
+      y:
+        projectedPlayer.y +
+        (this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0) +
+        Math.sin(angle) * PLAYER_WEAPON_MUZZLE_DISTANCE,
+    };
+  }
+
+  private getPlayerWeaponProjectileOrigin(): StoryPoint {
+    const muzzle = this.getPlayerWeaponMuzzleVisualPoint();
+    return this.unprojectPoint({
+      x: muzzle.x,
+      y: muzzle.y - (this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0),
+    });
+  }
+
   private shouldDisableStoryBossEncounters(): boolean {
     return this.isStoryMode() && STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING;
   }
 
   private shouldDisableStoryZombieWaves(): boolean {
     return this.isStoryMode() && STORY_DISABLE_ZOMBIE_WAVES_FOR_MAP_TUNING;
+  }
+
+  private isStoryFullVisibilityMode(): boolean {
+    return this.isStoryMode() && STORY_DISABLE_FOG_FOR_MAP_TUNING && this.playerVisionNarrowMs <= 0;
   }
 
   private getMapWidth(): number {
@@ -684,7 +778,13 @@ export class PixiWastelandGame {
   }
 
   private getActiveBuildings(): Rect[] {
-    return getBuildingsForMode(this.options.mode ?? "classic");
+    this.activeBuildingsCache ??= getBuildingsForMode(this.options.mode ?? "classic");
+    return this.activeBuildingsCache;
+  }
+
+  private getActiveBlockingBuildings(): Rect[] {
+    this.activeBlockingBuildingsCache ??= this.getActiveBuildings().filter(isBlockingBuilding);
+    return this.activeBlockingBuildingsCache;
   }
 
   private getBossRushPlayerLevel(): number {
@@ -722,6 +822,7 @@ export class PixiWastelandGame {
 
     this.host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.world);
+    this.world.sortableChildren = this.isStoryMode();
     if (this.isBossRushMode()) {
       this.state = this.createBossRushRunState();
       this.callbacks.onRunState(this.state);
@@ -855,13 +956,14 @@ export class PixiWastelandGame {
   ): void {
     if (!visual || !lock) return;
     const direction = getStoryActorDirection(vector);
-    triggerStoryActorOneShotLock(
+    const shouldRestart = triggerStoryActorOneShotLock(
       lock,
       animation,
       direction,
       this.storyAnimationClockMs,
       this.getStoryAnimationDurationMs(visual, animation, direction),
     );
+    if (!shouldRestart) return;
     visual.play(animation, direction);
   }
 
@@ -901,7 +1003,7 @@ export class PixiWastelandGame {
       this.updateScreenShake(delta);
       this.updateWeaponAim();
       this.updateCamera();
-      this.emitMetrics();
+      this.emitMetricsThrottled(delta);
       return;
     }
     this.clearSkillChoiceOverlay();
@@ -912,7 +1014,7 @@ export class PixiWastelandGame {
       this.updateScreenShake(delta);
       this.updateWeaponAim();
       this.updateCamera();
-      this.emitMetrics();
+      this.emitMetricsThrottled(delta);
       return;
     }
     this.clearFormChoiceOverlay();
@@ -949,6 +1051,7 @@ export class PixiWastelandGame {
     this.updateConvoyVehicles(delta);
     this.updateDamageNumbers(delta);
     this.updateSpawning(delta);
+    this.updateQueuedEnemySpawns();
     this.updateAutoAttack(delta);
     this.updateAutoWeapons(delta);
     this.updateEnergySkills(delta);
@@ -958,7 +1061,7 @@ export class PixiWastelandGame {
     this.highlightNearbyNode();
     this.updateVisibility();
     this.updateCamera();
-    this.emitMetrics();
+    this.emitMetricsThrottled(delta);
   };
 
   private drawWorld(): void {
@@ -1076,6 +1179,7 @@ export class PixiWastelandGame {
       world: this.world,
       center: STORY_CENTER_LIGHTHOUSE.position,
       lit: this.litStoryLighthouseIds.has(STORY_CENTER_LIGHTHOUSE.id),
+      projectPoint: (point) => this.projectPoint(point),
     });
   }
 
@@ -1389,7 +1493,8 @@ export class PixiWastelandGame {
     } else {
       this.drawPlayerMech(view);
     }
-    view.position.set(start.x, start.y);
+    this.setViewPosition(view, start.x, start.y);
+    view.zIndex = this.getStoryVisualDepth(start, 20);
     this.world.addChild(view);
     this.player = { view, x: start.x, y: start.y };
     this.playerWeapon = this.createPlayerWeapon();
@@ -1399,7 +1504,13 @@ export class PixiWastelandGame {
   private createPlayerWeapon(): WeaponVisual {
     const start = this.getPlayerStart();
     const container = new Container();
-    container.position.set(start.x, start.y);
+    this.setViewPosition(
+      container,
+      start.x,
+      start.y,
+      this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0,
+    );
+    container.zIndex = this.getStoryVisualDepth(start, PLAYER_WEAPON_FRONT_DEPTH_OFFSET);
     const geometry = PLAYER_WEAPON_VISUAL_GEOMETRY;
 
     const barrel = new Graphics();
@@ -1625,10 +1736,11 @@ export class PixiWastelandGame {
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
     const rect = this.app.canvas.getBoundingClientRect();
-    this.pointerWorld = {
+    const visualWorldPoint = {
       x: event.clientX - rect.left - this.world.x,
       y: event.clientY - rect.top - this.world.y,
     };
+    this.pointerWorld = this.unprojectPoint(visualWorldPoint);
   };
 
   private movePlayer(deltaMs: number): void {
@@ -1652,7 +1764,7 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + (dx / length) * moveSpeed * seconds, 24, this.getMapWidth() - 24),
       y: clamp(this.player.y + (dy / length) * moveSpeed * seconds, 24, this.getMapHeight() - 24),
     };
-    let resolved = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
+    let resolved = resolveBlockedMovementWithBlockingBuildings(this.player, desired, 16, this.getActiveBlockingBuildings());
     if (this.isStoryMode()) {
       resolved = clampPointToUnlockedStoryRegions(this.player, resolved, [...this.unlockedStoryRegionIds]);
     }
@@ -1686,7 +1798,7 @@ export class PixiWastelandGame {
         x: enemy.x + Math.cos(angle) * enemy.speed * seconds,
         y: enemy.y + Math.sin(angle) * enemy.speed * seconds,
       };
-      const resolved = resolveBlockedMovement(enemy, desired, 11, this.getActiveBuildings());
+      const resolved = resolveBlockedMovementWithBlockingBuildings(enemy, desired, 11, this.getActiveBlockingBuildings());
       this.setActorPosition(enemy, resolved.x, resolved.y);
       const storyVisual = this.enemyStoryVisuals.get(enemy);
       if (storyVisual) {
@@ -1846,7 +1958,7 @@ export class PixiWastelandGame {
         x: boss.x + Math.cos(angle) * speed * seconds,
         y: boss.y + Math.sin(angle) * speed * seconds,
       };
-      const resolved = resolveBlockedMovement(boss, desired, 34, this.getActiveBuildings());
+      const resolved = resolveBlockedMovementWithBlockingBuildings(boss, desired, 34, this.getActiveBlockingBuildings());
       this.setActorPosition(boss, resolved.x, resolved.y);
       boss.view.rotation = angle;
       if (sameZoneAsPlayer && boss.contactDamageElapsedMs >= 700 && distance(this.player, boss) <= 54) {
@@ -1917,7 +2029,7 @@ export class PixiWastelandGame {
         x: clamp(boss.x + Math.cos(angle) * speed * seconds, 24, MAP_WIDTH - 24),
         y: clamp(boss.y + Math.sin(angle) * speed * seconds, 24, MAP_HEIGHT - 24),
       };
-      const resolved = resolveBlockedMovement(boss, desired, 46, this.getActiveBuildings());
+      const resolved = resolveBlockedMovementWithBlockingBuildings(boss, desired, 46, this.getActiveBlockingBuildings());
       this.setActorPosition(boss, resolved.x, resolved.y);
     }
     boss.view.rotation = angle;
@@ -1983,7 +2095,13 @@ export class PixiWastelandGame {
   private updateProjectiles(deltaMs: number): void {
     for (const bullet of [...this.bullets]) {
       bullet.projectile = updateProjectileState(bullet.projectile, deltaMs);
-      this.setActorPosition(bullet, bullet.projectile.x, bullet.projectile.y);
+      this.setActorPosition(
+        bullet,
+        bullet.projectile.x,
+        bullet.projectile.y,
+        40,
+        STORY_2_5D_CONFIG.effectYOffset,
+      );
 
       if (
         bullet.projectile.expired ||
@@ -2026,11 +2144,13 @@ export class PixiWastelandGame {
       const speed = Math.hypot(missile.velocityX, missile.velocityY);
       missile.velocityX = (dx / length) * speed;
       missile.velocityY = (dy / length) * speed;
-      missile.view.rotation = Math.atan2(missile.velocityY, missile.velocityX);
+      missile.view.rotation = this.getVisualVelocityAngle(missile, missile.velocityX, missile.velocityY);
       this.setActorPosition(
         missile,
         missile.x + missile.velocityX * seconds,
         missile.y + missile.velocityY * seconds,
+        40,
+        STORY_2_5D_CONFIG.effectYOffset,
       );
 
       if (
@@ -2145,7 +2265,7 @@ export class PixiWastelandGame {
           this.applyPlayerDamage(hazard.damage);
           this.playerSlowMs = Math.max(this.playerSlowMs, 2600);
           this.skillSuppressMs = Math.max(this.skillSuppressMs, 1200);
-          this.showDamageNumber(player.x, player.y - 42, 0, "#a7c957", "SED ");
+          this.showDamageNumber(player.x, player.y, 0, "#a7c957", "SED ", -42);
           this.removeBossHazard(hazard);
         } else if (hazard.kind === "magicBox") {
           this.triggerMagicBoxEffect(hazard);
@@ -2185,7 +2305,7 @@ export class PixiWastelandGame {
       if (stand.tickElapsedMs >= 1000) {
         stand.tickElapsedMs = 0;
         stand.boss.health = Math.min(stand.boss.maxHealth, stand.boss.health + 55);
-        this.showDamageNumber(stand.boss.x, stand.boss.y - 58, 55, "#a7c957", "+");
+        this.showDamageNumber(stand.boss.x, stand.boss.y, 55, "#a7c957", "+", -58);
         this.spawnToxicCloud(stand.x, stand.y, 86, 4, 1800);
       }
     }
@@ -2278,7 +2398,7 @@ export class PixiWastelandGame {
       if (vehicle.tickElapsedMs >= 1300) {
         vehicle.tickElapsedMs = 0;
         vehicle.boss.health = Math.min(vehicle.boss.maxHealth, vehicle.boss.health + 70);
-        this.showDamageNumber(vehicle.boss.x, vehicle.boss.y - 58, 70, "#ff9f1c", "+");
+        this.showDamageNumber(vehicle.boss.x, vehicle.boss.y, 70, "#ff9f1c", "+", -58);
       }
     }
   }
@@ -2352,14 +2472,28 @@ export class PixiWastelandGame {
     const pressureMultiplier = this.getStoryMonsterPressureMultiplier();
     const maxAlive = Math.round(getEnemyMaxAlive(this.state.level) * pressureMultiplier);
     let ticks = 0;
-    while (this.enemySpawnElapsed >= ENEMY_SPAWN_TICK_MS && this.enemies.length < maxAlive && ticks < 8) {
+    while (
+      this.enemySpawnElapsed >= ENEMY_SPAWN_TICK_MS &&
+      this.enemies.length + this.pendingEnemySpawnCount < maxAlive &&
+      ticks < 8
+    ) {
       this.enemySpawnElapsed -= ENEMY_SPAWN_TICK_MS;
       ticks += 1;
+      const availableSlots = maxAlive - this.enemies.length - this.pendingEnemySpawnCount;
       const spawnCount = Math.min(
         Math.max(1, Math.round(getEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS) * pressureMultiplier)),
-        maxAlive - this.enemies.length,
+        availableSlots,
       );
-      this.spawnEnemyWave(spawnCount);
+      this.pendingEnemySpawnCount += spawnCount;
+    }
+  }
+
+  private updateQueuedEnemySpawns(): void {
+    const drainCount = getEnemySpawnQueueDrainCount(this.pendingEnemySpawnCount);
+    for (let index = 0; index < drainCount; index += 1) {
+      const position = this.findOpenEnemySpawnPosition();
+      this.spawnEnemyActor(position.x, position.y, "zombie", 28, 58 + (this.spawnSeed % 4) * 8);
+      this.pendingEnemySpawnCount -= 1;
     }
   }
 
@@ -2390,7 +2524,8 @@ export class PixiWastelandGame {
     } else if (!useStoryZombieVisual) {
       this.drawZombieEnemy(view);
     }
-    view.position.set(x, y);
+    this.setViewPosition(view, x, y);
+    view.zIndex = this.getStoryVisualDepth({ x, y }, 20);
     this.world.addChild(view);
     const enemy: EnemyActor = {
       view,
@@ -2517,7 +2652,8 @@ export class PixiWastelandGame {
   ): void {
     if (!this.player) return;
     this.updateWeaponAim(target);
-    const projectile = createProjectileState(this.player, target, kind, speed, damage);
+    const projectileOrigin = kind === "basic" ? this.getPlayerWeaponProjectileOrigin() : this.player;
+    const projectile = createProjectileState(projectileOrigin, target, kind, speed, damage);
     const view = new Graphics();
     if (kind === "basic") {
       view
@@ -2525,11 +2661,19 @@ export class PixiWastelandGame {
         .fill({ color: 0xd9f7ff, alpha: 0.98 })
         .rect(-45, -1.25, 30, 2.5)
         .fill({ color: 0x68e1fd, alpha: 0.42 });
-      view.rotation = Math.atan2(projectile.velocityY, projectile.velocityX);
+      view.rotation = this.isStoryMode()
+        ? projectStoryAngle(projectileOrigin, target, this.getStoryProjectionOrigin())
+        : Math.atan2(projectile.velocityY, projectile.velocityX);
     } else {
       view.circle(0, 0, projectile.radius).fill(0xff9f1c);
     }
-    view.position.set(projectile.x, projectile.y);
+    this.setViewPosition(
+      view,
+      projectile.x,
+      projectile.y,
+      this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0,
+    );
+    view.zIndex = this.getStoryVisualDepth(projectile, 40);
     this.world.addChild(view);
     this.bullets.push({ view, x: projectile.x, y: projectile.y, projectile });
     if (kind === "basic") {
@@ -2573,8 +2717,18 @@ export class PixiWastelandGame {
       view.poly([18, -6, 30, 0, 18, 6]).fill(0xff9f1c);
       view.circle(-20, 0, 6).fill({ color: 0x68e1fd, alpha: 0.5 });
     }
-    view.position.set(launchPoint.x, launchPoint.y);
-    view.rotation = launchAngle;
+    this.setViewPosition(
+      view,
+      launchPoint.x,
+      launchPoint.y,
+      this.isStoryMode() ? STORY_2_5D_CONFIG.effectYOffset : 0,
+    );
+    view.zIndex = this.getStoryVisualDepth(launchPoint, 40);
+    view.rotation = this.getVisualVelocityAngle(
+      launchPoint,
+      Math.cos(launchAngle),
+      Math.sin(launchAngle),
+    );
     this.world.addChild(view);
     this.heavyProjectiles.push({
       view,
@@ -2606,7 +2760,7 @@ export class PixiWastelandGame {
       .moveTo(0, -radius)
       .lineTo(0, radius)
       .stroke({ color: 0xfff3b0, alpha: 0.72, width: 2 });
-    view.position.set(x, y);
+    this.setEffectPosition(view, x, y);
     this.world.addChild(view);
     this.autoStrikes.push({ view, x, y, radius, damage, lifeMs: 650, maxLifeMs: 650 });
   }
@@ -2634,14 +2788,17 @@ export class PixiWastelandGame {
   }
 
   private drawLaserEffect(start: { x: number; y: number }, end: { x: number; y: number }, color: number): void {
+    const visualStart = this.projectEffectPoint(start);
+    const visualEnd = this.projectEffectPoint(end);
     const view = new Graphics();
     view
-      .moveTo(start.x, start.y)
-      .lineTo(end.x, end.y)
+      .moveTo(visualStart.x, visualStart.y)
+      .lineTo(visualEnd.x, visualEnd.y)
       .stroke({ color: 0xd9f7ff, alpha: 0.88, width: 5 })
-      .moveTo(start.x, start.y)
-      .lineTo(end.x, end.y)
+      .moveTo(visualStart.x, visualStart.y)
+      .lineTo(visualEnd.x, visualEnd.y)
       .stroke({ color, alpha: 0.55, width: 14 });
+    view.zIndex = this.getStoryVisualDepth(end, 45);
     this.world.addChild(view);
     this.laserEffects.push({ view, lifeMs: 220, maxLifeMs: 220 });
   }
@@ -2823,7 +2980,7 @@ export class PixiWastelandGame {
       .circle(0, 0, radius)
       .fill({ color: 0x68e1fd, alpha: 0.12 })
       .stroke({ color: 0x9ffcff, alpha: 0.92, width: 2 });
-    telegraph.position.set(x, y);
+    this.setEffectPosition(telegraph, x, y);
     this.world.addChild(telegraph);
     window.setTimeout(() => {
       if (telegraph.destroyed) return;
@@ -2843,7 +3000,7 @@ export class PixiWastelandGame {
       .fill({ color: 0x68e1fd, alpha: 0.18 })
       .circle(0, 0, radius)
       .stroke({ color: 0xd9f7ff, alpha: 0.72, width: 2 });
-    view.position.set(x, y);
+    this.setEffectPosition(view, x, y);
     this.world.addChild(view);
     this.laserEffects.push({ view, lifeMs: 260, maxLifeMs: 260 });
   }
@@ -2859,7 +3016,7 @@ export class PixiWastelandGame {
       .fill({ color: 0xff4d6d, alpha: 0.36 })
       .circle(0, 0, radius)
       .stroke({ color: 0xfff3b0, alpha: 0.5, width: 5 });
-    cloud.position.set(x, y);
+    this.setEffectPosition(cloud, x, y);
     this.world.addChild(cloud);
     gsap.to(cloud.scale, { x: 1.7, y: 1.7, duration: 0.5, ease: "power2.out" });
     gsap.to(cloud, {
@@ -2927,7 +3084,7 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + Math.cos(angle) * range, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + Math.sin(angle) * range, 24, MAP_HEIGHT - 24),
     };
-    const resolved = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
+    const resolved = resolveBlockedMovementWithBlockingBuildings(this.player, desired, 16, this.getActiveBlockingBuildings());
     this.drawPhaseRing(this.player.x, this.player.y, radius);
     this.setActorPosition(this.player, resolved.x, resolved.y);
     this.drawPhaseRing(this.player.x, this.player.y, radius);
@@ -2962,7 +3119,8 @@ export class PixiWastelandGame {
       .stroke({ color: 0xb56cff, alpha: 0.9, width: 2 })
       .circle(0, 0, radius)
       .stroke({ color: 0x68e1fd, alpha: 0.18, width: 1 });
-    view.position.set(x, y);
+    this.setViewPosition(view, x, y);
+    view.zIndex = this.getStoryVisualDepth({ x, y }, 15);
     this.world.addChild(view);
     this.warpMines.push({ view, x, y, radius, damage, lifeMs: 9000 });
     this.emitState("Fold mine: deployed behind you.");
@@ -2971,7 +3129,8 @@ export class PixiWastelandGame {
   private drawPhaseRing(x: number, y: number, radius: number): void {
     const ring = new Graphics();
     ring.circle(0, 0, radius).stroke({ color: 0xb56cff, alpha: 0.78, width: 3 });
-    ring.position.set(x, y);
+    this.setViewPosition(ring, x, y);
+    ring.zIndex = this.getStoryVisualDepth({ x, y }, 45);
     this.world.addChild(ring);
     gsap.to(ring.scale, { x: 1.5, y: 1.5, duration: 0.24 });
     gsap.to(ring, {
@@ -3092,7 +3251,7 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + Math.cos(angle) * 820, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + Math.sin(angle) * 820, 24, MAP_HEIGHT - 24),
     };
-    const end = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
+    const end = resolveBlockedMovementWithBlockingBuildings(this.player, desired, 16, this.getActiveBlockingBuildings());
     this.drawPhaseRing(start.x, start.y, ultimate.radius * 0.55);
     this.drawLaserEffect(start, end, 0xff4d6d);
     this.damageTargetsAlongLine(start, end, ultimate.radius, ultimate.damage);
@@ -3165,7 +3324,7 @@ export class PixiWastelandGame {
       .circle(0, 0, ultimate.radius)
       .fill({ color: 0xff1744, alpha: 0.14 })
       .stroke({ color: 0xfff3b0, alpha: 0.92, width: 4 });
-    warning.position.set(target.x, target.y);
+    this.setEffectPosition(warning, target.x, target.y);
     this.world.addChild(warning);
     window.setTimeout(() => {
       if (!warning.destroyed) {
@@ -3212,7 +3371,7 @@ export class PixiWastelandGame {
     for (const stand of [...this.infusionStands]) {
       if (!projectileHitsCircle(bullet.projectile, { x: stand.x, y: stand.y, radius: stand.radius })) continue;
       stand.health -= bullet.projectile.damage;
-      this.showDamageNumber(stand.x, stand.y - 28, bullet.projectile.damage, "#a7c957");
+      this.showDamageNumber(stand.x, stand.y, bullet.projectile.damage, "#a7c957", "", -28);
       this.spawnHitSparks(stand.x, stand.y, 0xa7c957, 8);
       if (stand.health <= 0) {
         this.removeInfusionStand(stand);
@@ -3226,7 +3385,7 @@ export class PixiWastelandGame {
     for (const device of [...this.teslaDevices]) {
       if (!projectileHitsCircle(bullet.projectile, { x: device.x, y: device.y, radius: device.radius })) continue;
       device.health -= bullet.projectile.damage;
-      this.showDamageNumber(device.x, device.y - 30, bullet.projectile.damage, "#68e1fd");
+      this.showDamageNumber(device.x, device.y, bullet.projectile.damage, "#68e1fd", "", -30);
       this.spawnHitSparks(device.x, device.y, 0x68e1fd, 8);
       if (device.health <= 0) {
         this.removeTeslaDevice(device);
@@ -3240,7 +3399,7 @@ export class PixiWastelandGame {
     for (const vehicle of [...this.convoyVehicles]) {
       if (!projectileHitsCircle(bullet.projectile, { x: vehicle.x, y: vehicle.y, radius: vehicle.radius })) continue;
       vehicle.health -= bullet.projectile.damage;
-      this.showDamageNumber(vehicle.x, vehicle.y - 32, bullet.projectile.damage, "#ff9f1c");
+      this.showDamageNumber(vehicle.x, vehicle.y, bullet.projectile.damage, "#ff9f1c", "", -32);
       this.spawnHitSparks(vehicle.x, vehicle.y, vehicle.kind === "escort" ? 0xffd166 : 0xff9f1c, 8);
       if (vehicle.health <= 0) {
         this.detonateConvoyVehicle(vehicle);
@@ -3260,14 +3419,14 @@ export class PixiWastelandGame {
         }
         this.removeMagicianStageProps();
         this.startMagicianCurtainCall(prop.x, prop.y, this.magicianFinaleInProgress ? "finale-revealed" : "revealed");
-        this.showDamageNumber(prop.x, prop.y - 34, 0, "#fff3b0", "REVEAL ");
+        this.showDamageNumber(prop.x, prop.y, 0, "#fff3b0", "REVEAL ", -34);
         this.spawnHitSparks(prop.x, prop.y, 0xfff3b0, 18);
       } else {
         if (prop.kind === "mirror") {
           this.spawnMagicianMirrorShardBurst(prop.x, prop.y, prop.damage ?? 8);
         }
         this.spawnDelayedBossBlast(prop.x, prop.y, 82, prop.damage ?? 12, 80, 0x9d4edd, "鍋囪薄纰庤");
-        this.showDamageNumber(prop.x, prop.y - 28, 0, "#9d4edd", "FAKE ");
+        this.showDamageNumber(prop.x, prop.y, 0, "#9d4edd", "FAKE ", -28);
         this.spawnHitSparks(prop.x, prop.y, 0x9d4edd, 10);
         this.removeMagicianStageProp(prop);
       }
@@ -3282,7 +3441,7 @@ export class PixiWastelandGame {
       if (!this.isPointInsideCurrentStoryVision(boss)) continue;
       if (!projectileHitsCircle(bullet.projectile, { x: boss.x, y: boss.y, radius: 34 })) continue;
       if (this.shouldChefBlockBullet(boss, bullet)) {
-        this.showDamageNumber(boss.x, boss.y - 46, 0, "#68e1fd", "IMM ");
+        this.showDamageNumber(boss.x, boss.y, 0, "#68e1fd", "IMM ", -46);
         this.spawnHitSparks(
           boss.x + Math.cos(boss.view.rotation) * (CHEF_WOK_MODEL_RADIUS + 16),
           boss.y + Math.sin(boss.view.rotation) * (CHEF_WOK_MODEL_RADIUS + 16),
@@ -3328,13 +3487,13 @@ export class PixiWastelandGame {
 
   private damageEnemy(enemy: EnemyActor, amount: number, color: string): void {
     if ((enemy.invulnerableMs ?? 0) > 0) {
-      this.showDamageNumber(enemy.x, enemy.y - 24, 0, "#68e1fd", "IMM ");
+      this.showDamageNumber(enemy.x, enemy.y, 0, "#68e1fd", "IMM ", -24);
       this.spawnHitSparks(enemy.x, enemy.y, 0x68e1fd, 4);
       return;
     }
     const damage = Math.max(0, Math.round(amount));
     enemy.health -= damage;
-    this.showDamageNumber(enemy.x, enemy.y - 24, damage, color);
+    this.showDamageNumber(enemy.x, enemy.y, damage, color, "", -24);
     if (enemy.health <= 0) {
       this.defeatEnemy(enemy);
       return;
@@ -3344,13 +3503,13 @@ export class PixiWastelandGame {
 
   private damageRoamingBoss(boss: BossActor, amount: number, color: string): void {
     if (this.isRoamingBossInvulnerable(boss)) {
-      this.showDamageNumber(boss.x, boss.y - 46, 0, "#68e1fd", "IMM ");
+      this.showDamageNumber(boss.x, boss.y, 0, "#68e1fd", "IMM ", -46);
       this.spawnHitSparks(boss.x, boss.y, 0x68e1fd, 6);
       return;
     }
     const damage = Math.max(0, Math.round(amount));
     boss.health = Math.max(0, boss.health - damage);
-    this.showDamageNumber(boss.x, boss.y - 46, damage, color);
+    this.showDamageNumber(boss.x, boss.y, damage, color, "", -46);
     gsap.fromTo(boss.view.scale, { x: 1.16, y: 1.16 }, { x: 1, y: 1, duration: 0.14 });
     if (boss.health <= 0) {
       this.defeatBoss(boss);
@@ -3378,13 +3537,13 @@ export class PixiWastelandGame {
 
   private damageFinalBoss(boss: FinalBossActor, amount: number, kind: "direct" | "explosive" = "direct"): void {
     if (boss.phase === 2 && FINAL_BOSS_PHASE_TWO_SKILL.onlyExplosiveDamage && kind !== "explosive") {
-      this.showDamageNumber(boss.x, boss.y - 64, 0, "#68e1fd", "IMM ");
+      this.showDamageNumber(boss.x, boss.y, 0, "#68e1fd", "IMM ", -64);
       this.spawnHitSparks(boss.x, boss.y, 0x68e1fd, 8);
       return;
     }
     const damage = Math.max(0, Math.round(amount));
     boss.health = Math.max(0, boss.health - damage);
-    this.showDamageNumber(boss.x, boss.y - 64, damage, "#ff4d6d");
+    this.showDamageNumber(boss.x, boss.y, damage, "#ff4d6d", "", -64);
     gsap.fromTo(boss.view.scale, { x: 1.1, y: 1.1 }, { x: 1, y: 1, duration: 0.12 });
     if (boss.health <= 0) {
       this.defeatFinalBoss(boss);
@@ -3395,13 +3554,13 @@ export class PixiWastelandGame {
     this.aggroHospitalKnight(boss);
     const soldiers = this.getActiveBoneSoldierCount();
     if (!isHospitalKnightDamageable(boss.phase, soldiers)) {
-      this.showDamageNumber(boss.x, boss.y - 64, 0, "#d9f7ff", "IMM ");
+      this.showDamageNumber(boss.x, boss.y, 0, "#d9f7ff", "IMM ", -64);
       this.spawnHitSparks(boss.x, boss.y, 0x68e1fd, 7);
       return;
     }
     const damage = Math.max(0, Math.round(amount));
     boss.health = Math.max(0, boss.health - damage);
-    this.showDamageNumber(boss.x, boss.y - 64, damage, "#d9f7ff");
+    this.showDamageNumber(boss.x, boss.y, damage, "#d9f7ff", "", -64);
     gsap.fromTo(boss.view.scale, { x: 1.12, y: 1.12 }, { x: 1, y: 1, duration: 0.12 });
     if (boss.health <= 0) {
       this.defeatHospitalKnight(boss);
@@ -3413,7 +3572,8 @@ export class PixiWastelandGame {
     if (!storyVisual || storyVisual.character !== "zombie") return;
     const direction = storyVisual.direction;
     const view = new Graphics();
-    view.position.set(enemy.x, enemy.y);
+    this.setViewPosition(view, enemy.x, enemy.y);
+    view.zIndex = this.getStoryVisualDepth(enemy, 18);
     this.world.addChild(view);
     const visual = attachStoryActorVisual(view, "zombie", "death", direction);
     this.storyDeathVisuals.push({
@@ -3860,7 +4020,7 @@ export class PixiWastelandGame {
     this.addScreenShake(120, 6);
     const blast = new Graphics();
     blast.circle(0, 0, radius).fill({ color, alpha: 0.2 }).stroke({ color: 0xfff3b0, alpha: 0.65, width: 2 });
-    blast.position.set(x, y);
+    this.setEffectPosition(blast, x, y);
     this.world.addChild(blast);
     gsap.to(blast, {
       alpha: 0,
@@ -4089,10 +4249,21 @@ export class PixiWastelandGame {
 
   private updateWeaponAim(target = this.getWeaponAimTarget()): void {
     if (!this.player || !this.playerWeapon) return;
-    this.playerWeapon.container.position.set(this.player.x, this.player.y);
-    const angle = Math.atan2(target.y - this.player.y, target.x - this.player.x);
+    this.setViewPosition(
+      this.playerWeapon.container,
+      this.player.x,
+      this.player.y,
+      this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0,
+    );
+    const angle = this.isStoryMode()
+      ? projectStoryAngle(this.player, target, this.getStoryProjectionOrigin())
+      : Math.atan2(target.y - this.player.y, target.x - this.player.x);
+    this.playerWeapon.container.zIndex = this.getStoryVisualDepth(
+      this.player,
+      getPlayerWeaponDepthOffset(angle),
+    );
     this.playerWeapon.container.rotation = angle;
-    this.player.view.rotation = angle + Math.PI / 2;
+    this.player.view.rotation = this.playerStoryVisual ? 0 : angle + Math.PI / 2;
   }
 
   private getWeaponAimTarget(): { x: number; y: number } {
@@ -4125,11 +4296,15 @@ export class PixiWastelandGame {
       },
     });
     this.spawnMuzzleSparks();
-    this.addScreenShake(45, BASIC_GUN.screenShakeMagnitude);
+    const feedback = getBasicGunFireFeedback({ storyMode: this.isStoryMode() });
+    if (feedback.screenShakeMagnitude > 0) {
+      this.addScreenShake(45, feedback.screenShakeMagnitude);
+    }
 
+    if (feedback.actorRecoilDistance <= 0) return;
     const recoilAngle = this.playerWeapon.container.rotation + Math.PI;
-    const recoilX = Math.cos(recoilAngle) * 3.5;
-    const recoilY = Math.sin(recoilAngle) * 3.5;
+    const recoilX = Math.cos(recoilAngle) * feedback.actorRecoilDistance;
+    const recoilY = Math.sin(recoilAngle) * feedback.actorRecoilDistance;
     gsap.fromTo(
       this.player.view,
       { x: recoilX, y: recoilY },
@@ -4140,18 +4315,18 @@ export class PixiWastelandGame {
   private spawnMuzzleSparks(): void {
     if (!this.player || !this.playerWeapon) return;
     const angle = this.playerWeapon.container.rotation;
-    const muzzleX = this.player.x + Math.cos(angle) * 58;
-    const muzzleY = this.player.y + Math.sin(angle) * 58;
+    const muzzle = this.getPlayerWeaponMuzzleVisualPoint();
 
     for (let index = 0; index < BASIC_GUN.sparkCount; index += 1) {
       const sparkAngle = angle + (Math.random() - 0.5) * 0.75;
       const spark = new Graphics();
       spark.circle(0, 0, 1.2 + Math.random() * 2.2).fill(index % 2 === 0 ? 0xfff3b0 : 0x68e1fd);
-      spark.position.set(muzzleX, muzzleY);
+      spark.position.set(muzzle.x, muzzle.y);
+      spark.zIndex = this.getStoryVisualDepth(this.player, 45);
       this.world.addChild(spark);
       gsap.to(spark, {
-        x: muzzleX + Math.cos(sparkAngle) * (22 + Math.random() * 28),
-        y: muzzleY + Math.sin(sparkAngle) * (22 + Math.random() * 28),
+        x: muzzle.x + Math.cos(sparkAngle) * (22 + Math.random() * 28),
+        y: muzzle.y + Math.sin(sparkAngle) * (22 + Math.random() * 28),
         alpha: 0,
         duration: 0.1 + Math.random() * 0.08,
         ease: "power2.out",
@@ -4164,16 +4339,20 @@ export class PixiWastelandGame {
   }
 
   private spawnHitSparks(x: number, y: number, color: number, count: number): void {
+    const projected = this.projectEffectPoint({ x, y });
+    const sparkX = projected.x;
+    const sparkY = projected.y;
     for (let index = 0; index < count; index += 1) {
       const angle = Math.random() * Math.PI * 2;
       const spark = new Graphics();
       spark.rect(-1, -1, 2 + Math.random() * 3, 2).fill(color);
-      spark.position.set(x, y);
+      spark.position.set(sparkX, sparkY);
       spark.rotation = angle;
+      spark.zIndex = this.getStoryVisualDepth({ x, y }, 45);
       this.world.addChild(spark);
       gsap.to(spark, {
-        x: x + Math.cos(angle) * (18 + Math.random() * 24),
-        y: y + Math.sin(angle) * (18 + Math.random() * 24),
+        x: sparkX + Math.cos(angle) * (18 + Math.random() * 24),
+        y: sparkY + Math.sin(angle) * (18 + Math.random() * 24),
         alpha: 0,
         duration: 0.16,
         ease: "power2.out",
@@ -4572,7 +4751,7 @@ export class PixiWastelandGame {
     this.drawExpandingRing(boss.x, boss.y, skill.interferenceRadius, 0xff1744, skill.beamDelayMs);
     if (this.player) {
       this.playerSlowMs = Math.max(this.playerSlowMs, skill.slowMs);
-      this.showDamageNumber(this.player.x, this.player.y - 44, 0, "#68e1fd", "SLOW ");
+      this.showDamageNumber(this.player.x, this.player.y, 0, "#68e1fd", "SLOW ", -44);
     }
     this.drawExpandingRing(boss.x, boss.y, 132, 0xffffff, skill.beamDelayMs);
     window.setTimeout(() => {
@@ -4688,7 +4867,7 @@ export class PixiWastelandGame {
       { x: this.player.x, y: bottom + 26, value: Math.abs(bottom - this.player.y) },
     ].sort((a, b) => a.value - b.value);
     this.setActorPosition(this.player, clamp(exits[0].x, 24, MAP_WIDTH - 24), clamp(exits[0].y, 24, MAP_HEIGHT - 24));
-    this.showDamageNumber(this.player.x, this.player.y - 42, 0, "#ff4d6d", "EJECT ");
+    this.showDamageNumber(this.player.x, this.player.y, 0, "#ff4d6d", "EJECT ", -42);
   }
 
   private updateHostileBuilding(building: BuildingVisual): void {
@@ -5123,7 +5302,7 @@ export class PixiWastelandGame {
       x: clamp(knight.x + Math.cos(moveAngle) * speed * seconds, 24, MAP_WIDTH - 24),
       y: clamp(knight.y + Math.sin(moveAngle) * speed * seconds, 24, MAP_HEIGHT - 24),
     };
-    const resolved = resolveBlockedMovement(knight, desired, 44, this.getActiveBuildings());
+    const resolved = resolveBlockedMovementWithBlockingBuildings(knight, desired, 44, this.getActiveBlockingBuildings());
     this.setActorPosition(knight, resolved.x, resolved.y);
     knight.view.rotation = angleToPlayer;
 
@@ -6069,7 +6248,7 @@ export class PixiWastelandGame {
     const devices = this.teslaDevices.filter((device) => device.boss === boss);
     if (devices.length === 0) {
       boss.health = Math.min(boss.maxHealth, boss.health + 420);
-      this.showDamageNumber(boss.x, boss.y - 50, 420, "#68e1fd", "+");
+      this.showDamageNumber(boss.x, boss.y, 420, "#68e1fd", "+", -50);
       this.spawnTeslaEngineerTurrets(boss, { ...skill, damage: 8, radius: 9999 });
       return;
     }
@@ -6350,12 +6529,12 @@ export class PixiWastelandGame {
     for (const enemy of this.enemies) {
       if (distance(enemy, { x, y }) > radius) continue;
       enemy.health += amount;
-      this.showDamageNumber(enemy.x, enemy.y - 24, amount, "#a7c957", "+");
+      this.showDamageNumber(enemy.x, enemy.y, amount, "#a7c957", "+", -24);
     }
     for (const boss of this.bosses) {
       if (distance(boss, { x, y }) > radius + 34) continue;
       boss.health = Math.min(boss.maxHealth, boss.health + amount * 3);
-      this.showDamageNumber(boss.x, boss.y - 46, amount * 3, "#a7c957", "+");
+      this.showDamageNumber(boss.x, boss.y, amount * 3, "#a7c957", "+", -46);
     }
   }
 
@@ -7218,7 +7397,7 @@ export class PixiWastelandGame {
       }
       if (!this.player || !this.bosses.includes(boss)) return;
       if (getCourierSignatureLockOutcome(distance(this.player, { x, y }), skill.radius) === "safe") {
-        this.showDamageNumber(x, y - 42, 0, "#fff3b0", "SAFE ");
+        this.showDamageNumber(x, y, 0, "#fff3b0", "SAFE ", -42);
         return;
       }
       const angle = Math.atan2(this.player.y - boss.y, this.player.x - boss.x);
@@ -7228,7 +7407,7 @@ export class PixiWastelandGame {
       boss.chargeDamage = Math.round(skill.damage * 0.75);
       boss.chargeSpeed = COURIER_LOCKED_CHARGE_SPEED * 0.78;
       this.spawnChargeTelegraph(boss, angle, 260, 0xffd166);
-      this.showDamageNumber(this.player.x, this.player.y - 42, 0, "#ff9f1c", "AMBUSH ");
+      this.showDamageNumber(this.player.x, this.player.y, 0, "#ff9f1c", "AMBUSH ", -42);
     }, COURIER_SIGNATURE_LOCK_MS);
   }
 
@@ -7668,21 +7847,32 @@ export class PixiWastelandGame {
     if (!this.player) return;
     const shakeAngle = Math.random() * Math.PI * 2;
     const shakeDistance = this.screenShakeMs > 0 ? Math.random() * this.screenShakeMagnitude : 0;
+    const projectedPlayer = this.projectPoint(this.player);
     this.world.position.set(
-      this.app.screen.width / 2 - this.player.x + Math.cos(shakeAngle) * shakeDistance,
-      this.app.screen.height / 2 - this.player.y + Math.sin(shakeAngle) * shakeDistance,
+      this.app.screen.width / 2 - projectedPlayer.x + Math.cos(shakeAngle) * shakeDistance,
+      this.app.screen.height / 2 - projectedPlayer.y + Math.sin(shakeAngle) * shakeDistance,
     );
   }
 
   private updateVisibility(): void {
-    const currentBuildingId = this.getCurrentBuildingId();
+    const storyFogDisabled = this.isStoryFullVisibilityMode();
+    const currentBuildingId = storyFogDisabled ? null : this.getCurrentBuildingId();
     this.updateInteriorVisibilityMask(currentBuildingId);
 
-    for (const building of this.buildingVisuals) {
-      const isCurrentInterior = currentBuildingId === building.id;
-      building.shell.alpha = isCurrentInterior ? 0.72 : 0.44;
-      building.roof.alpha = isCurrentInterior ? 0.08 : 0.94;
+    if (this.visibleBuildingId !== currentBuildingId) {
+      this.visibleBuildingId = currentBuildingId;
+      for (const building of this.buildingVisuals) {
+        const isCurrentInterior = currentBuildingId === building.id;
+        building.shell.alpha = isCurrentInterior ? 0.72 : 0.44;
+        building.roof.alpha = isCurrentInterior ? 0.08 : 0.94;
+      }
     }
+
+    if (storyFogDisabled) {
+      this.applyStoryAllVisibleOnce();
+      return;
+    }
+    this.storyAllVisibleApplied = false;
 
     for (const enemy of this.enemies) {
       enemy.view.visible = this.isVisibleFromPlayerZone(enemy);
@@ -7734,7 +7924,40 @@ export class PixiWastelandGame {
     }
   }
 
+  private applyStoryAllVisibleOnce(): void {
+    if (this.storyAllVisibleApplied) return;
+    this.storyAllVisibleApplied = true;
+    for (const enemy of this.enemies) enemy.view.visible = true;
+    for (const boss of this.bosses) {
+      boss.view.visible = true;
+      boss.label.visible = true;
+    }
+    for (const boss of this.getFinalBosses()) {
+      boss.view.visible = true;
+      boss.label.visible = true;
+    }
+    for (const boss of this.getHospitalKnights()) {
+      boss.view.visible = true;
+      boss.label.visible = true;
+    }
+    for (const pile of this.bonePiles) pile.view.visible = true;
+    for (const deathVisual of this.storyDeathVisuals) deathVisual.view.visible = true;
+    if (this.playerTrap) this.playerTrap.view.visible = true;
+    for (const bullet of this.bullets) bullet.view.visible = true;
+    for (const projectile of this.heavyProjectiles) projectile.view.visible = true;
+    for (const strike of this.autoStrikes) strike.view.visible = true;
+    for (const mine of this.warpMines) mine.view.visible = true;
+    for (const hazard of this.bossHazards) hazard.view.visible = true;
+    for (const telegraph of this.bossTelegraphs) telegraph.view.visible = true;
+    for (const marker of this.nodeMarkers) marker.view.visible = true;
+  }
+
   private updateInteriorVisibilityMask(currentBuildingId: string | null): void {
+    if (this.isStoryFullVisibilityMode()) {
+      this.interiorVisibilityMask.clear();
+      this.interiorVisibilityMask.visible = false;
+      return;
+    }
     this.interiorVisibilityMask.clear();
     this.interiorVisibilityMask.visible = currentBuildingId !== null || this.playerVisionNarrowMs > 0 || this.isStoryMode();
     if (!currentBuildingId) {
@@ -7794,7 +8017,14 @@ export class PixiWastelandGame {
     this.emitMetrics();
   }
 
+  private emitMetricsThrottled(deltaMs: number): void {
+    this.metricsEmitElapsedMs += deltaMs;
+    if (this.metricsEmitElapsedMs < METRICS_EMIT_INTERVAL_MS) return;
+    this.emitMetrics();
+  }
+
   private emitMetrics(): void {
+    this.metricsEmitElapsedMs = 0;
     const bossNames = this.bosses.map((boss) => this.getBossName(boss.bossId));
     for (let index = 0; index < this.getFinalBosses().length; index += 1) {
       bossNames.push(FINAL_BOSS_DEFINITION.name);
@@ -7806,7 +8036,10 @@ export class PixiWastelandGame {
     const finalBosses = this.getFinalBosses();
     const hospitalKnights = this.getHospitalKnights();
     const currentBuildingId = this.getCurrentBuildingId();
-    const insideBuilding = this.player ? pointInsideBuildings(this.player, this.getActiveBuildings()) : false;
+    const insideBuilding =
+      this.player && !this.isStoryFullVisibilityMode()
+        ? pointInsideBuildings(this.player, this.getActiveBuildings())
+        : false;
     const metrics = {
       enemyCount: this.enemies.length,
       bossCount: this.bosses.length + finalBosses.length + hospitalKnights.length,
@@ -7844,6 +8077,9 @@ export class PixiWastelandGame {
       storyArtSliceEnabled: this.isStoryMode() && Boolean(this.storySliceRenderer),
       storyLighthouseVisualState: this.storySliceRenderer?.getLighthouseVisualState(),
       storyArtSpriteCount: this.storySliceRenderer?.debugSpriteCount(),
+      story2_5dEnabled: this.isStoryMode(),
+      story2_5dGroundScaleY: this.isStoryMode() ? STORY_2_5D_CONFIG.groundScaleY : undefined,
+      story2_5dPlayerScreenY: this.isStoryMode() && this.player ? this.projectPoint(this.player).y : undefined,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;
@@ -7853,10 +8089,11 @@ export class PixiWastelandGame {
     return BOSS_DEFINITIONS.find((boss) => boss.id === bossId)?.name ?? bossId;
   }
 
-  private setActorPosition(actor: Actor, x: number, y: number): void {
+  private setActorPosition(actor: Actor, x: number, y: number, depthOffset = 20, visualYOffset = 0): void {
     actor.x = x;
     actor.y = y;
-    actor.view.position.set(x, y);
+    this.setViewPosition(actor.view, x, y, visualYOffset);
+    actor.view.zIndex = this.getStoryVisualDepth({ x, y }, depthOffset);
   }
 
   private getBasicGunDamage(): number {
@@ -7926,22 +8163,26 @@ export class PixiWastelandGame {
   }
 
   private getCurrentBuildingId(): string | null {
+    if (this.isStoryFullVisibilityMode()) return null;
     return this.player ? getContainingBuildingId(this.player, this.getActiveBuildings()) : null;
   }
 
   private getVisibilityZoneId(point: { x: number; y: number }): string | null {
+    if (this.isStoryFullVisibilityMode()) return null;
     return getContainingBuildingId(point, this.getActiveBuildings());
   }
 
   private isVisibleFromPlayerZone(actor: { x: number; y: number }): boolean {
     if (!this.player) return true;
     if (this.isStoryMode()) {
+      if (this.isStoryFullVisibilityMode()) return true;
       return distance(this.player, actor) <= this.getCurrentStoryVisionRadius();
     }
     return this.getVisibilityZoneId(actor) === this.getCurrentBuildingId();
   }
 
   private isSameVisibilityZone(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+    if (this.isStoryFullVisibilityMode()) return true;
     return this.getVisibilityZoneId(a) === this.getVisibilityZoneId(b);
   }
 
@@ -7952,7 +8193,7 @@ export class PixiWastelandGame {
     const damage = previousHealth - this.state.health;
     if (damage <= 0) return;
 
-    this.showDamageNumber(this.player.x, this.player.y - 34, damage, "#ff4d6d", "-");
+    this.showDamageNumber(this.player.x, this.player.y, damage, "#ff4d6d", "-", -34);
     this.flashPlayerMech();
     this.callbacks.onRunState(this.state);
     if (this.state.health <= 0) {
@@ -7983,6 +8224,7 @@ export class PixiWastelandGame {
     amount: number,
     color: string,
     prefix = "",
+    visualYOffset = 0,
   ): void {
     const view = new Text({
       text: prefix + String(Math.round(amount)),
@@ -7995,7 +8237,9 @@ export class PixiWastelandGame {
       }),
     });
     view.anchor.set(0.5);
-    view.position.set(x, y);
+    const projected = this.projectPoint({ x, y });
+    view.position.set(projected.x, projected.y + visualYOffset);
+    view.zIndex = this.getStoryVisualDepth({ x, y }, 60);
     this.world.addChild(view);
     this.damageNumbers.push({ view, lifeMs: 650, velocityY: -44 });
   }

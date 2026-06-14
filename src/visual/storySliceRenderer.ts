@@ -8,11 +8,14 @@ import {
   type StorySliceLayerName,
 } from "./storyArtDirection";
 import { STORY_SLICE_ASSETS } from "./storyAssetManifest";
+import { STORY_2_5D_CONFIG, type StoryPoint } from "./story2_5dProjection";
 
 export interface StorySliceRendererOptions {
   world: Container;
-  center: { x: number; y: number };
+  center: StoryPoint;
   lit: boolean;
+  // Enables story 2.5D projection; ground/fog y-scale compression is tied to this mode.
+  projectPoint?: (point: StoryPoint) => StoryPoint;
 }
 
 export interface StorySliceRenderer {
@@ -48,11 +51,35 @@ function createLayers(root: Container): Record<StorySliceLayerName, Container> {
   return Object.fromEntries(entries) as Record<StorySliceLayerName, Container>;
 }
 
-function makeSprite(path: string, x: number, y: number, scale = 1): Sprite {
+function placeSprite(
+  sprite: Sprite,
+  x: number,
+  y: number,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
+): void {
+  const projected = options.projectPoint?.({ x, y }) ?? { x, y };
+  sprite.position.set(projected.x, projected.y);
+}
+
+function getGroundPlaneScaleY(
+  scale: number,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
+): number {
+  return options.projectPoint ? scale * STORY_2_5D_CONFIG.groundScaleY : scale;
+}
+
+function makeSprite(
+  path: string,
+  x: number,
+  y: number,
+  scale = 1,
+  options: Pick<StorySliceRendererOptions, "projectPoint"> = {},
+  scaleY = scale,
+): Sprite {
   const sprite = new Sprite(Texture.from(path));
   sprite.anchor.set(0.5);
-  sprite.position.set(x, y);
-  sprite.scale.set(scale);
+  placeSprite(sprite, x, y, options);
+  sprite.scale.set(scale, scaleY);
   return sprite;
 }
 
@@ -61,17 +88,20 @@ function makeTexturedSprite(
   x: number,
   y: number,
   scale = 1,
+  options: Pick<StorySliceRendererOptions, "projectPoint"> = {},
+  scaleY = scale,
 ): Sprite {
   const sprite = new Sprite(texture);
   sprite.anchor.set(0.5);
-  sprite.position.set(x, y);
-  sprite.scale.set(scale);
+  placeSprite(sprite, x, y, options);
+  sprite.scale.set(scale, scaleY);
   return sprite;
 }
 
 function addGround(
   layers: Record<StorySliceLayerName, Container>,
-  center: { x: number; y: number },
+  center: StoryPoint,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
 ): void {
   const tileSize = 256;
   const [road, cracked, concrete, grass] = STORY_SLICE_ASSETS.map.groundTiles;
@@ -91,6 +121,8 @@ function addGround(
           center.x + ix * tileSize,
           center.y + iy * tileSize,
           1,
+          options,
+          getGroundPlaneScaleY(1, options),
         ),
       );
     }
@@ -99,46 +131,48 @@ function addGround(
 
 function addProps(
   layers: Record<StorySliceLayerName, Container>,
-  center: { x: number; y: number },
+  center: StoryPoint,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
 ): void {
   const [buildingGreen, buildingOchre, buildingTeal] =
     STORY_SLICE_ASSETS.map.buildings;
   layers.prop.addChild(
-    makeSprite(buildingGreen, center.x - 520, center.y - 390, 0.72),
+    makeSprite(buildingGreen, center.x - 520, center.y - 390, 0.72, options),
   );
   layers.prop.addChild(
-    makeSprite(buildingOchre, center.x + 540, center.y - 360, 0.7),
+    makeSprite(buildingOchre, center.x + 540, center.y - 360, 0.7, options),
   );
   layers.prop.addChild(
-    makeSprite(buildingTeal, center.x - 440, center.y + 430, 0.66),
+    makeSprite(buildingTeal, center.x - 440, center.y + 430, 0.66, options),
   );
 
   const [debrisOne, debrisTwo, wreckedCar, streetlight, roadblock, signboard] =
     STORY_SLICE_ASSETS.map.decorations;
   layers.decal.addChild(
-    makeSprite(debrisOne, center.x - 180, center.y + 140, 0.78),
+    makeSprite(debrisOne, center.x - 180, center.y + 140, 0.78, options),
   );
   layers.decal.addChild(
-    makeSprite(debrisTwo, center.x + 230, center.y - 110, 0.78),
+    makeSprite(debrisTwo, center.x + 230, center.y - 110, 0.78, options),
   );
   layers.prop.addChild(
-    makeSprite(wreckedCar, center.x + 360, center.y + 190, 0.72),
+    makeSprite(wreckedCar, center.x + 360, center.y + 190, 0.72, options),
   );
   layers.prop.addChild(
-    makeSprite(streetlight, center.x - 250, center.y - 245, 0.78),
+    makeSprite(streetlight, center.x - 250, center.y - 245, 0.78, options),
   );
   layers.prop.addChild(
-    makeSprite(roadblock, center.x + 85, center.y + 310, 0.82),
+    makeSprite(roadblock, center.x + 85, center.y + 310, 0.82, options),
   );
   layers.prop.addChild(
-    makeSprite(signboard, center.x - 20, center.y - 335, 0.82),
+    makeSprite(signboard, center.x - 20, center.y - 335, 0.82, options),
   );
 }
 
 function addTexturedFog(
   layers: Record<StorySliceLayerName, Container>,
-  center: { x: number; y: number },
+  center: StoryPoint,
   state: StoryLighthouseVisualState,
+  options: Pick<StorySliceRendererOptions, "projectPoint">,
 ): Sprite[] {
   const offsets = [
     { x: -520, y: -430, scale: 2.2, rotation: -0.08 },
@@ -153,6 +187,8 @@ function addTexturedFog(
       center.x + offset.x,
       center.y + offset.y,
       offset.scale,
+      options,
+      getGroundPlaneScaleY(offset.scale, options),
     );
     fog.label = `story-textured-fog-${index}`;
     fog.tint = STORY_ART_PALETTE.beaconHighlight;
@@ -171,8 +207,8 @@ export function createStorySliceRenderer(
   options.world.addChild(root);
 
   const layers = createLayers(root);
-  addGround(layers, options.center);
-  addProps(layers, options.center);
+  addGround(layers, options.center, options);
+  addProps(layers, options.center, options);
 
   const lighthouseTextures = Object.fromEntries(
     STORY_LIGHTHOUSE_VISUAL_STATES.map((state) => [
@@ -182,12 +218,18 @@ export function createStorySliceRenderer(
   ) as Record<StoryLighthouseVisualState, Texture>;
   const activePulses = new Set<ActivePulse>();
   let lighthouseState: StoryLighthouseVisualState = options.lit ? "on" : "off";
-  const fogSprites = addTexturedFog(layers, options.center, lighthouseState);
+  const fogSprites = addTexturedFog(
+    layers,
+    options.center,
+    lighthouseState,
+    options,
+  );
   const lighthouse = makeTexturedSprite(
     lighthouseTextures[lighthouseState],
     options.center.x,
     options.center.y,
     0.82,
+    options,
   );
   lighthouse.label = "story-center-lighthouse-sprite";
   layers.lighthouse.addChild(lighthouse);
@@ -197,6 +239,7 @@ export function createStorySliceRenderer(
     options.center.x,
     options.center.y,
     0.72,
+    options,
   );
   coreGlow.label = "story-center-lighthouse-core-glow";
   coreGlow.alpha = options.lit ? 0.82 : 0.16;
@@ -234,6 +277,7 @@ export function createStorySliceRenderer(
         origin.x,
         origin.y,
         0.22,
+        options,
       );
       pulse.tint = STORY_ART_PALETTE.mechCyan;
       pulse.alpha = 0.82;

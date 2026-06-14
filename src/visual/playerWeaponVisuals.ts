@@ -36,3 +36,15 @@ export const PLAYER_WEAPON_VISUAL_GEOMETRY = {
     circleRadius: 5,
   },
 } as const;
+
+export const PLAYER_WEAPON_MUZZLE_DISTANCE =
+  PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.tipX;
+
+export const PLAYER_WEAPON_BACK_DEPTH_OFFSET = 10;
+export const PLAYER_WEAPON_FRONT_DEPTH_OFFSET = 30;
+
+export function getPlayerWeaponDepthOffset(angle: number): number {
+  return Math.sin(angle) < -0.25
+    ? PLAYER_WEAPON_BACK_DEPTH_OFFSET
+    : PLAYER_WEAPON_FRONT_DEPTH_OFFSET;
+}

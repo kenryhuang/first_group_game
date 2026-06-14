@@ -21,10 +21,17 @@ export function triggerStoryActorOneShot(
   direction: StoryDirection,
   nowMs: number,
   durationMs: number,
-): void {
+): boolean {
+  const shouldRestart =
+    lock.animation !== animation ||
+    lock.direction !== direction ||
+    nowMs >= lock.lockedUntilMs;
+
   lock.animation = animation;
   lock.direction = direction;
   lock.lockedUntilMs = nowMs + durationMs;
+
+  return shouldRestart;
 }
 
 export function getStoryActorPlayback(

@@ -25,6 +25,7 @@ const { Cache, Graphics, Texture } = await import("pixi.js");
 const {
   attachStoryActorVisual,
   getStoryActorDirection,
+  STORY_ACTOR_FOOT_ANCHORS,
   STORY_ACTOR_SCALES,
 } = await import("./storyActorVisuals");
 
@@ -122,7 +123,7 @@ describe("story actor visuals", () => {
     expect(visual.direction).toBe("down");
   });
 
-  it("uses readable story sprite scales for the redrawn character art", () => {
+  it("uses boosted C2 scales and foot anchors for the redrawn character art", () => {
     const vanguardView = new Graphics();
     const vanguard = attachStoryActorVisual(
       vanguardView,
@@ -133,12 +134,18 @@ describe("story actor visuals", () => {
     const zombieView = new Graphics();
     const zombie = attachStoryActorVisual(zombieView, "zombie", "idle", "down");
 
-    expect(STORY_ACTOR_SCALES.vanguard).toBe(0.52);
-    expect(STORY_ACTOR_SCALES.zombie).toBe(0.39);
-    expect(vanguard.sprite.scale.x).toBeCloseTo(0.52);
-    expect(vanguard.sprite.scale.y).toBeCloseTo(0.52);
-    expect(zombie.sprite.scale.x).toBeCloseTo(0.39);
-    expect(zombie.sprite.scale.y).toBeCloseTo(0.39);
+    expect(STORY_ACTOR_SCALES.vanguard).toBe(0.57);
+    expect(STORY_ACTOR_SCALES.zombie).toBe(0.43);
+    expect(STORY_ACTOR_FOOT_ANCHORS.vanguard).toBe(0.88);
+    expect(STORY_ACTOR_FOOT_ANCHORS.zombie).toBe(0.9);
+    expect(vanguard.sprite.scale.x).toBeCloseTo(0.57);
+    expect(vanguard.sprite.scale.y).toBeCloseTo(0.57);
+    expect(vanguard.sprite.anchor.x).toBeCloseTo(0.5);
+    expect(vanguard.sprite.anchor.y).toBeCloseTo(0.88);
+    expect(zombie.sprite.scale.x).toBeCloseTo(0.43);
+    expect(zombie.sprite.scale.y).toBeCloseTo(0.43);
+    expect(zombie.sprite.anchor.x).toBeCloseTo(0.5);
+    expect(zombie.sprite.anchor.y).toBeCloseTo(0.9);
   });
 
   it("updates animation and flashes without removing the actor view", () => {

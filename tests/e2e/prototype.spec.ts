@@ -133,6 +133,28 @@ test("story mode map tuning starts with zombie waves and without boss encounters
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyArtSpriteCount ?? 0))
     .toBeGreaterThanOrEqual(18);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dEnabled ?? false))
+    .toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dGroundScaleY ?? 0))
+    .toBe(0.56);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const metrics = window.__prototypeDebug;
+        if (!metrics?.playerY || !metrics.story2_5dPlayerScreenY || !metrics.story2_5dGroundScaleY) return false;
+        const lighthouseY = 19800;
+        const expected =
+          lighthouseY + (metrics.playerY - lighthouseY) * metrics.story2_5dGroundScaleY;
+
+        return (
+          Math.abs(metrics.story2_5dPlayerScreenY - expected) < 0.5 &&
+          Math.abs(metrics.story2_5dPlayerScreenY - metrics.playerY) > 1
+        );
+      }),
+    )
+    .toBe(true);
 
   await page.keyboard.press("E");
   await expect
@@ -157,7 +179,7 @@ test("story mode map tuning starts with zombie waves and without boss encounters
   await page.keyboard.up("d");
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.playerX ?? 99999), { timeout: 3000 })
-    .toBeGreaterThan(22450);
+    .toBeGreaterThan(22200);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyMagicianInterferenceActive ?? false))
     .toBe(false);
