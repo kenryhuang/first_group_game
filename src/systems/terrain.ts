@@ -196,7 +196,15 @@ export function isFakeMazeWall(building: Rect): boolean {
 }
 
 export function resolveBlockedMovement(from: Point, to: Point, radius: number, buildings = BUILDINGS): Point {
-  const blockingBuildings = buildings.filter(isBlockingBuilding);
+  return resolveBlockedMovementWithBlockingBuildings(from, to, radius, buildings.filter(isBlockingBuilding));
+}
+
+export function resolveBlockedMovementWithBlockingBuildings(
+  from: Point,
+  to: Point,
+  radius: number,
+  blockingBuildings: Rect[],
+): Point {
   if (blockingBuildings.length === 0 || !movementIntersectsBuildings(from, to, radius, blockingBuildings)) return to;
 
   const horizontal = { x: to.x, y: from.y };

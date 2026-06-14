@@ -25,6 +25,7 @@ import {
   PLAYER_START,
   getEnemyMaxAlive,
   getEnemySpawnBatchSize,
+  getEnemySpawnQueueDrainCount,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
   shouldAllowSmallEnemySpawning,
@@ -33,6 +34,7 @@ import {
   STORY_CENTER_LIGHTHOUSE,
   STORY_DEBUG_PLAYER_SPEED_MULTIPLIER,
   STORY_DISABLE_BOSS_ENCOUNTERS_FOR_MAP_TUNING,
+  STORY_DISABLE_FOG_FOR_MAP_TUNING,
   STORY_DISABLE_ZOMBIE_WAVES_FOR_MAP_TUNING,
   STORY_FOG_BASE_RADIUS,
   STORY_INITIAL_UNLOCKED_BOUNDS,
@@ -55,8 +57,9 @@ import {
   BUILDING_LABELS,
   getContainingBuildingId,
   getBuildingsForMode,
+  isBlockingBuilding,
   pointInsideBuildings,
-  resolveBlockedMovement,
+  resolveBlockedMovementWithBlockingBuildings,
   type Rect,
 } from "../systems/terrain";
 import {
@@ -214,7 +217,7 @@ import {
   isPointInBossTerritory,
   shouldRoamingBossTargetPlayer,
 } from "../systems/bossTerritories";
-import { BASIC_GUN } from "../systems/weapons";
+import { BASIC_GUN, getBasicGunFireFeedback } from "../systems/weapons";
 import type { GameMetrics, GameMode, StoryMechId } from "../app/gameStore";
 import {
   BOSS_RUSH_SINGLE_DUELS,
@@ -581,6 +584,7 @@ interface FinalBossCrawlerActor extends Actor {
 
 const BULLET_SOUND =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+const METRICS_EMIT_INTERVAL_MS = 250;
 
 export class PixiWastelandGame {
   private app = new Application();
@@ -632,6 +636,10 @@ export class PixiWastelandGame {
   private playerTrap?: PlayerTrapActor;
   private damageNumbers: DamageNumberActor[] = [];
   private buildingVisuals: BuildingVisual[] = [];
+  private activeBuildingsCache?: Rect[];
+  private activeBlockingBuildingsCache?: Rect[];
+  private visibleBuildingId: string | null | undefined;
+  private storyAllVisibleApplied = false;
   private skillChoiceOverlay?: Container;
   private formChoiceOverlay?: Container;
   private interiorVisibilityMask = new Graphics();
@@ -640,6 +648,8 @@ export class PixiWastelandGame {
   private movementDirection = { x: 1, y: 0 };
   private attackMode: AttackMode = "auto";
   private enemySpawnElapsed = 0;
+  private pendingEnemySpawnCount = 0;
+  private metricsEmitElapsedMs = Number.POSITIVE_INFINITY;
   private autoAttackElapsed = 0;
   private autoWeaponElapsedMs: Partial<Record<AutoWeaponId, number>> = {};
   private energySkillElapsedMs: Partial<Record<EnergySkillId, number>> = {};
@@ -751,6 +761,10 @@ export class PixiWastelandGame {
     return this.isStoryMode() && STORY_DISABLE_ZOMBIE_WAVES_FOR_MAP_TUNING;
   }
 
+  private isStoryFullVisibilityMode(): boolean {
+    return this.isStoryMode() && STORY_DISABLE_FOG_FOR_MAP_TUNING && this.playerVisionNarrowMs <= 0;
+  }
+
   private getMapWidth(): number {
     return this.isStoryMode() ? STORY_MAP_WIDTH : MAP_WIDTH;
   }
@@ -764,7 +778,13 @@ export class PixiWastelandGame {
   }
 
   private getActiveBuildings(): Rect[] {
-    return getBuildingsForMode(this.options.mode ?? "classic");
+    this.activeBuildingsCache ??= getBuildingsForMode(this.options.mode ?? "classic");
+    return this.activeBuildingsCache;
+  }
+
+  private getActiveBlockingBuildings(): Rect[] {
+    this.activeBlockingBuildingsCache ??= this.getActiveBuildings().filter(isBlockingBuilding);
+    return this.activeBlockingBuildingsCache;
   }
 
   private getBossRushPlayerLevel(): number {
@@ -983,7 +1003,7 @@ export class PixiWastelandGame {
       this.updateScreenShake(delta);
       this.updateWeaponAim();
       this.updateCamera();
-      this.emitMetrics();
+      this.emitMetricsThrottled(delta);
       return;
     }
     this.clearSkillChoiceOverlay();
@@ -994,7 +1014,7 @@ export class PixiWastelandGame {
       this.updateScreenShake(delta);
       this.updateWeaponAim();
       this.updateCamera();
-      this.emitMetrics();
+      this.emitMetricsThrottled(delta);
       return;
     }
     this.clearFormChoiceOverlay();
@@ -1031,6 +1051,7 @@ export class PixiWastelandGame {
     this.updateConvoyVehicles(delta);
     this.updateDamageNumbers(delta);
     this.updateSpawning(delta);
+    this.updateQueuedEnemySpawns();
     this.updateAutoAttack(delta);
     this.updateAutoWeapons(delta);
     this.updateEnergySkills(delta);
@@ -1040,7 +1061,7 @@ export class PixiWastelandGame {
     this.highlightNearbyNode();
     this.updateVisibility();
     this.updateCamera();
-    this.emitMetrics();
+    this.emitMetricsThrottled(delta);
   };
 
   private drawWorld(): void {
@@ -1743,7 +1764,7 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + (dx / length) * moveSpeed * seconds, 24, this.getMapWidth() - 24),
       y: clamp(this.player.y + (dy / length) * moveSpeed * seconds, 24, this.getMapHeight() - 24),
     };
-    let resolved = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
+    let resolved = resolveBlockedMovementWithBlockingBuildings(this.player, desired, 16, this.getActiveBlockingBuildings());
     if (this.isStoryMode()) {
       resolved = clampPointToUnlockedStoryRegions(this.player, resolved, [...this.unlockedStoryRegionIds]);
     }
@@ -1777,7 +1798,7 @@ export class PixiWastelandGame {
         x: enemy.x + Math.cos(angle) * enemy.speed * seconds,
         y: enemy.y + Math.sin(angle) * enemy.speed * seconds,
       };
-      const resolved = resolveBlockedMovement(enemy, desired, 11, this.getActiveBuildings());
+      const resolved = resolveBlockedMovementWithBlockingBuildings(enemy, desired, 11, this.getActiveBlockingBuildings());
       this.setActorPosition(enemy, resolved.x, resolved.y);
       const storyVisual = this.enemyStoryVisuals.get(enemy);
       if (storyVisual) {
@@ -1937,7 +1958,7 @@ export class PixiWastelandGame {
         x: boss.x + Math.cos(angle) * speed * seconds,
         y: boss.y + Math.sin(angle) * speed * seconds,
       };
-      const resolved = resolveBlockedMovement(boss, desired, 34, this.getActiveBuildings());
+      const resolved = resolveBlockedMovementWithBlockingBuildings(boss, desired, 34, this.getActiveBlockingBuildings());
       this.setActorPosition(boss, resolved.x, resolved.y);
       boss.view.rotation = angle;
       if (sameZoneAsPlayer && boss.contactDamageElapsedMs >= 700 && distance(this.player, boss) <= 54) {
@@ -2008,7 +2029,7 @@ export class PixiWastelandGame {
         x: clamp(boss.x + Math.cos(angle) * speed * seconds, 24, MAP_WIDTH - 24),
         y: clamp(boss.y + Math.sin(angle) * speed * seconds, 24, MAP_HEIGHT - 24),
       };
-      const resolved = resolveBlockedMovement(boss, desired, 46, this.getActiveBuildings());
+      const resolved = resolveBlockedMovementWithBlockingBuildings(boss, desired, 46, this.getActiveBlockingBuildings());
       this.setActorPosition(boss, resolved.x, resolved.y);
     }
     boss.view.rotation = angle;
@@ -2451,14 +2472,28 @@ export class PixiWastelandGame {
     const pressureMultiplier = this.getStoryMonsterPressureMultiplier();
     const maxAlive = Math.round(getEnemyMaxAlive(this.state.level) * pressureMultiplier);
     let ticks = 0;
-    while (this.enemySpawnElapsed >= ENEMY_SPAWN_TICK_MS && this.enemies.length < maxAlive && ticks < 8) {
+    while (
+      this.enemySpawnElapsed >= ENEMY_SPAWN_TICK_MS &&
+      this.enemies.length + this.pendingEnemySpawnCount < maxAlive &&
+      ticks < 8
+    ) {
       this.enemySpawnElapsed -= ENEMY_SPAWN_TICK_MS;
       ticks += 1;
+      const availableSlots = maxAlive - this.enemies.length - this.pendingEnemySpawnCount;
       const spawnCount = Math.min(
         Math.max(1, Math.round(getEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS) * pressureMultiplier)),
-        maxAlive - this.enemies.length,
+        availableSlots,
       );
-      this.spawnEnemyWave(spawnCount);
+      this.pendingEnemySpawnCount += spawnCount;
+    }
+  }
+
+  private updateQueuedEnemySpawns(): void {
+    const drainCount = getEnemySpawnQueueDrainCount(this.pendingEnemySpawnCount);
+    for (let index = 0; index < drainCount; index += 1) {
+      const position = this.findOpenEnemySpawnPosition();
+      this.spawnEnemyActor(position.x, position.y, "zombie", 28, 58 + (this.spawnSeed % 4) * 8);
+      this.pendingEnemySpawnCount -= 1;
     }
   }
 
@@ -3049,7 +3084,7 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + Math.cos(angle) * range, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + Math.sin(angle) * range, 24, MAP_HEIGHT - 24),
     };
-    const resolved = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
+    const resolved = resolveBlockedMovementWithBlockingBuildings(this.player, desired, 16, this.getActiveBlockingBuildings());
     this.drawPhaseRing(this.player.x, this.player.y, radius);
     this.setActorPosition(this.player, resolved.x, resolved.y);
     this.drawPhaseRing(this.player.x, this.player.y, radius);
@@ -3216,7 +3251,7 @@ export class PixiWastelandGame {
       x: clamp(this.player.x + Math.cos(angle) * 820, 24, MAP_WIDTH - 24),
       y: clamp(this.player.y + Math.sin(angle) * 820, 24, MAP_HEIGHT - 24),
     };
-    const end = resolveBlockedMovement(this.player, desired, 16, this.getActiveBuildings());
+    const end = resolveBlockedMovementWithBlockingBuildings(this.player, desired, 16, this.getActiveBlockingBuildings());
     this.drawPhaseRing(start.x, start.y, ultimate.radius * 0.55);
     this.drawLaserEffect(start, end, 0xff4d6d);
     this.damageTargetsAlongLine(start, end, ultimate.radius, ultimate.damage);
@@ -4261,14 +4296,17 @@ export class PixiWastelandGame {
       },
     });
     this.spawnMuzzleSparks();
-    this.addScreenShake(45, BASIC_GUN.screenShakeMagnitude);
+    const feedback = getBasicGunFireFeedback({ storyMode: this.isStoryMode() });
+    if (feedback.screenShakeMagnitude > 0) {
+      this.addScreenShake(45, feedback.screenShakeMagnitude);
+    }
 
+    if (feedback.actorRecoilDistance <= 0) return;
     const recoilAngle = this.playerWeapon.container.rotation + Math.PI;
-    const recoilX = Math.cos(recoilAngle) * 3.5;
-    const recoilY = Math.sin(recoilAngle) * 3.5;
-    const recoilTarget = this.playerStoryVisual?.sprite ?? this.player.view;
+    const recoilX = Math.cos(recoilAngle) * feedback.actorRecoilDistance;
+    const recoilY = Math.sin(recoilAngle) * feedback.actorRecoilDistance;
     gsap.fromTo(
-      recoilTarget,
+      this.player.view,
       { x: recoilX, y: recoilY },
       { x: 0, y: 0, duration: 0.06, ease: "power2.out" },
     );
@@ -5264,7 +5302,7 @@ export class PixiWastelandGame {
       x: clamp(knight.x + Math.cos(moveAngle) * speed * seconds, 24, MAP_WIDTH - 24),
       y: clamp(knight.y + Math.sin(moveAngle) * speed * seconds, 24, MAP_HEIGHT - 24),
     };
-    const resolved = resolveBlockedMovement(knight, desired, 44, this.getActiveBuildings());
+    const resolved = resolveBlockedMovementWithBlockingBuildings(knight, desired, 44, this.getActiveBlockingBuildings());
     this.setActorPosition(knight, resolved.x, resolved.y);
     knight.view.rotation = angleToPlayer;
 
@@ -7817,14 +7855,24 @@ export class PixiWastelandGame {
   }
 
   private updateVisibility(): void {
-    const currentBuildingId = this.getCurrentBuildingId();
+    const storyFogDisabled = this.isStoryFullVisibilityMode();
+    const currentBuildingId = storyFogDisabled ? null : this.getCurrentBuildingId();
     this.updateInteriorVisibilityMask(currentBuildingId);
 
-    for (const building of this.buildingVisuals) {
-      const isCurrentInterior = currentBuildingId === building.id;
-      building.shell.alpha = isCurrentInterior ? 0.72 : 0.44;
-      building.roof.alpha = isCurrentInterior ? 0.08 : 0.94;
+    if (this.visibleBuildingId !== currentBuildingId) {
+      this.visibleBuildingId = currentBuildingId;
+      for (const building of this.buildingVisuals) {
+        const isCurrentInterior = currentBuildingId === building.id;
+        building.shell.alpha = isCurrentInterior ? 0.72 : 0.44;
+        building.roof.alpha = isCurrentInterior ? 0.08 : 0.94;
+      }
     }
+
+    if (storyFogDisabled) {
+      this.applyStoryAllVisibleOnce();
+      return;
+    }
+    this.storyAllVisibleApplied = false;
 
     for (const enemy of this.enemies) {
       enemy.view.visible = this.isVisibleFromPlayerZone(enemy);
@@ -7876,7 +7924,40 @@ export class PixiWastelandGame {
     }
   }
 
+  private applyStoryAllVisibleOnce(): void {
+    if (this.storyAllVisibleApplied) return;
+    this.storyAllVisibleApplied = true;
+    for (const enemy of this.enemies) enemy.view.visible = true;
+    for (const boss of this.bosses) {
+      boss.view.visible = true;
+      boss.label.visible = true;
+    }
+    for (const boss of this.getFinalBosses()) {
+      boss.view.visible = true;
+      boss.label.visible = true;
+    }
+    for (const boss of this.getHospitalKnights()) {
+      boss.view.visible = true;
+      boss.label.visible = true;
+    }
+    for (const pile of this.bonePiles) pile.view.visible = true;
+    for (const deathVisual of this.storyDeathVisuals) deathVisual.view.visible = true;
+    if (this.playerTrap) this.playerTrap.view.visible = true;
+    for (const bullet of this.bullets) bullet.view.visible = true;
+    for (const projectile of this.heavyProjectiles) projectile.view.visible = true;
+    for (const strike of this.autoStrikes) strike.view.visible = true;
+    for (const mine of this.warpMines) mine.view.visible = true;
+    for (const hazard of this.bossHazards) hazard.view.visible = true;
+    for (const telegraph of this.bossTelegraphs) telegraph.view.visible = true;
+    for (const marker of this.nodeMarkers) marker.view.visible = true;
+  }
+
   private updateInteriorVisibilityMask(currentBuildingId: string | null): void {
+    if (this.isStoryFullVisibilityMode()) {
+      this.interiorVisibilityMask.clear();
+      this.interiorVisibilityMask.visible = false;
+      return;
+    }
     this.interiorVisibilityMask.clear();
     this.interiorVisibilityMask.visible = currentBuildingId !== null || this.playerVisionNarrowMs > 0 || this.isStoryMode();
     if (!currentBuildingId) {
@@ -7936,7 +8017,14 @@ export class PixiWastelandGame {
     this.emitMetrics();
   }
 
+  private emitMetricsThrottled(deltaMs: number): void {
+    this.metricsEmitElapsedMs += deltaMs;
+    if (this.metricsEmitElapsedMs < METRICS_EMIT_INTERVAL_MS) return;
+    this.emitMetrics();
+  }
+
   private emitMetrics(): void {
+    this.metricsEmitElapsedMs = 0;
     const bossNames = this.bosses.map((boss) => this.getBossName(boss.bossId));
     for (let index = 0; index < this.getFinalBosses().length; index += 1) {
       bossNames.push(FINAL_BOSS_DEFINITION.name);
@@ -7948,7 +8036,10 @@ export class PixiWastelandGame {
     const finalBosses = this.getFinalBosses();
     const hospitalKnights = this.getHospitalKnights();
     const currentBuildingId = this.getCurrentBuildingId();
-    const insideBuilding = this.player ? pointInsideBuildings(this.player, this.getActiveBuildings()) : false;
+    const insideBuilding =
+      this.player && !this.isStoryFullVisibilityMode()
+        ? pointInsideBuildings(this.player, this.getActiveBuildings())
+        : false;
     const metrics = {
       enemyCount: this.enemies.length,
       bossCount: this.bosses.length + finalBosses.length + hospitalKnights.length,
@@ -8072,22 +8163,26 @@ export class PixiWastelandGame {
   }
 
   private getCurrentBuildingId(): string | null {
+    if (this.isStoryFullVisibilityMode()) return null;
     return this.player ? getContainingBuildingId(this.player, this.getActiveBuildings()) : null;
   }
 
   private getVisibilityZoneId(point: { x: number; y: number }): string | null {
+    if (this.isStoryFullVisibilityMode()) return null;
     return getContainingBuildingId(point, this.getActiveBuildings());
   }
 
   private isVisibleFromPlayerZone(actor: { x: number; y: number }): boolean {
     if (!this.player) return true;
     if (this.isStoryMode()) {
+      if (this.isStoryFullVisibilityMode()) return true;
       return distance(this.player, actor) <= this.getCurrentStoryVisionRadius();
     }
     return this.getVisibilityZoneId(actor) === this.getCurrentBuildingId();
   }
 
   private isSameVisibilityZone(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+    if (this.isStoryFullVisibilityMode()) return true;
     return this.getVisibilityZoneId(a) === this.getVisibilityZoneId(b);
   }
 

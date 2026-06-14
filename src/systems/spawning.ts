@@ -12,6 +12,7 @@ const BASE_ENEMY_SPAWN_BATCH = 10;
 const MIN_ENEMY_MAX_ALIVE = 80;
 const MAX_ENEMY_MAX_ALIVE = 260;
 const SPAWN_PRESSURE_LEVEL_CAP = 60;
+const DEFAULT_ENEMY_SPAWN_QUEUE_DRAIN_PER_FRAME = 2;
 
 export interface Point {
   x: number;
@@ -68,6 +69,13 @@ export function getEnemySpawnRatePerSecond(level: number): number {
 
 export function getEnemySpawnBatchSize(level: number, elapsedMs: number): number {
   return Math.max(1, Math.round((getEnemySpawnRatePerSecond(level) * elapsedMs) / 1000));
+}
+
+export function getEnemySpawnQueueDrainCount(
+  pendingCount: number,
+  maxPerFrame = DEFAULT_ENEMY_SPAWN_QUEUE_DRAIN_PER_FRAME,
+): number {
+  return Math.max(0, Math.min(Math.floor(pendingCount), Math.floor(maxPerFrame)));
 }
 
 export function getEnemyMaxAlive(level: number): number {
