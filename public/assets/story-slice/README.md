@@ -27,3 +27,16 @@ top-down 2D game asset, bright cartoon wasteland, clean chunky outline, clear re
 - Tile textures use 128x128 or 256x256.
 - Every frame in one animation keeps the same canvas size and pivot center.
 - Character frame files use three-digit indexes such as `000.png`.
+
+## A2 City Art Pack
+
+`a2-city/` contains the first detailed isometric city art refresh for story mode. These PNGs are concept-image-matched sprites for the A2 preview map: center reactor/lighthouse states, ruined industrial buildings, diamond road/concrete tiles, and compact city props.
+
+Export rules:
+
+- PNG with alpha channel.
+- Lighthouse and buildings: 512x512.
+- Road and concrete tiles: 256x256 with transparent corners.
+- Compact props: 128x128 except wrecked car at 256x256.
+- Style: isometric cartoon wasteland city, teal-grey concrete, rusted metal, cyan energy accents, crisp dark outlines.
+- No text, watermark, logos, UI, or extra characters.
