@@ -36,6 +36,9 @@ export interface GameMetrics {
   storyArtSliceEnabled?: boolean;
   storyLighthouseVisualState?: "off" | "charging" | "on";
   storyArtSpriteCount?: number;
+  story2_5dEnabled?: boolean;
+  story2_5dGroundScaleY?: number;
+  story2_5dPlayerScreenY?: number;
 }
 
 interface GameStoreState extends GameMetrics {
@@ -74,6 +77,9 @@ function createInitialMetrics(): GameMetrics {
     storyArtSliceEnabled: false,
     storyLighthouseVisualState: undefined,
     storyArtSpriteCount: undefined,
+    story2_5dEnabled: false,
+    story2_5dGroundScaleY: undefined,
+    story2_5dPlayerScreenY: undefined,
   };
 }
 
@@ -204,6 +210,9 @@ export const useGameStore = defineStore("game", {
       this.storyArtSliceEnabled = metrics.storyArtSliceEnabled;
       this.storyLighthouseVisualState = metrics.storyLighthouseVisualState;
       this.storyArtSpriteCount = metrics.storyArtSpriteCount;
+      this.story2_5dEnabled = metrics.story2_5dEnabled;
+      this.story2_5dGroundScaleY = metrics.story2_5dGroundScaleY;
+      this.story2_5dPlayerScreenY = metrics.story2_5dPlayerScreenY;
     },
     setMessage(message: string): void {
       this.message = message;

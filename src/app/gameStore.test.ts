@@ -60,6 +60,9 @@ describe("game store phases", () => {
     expect(store.storyArtSliceEnabled).toBe(false);
     expect(store.storyLighthouseVisualState).toBeUndefined();
     expect(store.storyArtSpriteCount).toBeUndefined();
+    expect(store.story2_5dEnabled).toBe(false);
+    expect(store.story2_5dGroundScaleY).toBeUndefined();
+    expect(store.story2_5dPlayerScreenY).toBeUndefined();
 
     store.syncMetrics({
       enemyCount: 3,
@@ -77,10 +80,16 @@ describe("game store phases", () => {
       storyArtSliceEnabled: true,
       storyLighthouseVisualState: "charging",
       storyArtSpriteCount: 42,
+      story2_5dEnabled: true,
+      story2_5dGroundScaleY: 0.56,
+      story2_5dPlayerScreenY: 19888,
     });
 
     expect(store.storyArtSliceEnabled).toBe(true);
     expect(store.storyLighthouseVisualState).toBe("charging");
     expect(store.storyArtSpriteCount).toBe(42);
+    expect(store.story2_5dEnabled).toBe(true);
+    expect(store.story2_5dGroundScaleY).toBe(0.56);
+    expect(store.story2_5dPlayerScreenY).toBe(19888);
   });
 });
