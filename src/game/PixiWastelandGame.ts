@@ -240,8 +240,10 @@ import {
   type StoryActorVisual,
 } from "../visual/storyActorVisuals";
 import {
+  PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
   PLAYER_WEAPON_MUZZLE_DISTANCE,
   PLAYER_WEAPON_VISUAL_GEOMETRY,
+  getPlayerWeaponDepthOffset,
 } from "../visual/playerWeaponVisuals";
 import {
   createStorySliceRenderer,
@@ -1487,7 +1489,7 @@ export class PixiWastelandGame {
       start.y,
       this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0,
     );
-    container.zIndex = this.getStoryVisualDepth(start, 30);
+    container.zIndex = this.getStoryVisualDepth(start, PLAYER_WEAPON_FRONT_DEPTH_OFFSET);
     const geometry = PLAYER_WEAPON_VISUAL_GEOMETRY;
 
     const barrel = new Graphics();
@@ -4218,10 +4220,13 @@ export class PixiWastelandGame {
       this.player.y,
       this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0,
     );
-    this.playerWeapon.container.zIndex = this.getStoryVisualDepth(this.player, 30);
     const angle = this.isStoryMode()
       ? projectStoryAngle(this.player, target, this.getStoryProjectionOrigin())
       : Math.atan2(target.y - this.player.y, target.x - this.player.x);
+    this.playerWeapon.container.zIndex = this.getStoryVisualDepth(
+      this.player,
+      getPlayerWeaponDepthOffset(angle),
+    );
     this.playerWeapon.container.rotation = angle;
     this.player.view.rotation = this.playerStoryVisual ? 0 : angle + Math.PI / 2;
   }
