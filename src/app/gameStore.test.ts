@@ -66,6 +66,11 @@ describe("game store phases", () => {
     expect(store.story2_5dVolumePropCount).toBeUndefined();
     expect(store.story2_5dDepthSortedPropCount).toBeUndefined();
     expect(store.story2_5dProjectedUnderlayEnabled).toBe(false);
+    expect(store.story2_5dProjectionMode).toBeUndefined();
+    expect(store.story2_5dIsoTileWidth).toBeUndefined();
+    expect(store.story2_5dIsoTileHeight).toBeUndefined();
+    expect(store.story2_5dIsoLogicalTileSize).toBeUndefined();
+    expect(store.story2_5dPlayerScreenX).toBeUndefined();
 
     store.syncMetrics({
       enemyCount: 3,
@@ -89,6 +94,11 @@ describe("game store phases", () => {
       story2_5dVolumePropCount: 8,
       story2_5dDepthSortedPropCount: 8,
       story2_5dProjectedUnderlayEnabled: true,
+      story2_5dProjectionMode: "isometric-a1",
+      story2_5dIsoTileWidth: 256,
+      story2_5dIsoTileHeight: 128,
+      story2_5dIsoLogicalTileSize: 256,
+      story2_5dPlayerScreenX: 19900,
     });
 
     expect(store.storyArtSliceEnabled).toBe(true);
@@ -100,5 +110,10 @@ describe("game store phases", () => {
     expect(store.story2_5dVolumePropCount).toBe(8);
     expect(store.story2_5dDepthSortedPropCount).toBe(8);
     expect(store.story2_5dProjectedUnderlayEnabled).toBe(true);
+    expect(store.story2_5dProjectionMode).toBe("isometric-a1");
+    expect(store.story2_5dIsoTileWidth).toBe(256);
+    expect(store.story2_5dIsoTileHeight).toBe(128);
+    expect(store.story2_5dIsoLogicalTileSize).toBe(256);
+    expect(store.story2_5dPlayerScreenX).toBe(19900);
   });
 });

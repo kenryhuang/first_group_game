@@ -8077,6 +8077,8 @@ export class PixiWastelandGame {
     const storyVolumeProps = this.isStoryMode()
       ? this.storySliceRenderer?.debugVolumeProps()
       : undefined;
+    const projectedPlayer =
+      this.isStoryMode() && this.player ? this.projectPoint(this.player) : undefined;
     const metrics = {
       enemyCount: this.enemies.length,
       bossCount: this.bosses.length + finalBosses.length + hospitalKnights.length,
@@ -8115,8 +8117,21 @@ export class PixiWastelandGame {
       storyLighthouseVisualState: this.storySliceRenderer?.getLighthouseVisualState(),
       storyArtSpriteCount: this.storySliceRenderer?.debugSpriteCount(),
       story2_5dEnabled: this.isStoryMode(),
-      story2_5dGroundScaleY: this.isStoryMode() ? STORY_2_5D_CONFIG.groundScaleY : undefined,
-      story2_5dPlayerScreenY: this.isStoryMode() && this.player ? this.projectPoint(this.player).y : undefined,
+      story2_5dProjectionMode: this.isStoryMode()
+        ? STORY_2_5D_CONFIG.projectionMode
+        : undefined,
+      story2_5dGroundScaleY: undefined,
+      story2_5dIsoTileWidth: this.isStoryMode()
+        ? STORY_2_5D_CONFIG.isoTileWidth
+        : undefined,
+      story2_5dIsoTileHeight: this.isStoryMode()
+        ? STORY_2_5D_CONFIG.isoTileHeight
+        : undefined,
+      story2_5dIsoLogicalTileSize: this.isStoryMode()
+        ? STORY_2_5D_CONFIG.isoLogicalTileSize
+        : undefined,
+      story2_5dPlayerScreenX: projectedPlayer?.x,
+      story2_5dPlayerScreenY: projectedPlayer?.y,
       story2_5dVolumePropCount: storyVolumeProps?.length,
       story2_5dDepthSortedPropCount: storyVolumeProps?.filter(
         (prop) => prop.containerParentLabel === "story-world-root",

@@ -137,8 +137,17 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dEnabled ?? false))
     .toBe(true);
   await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dGroundScaleY ?? 0))
-    .toBe(0.56);
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dProjectionMode ?? null))
+    .toBe("isometric-a1");
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dIsoTileWidth ?? 0))
+    .toBe(256);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dIsoTileHeight ?? 0))
+    .toBe(128);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dIsoLogicalTileSize ?? 0))
+    .toBe(256);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dVolumePropCount ?? 0))
     .toBeGreaterThanOrEqual(8);
@@ -152,13 +161,28 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .poll(() =>
       page.evaluate(() => {
         const metrics = window.__prototypeDebug;
-        if (!metrics?.playerY || !metrics.story2_5dPlayerScreenY || !metrics.story2_5dGroundScaleY) return false;
-        const lighthouseY = 19800;
-        const expected =
-          lighthouseY + (metrics.playerY - lighthouseY) * metrics.story2_5dGroundScaleY;
+        if (
+          !metrics?.playerX ||
+          !metrics.playerY ||
+          !metrics.story2_5dPlayerScreenX ||
+          !metrics.story2_5dPlayerScreenY ||
+          !metrics.story2_5dIsoTileWidth ||
+          !metrics.story2_5dIsoTileHeight ||
+          !metrics.story2_5dIsoLogicalTileSize
+        ) {
+          return false;
+        }
+        const originX = 20000;
+        const originY = 19800;
+        const dx = (metrics.playerX - originX) / metrics.story2_5dIsoLogicalTileSize;
+        const dy = (metrics.playerY - originY) / metrics.story2_5dIsoLogicalTileSize;
+        const expectedX = originX + (dx - dy) * (metrics.story2_5dIsoTileWidth / 2);
+        const expectedY = originY + (dx + dy) * (metrics.story2_5dIsoTileHeight / 2);
 
         return (
-          Math.abs(metrics.story2_5dPlayerScreenY - expected) < 0.5 &&
+          Math.abs(metrics.story2_5dPlayerScreenX - expectedX) < 0.5 &&
+          Math.abs(metrics.story2_5dPlayerScreenY - expectedY) < 0.5 &&
+          Math.abs(metrics.story2_5dPlayerScreenX - metrics.playerX) > 1 &&
           Math.abs(metrics.story2_5dPlayerScreenY - metrics.playerY) > 1
         );
       }),
