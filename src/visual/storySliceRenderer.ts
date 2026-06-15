@@ -918,22 +918,9 @@ export function createStorySliceRenderer(
   const lighthouse = lighthouseVolume.sprite;
   lighthouse.texture = lighthouseTextures[lighthouseState];
 
-  const coreGlow = makeSprite(
-    STORY_SLICE_ASSETS.lighthouse.coreGlow,
-    options.center.x,
-    options.center.y,
-    0.72,
-    options,
-  );
-  coreGlow.label = "story-center-lighthouse-core-glow";
-  coreGlow.alpha = options.lit ? 0.82 : 0.16;
-  layers.effect.addChild(coreGlow);
-
   const setState = (state: StoryLighthouseVisualState): void => {
     lighthouseState = state;
     lighthouse.texture = lighthouseTextures[state];
-    coreGlow.alpha =
-      state === "on" ? 0.82 : state === "charging" ? 0.46 : 0.16;
     for (const fog of fogSprites) {
       fog.sprite.alpha = STORY_FOG_ALPHA_BY_STATE[state];
     }

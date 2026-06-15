@@ -94,7 +94,7 @@ describe("story slice renderer", () => {
     expect(renderer.layers.prop.children).toHaveLength(0);
     expect(renderer.layers.fog.children).toHaveLength(4);
     expect(renderer.layers.lighthouse.children).toHaveLength(0);
-    expect(renderer.layers.effect.children).toHaveLength(1);
+    expect(renderer.layers.effect.children).toHaveLength(0);
     expect(renderer.layers.worldUi.children).toHaveLength(0);
     expect(renderer.debugSpriteCount()).toBeGreaterThanOrEqual(300);
 
@@ -136,10 +136,11 @@ describe("story slice renderer", () => {
     expect(firstFogSprite.scale.x).toBe(2.2);
     expect(firstFogSprite.scale.y).toBe(2.2 * STORY_2_5D_CONFIG.isoFogScaleY);
 
-    const coreGlow = renderer.layers.effect.children[0] as PixiSprite;
-    expect(coreGlow.texture).toBe(
-      cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.coreGlow),
-    );
+    expect(
+      renderer.layers.effect.children.some(
+        (child) => child.label === "story-center-lighthouse-core-glow",
+      ),
+    ).toBe(false);
   });
 
   it("promotes volumetric story props to top-level depth-sorted world children", () => {

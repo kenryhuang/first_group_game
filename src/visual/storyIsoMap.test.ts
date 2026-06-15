@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { STORY_CENTER_LIGHTHOUSE } from "../systems/storyRegions";
+import { resolveBlockedMovementWithBlockingBuildings } from "../systems/terrain";
 import { STORY_2_5D_CONFIG } from "./story2_5dProjection";
 import {
   STORY_A2_PREVIEW_MAP,
@@ -216,18 +217,56 @@ describe("story isometric preview map", () => {
     expect(blockedRects).toHaveLength(6);
     expect(blockedRects[0]).toEqual({
       id: "story-a2-blocking-story-a2-building-green",
-      x: 19232,
-      y: 19544,
+      x: 19488,
+      y: 19800,
+      width: 348,
+      height: 348,
+    });
+    expect(
+      blockedRects.find((rect) => rect.id.endsWith("building-ochre")),
+    ).toEqual({
+      id: "story-a2-blocking-story-a2-building-ochre",
+      x: 21024,
+      y: 20568,
       width: 348,
       height: 348,
     });
     expect(blockedRects.find((rect) => rect.id.endsWith("lighthouse"))).toEqual({
       id: "story-a2-blocking-story-a2-lighthouse",
-      x: 19744,
-      y: 19544,
+      x: 20000,
+      y: 19800,
       width: 348,
       height: 348,
     });
+  });
+
+  it("blocks movement into the orange building at its visible base", () => {
+    const blockedRects = getStoryIsoBlockedRects(
+      STORY_A2_PREVIEW_MAP,
+      STORY_CENTER_LIGHTHOUSE.position,
+    );
+    const orangeBuilding = blockedRects.find((rect) =>
+      rect.id.endsWith("building-ochre"),
+    );
+    if (!orangeBuilding) throw new Error("Missing orange building blocker");
+
+    const from = {
+      x: orangeBuilding.x + orangeBuilding.width / 2 + 96,
+      y: orangeBuilding.y,
+    };
+    const intoVisibleBase = {
+      x: orangeBuilding.x + orangeBuilding.width / 2 - 18,
+      y: orangeBuilding.y,
+    };
+
+    expect(
+      resolveBlockedMovementWithBlockingBuildings(
+        from,
+        intoVisibleBase,
+        16,
+        blockedRects,
+      ),
+    ).toEqual(from);
   });
 
   it("keeps the upper center movement lane clear of A2 prop footprints", () => {

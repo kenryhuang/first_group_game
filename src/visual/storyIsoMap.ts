@@ -446,17 +446,20 @@ export function getStoryIsoBlockedRects(
 ): StoryIsoBlockingRect[] {
   return map.props
     .filter((prop) => prop.blocksMovement)
-    .map((prop) => ({
-      id: `story-a2-blocking-${prop.label}`,
-      x: center.x + prop.footprint.x * map.tileSize,
-      y: center.y + prop.footprint.y * map.tileSize,
-      width: Math.round(
-        prop.footprint.width * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
-      ),
-      height: Math.round(
-        prop.footprint.height * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
-      ),
-    }));
+    .map((prop) => {
+      const basePoint = getStoryIsoPropBasePoint(prop, center);
+      return {
+        id: `story-a2-blocking-${prop.label}`,
+        x: basePoint.x,
+        y: basePoint.y,
+        width: Math.round(
+          prop.footprint.width * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
+        ),
+        height: Math.round(
+          prop.footprint.height * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
+        ),
+      };
+    });
 }
 
 export function getStoryIsoMapStats(
