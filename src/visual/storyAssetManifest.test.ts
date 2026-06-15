@@ -11,6 +11,31 @@ const A2_CITY_GROUND_TILES = [
   "/assets/story-slice/a2-city/map/wasteland-grass-01.png",
 ];
 
+const A2_CITY_FLAT_TILES = {
+  concrete: "/assets/story-slice/a2-city/map/ground-concrete-flat-01.png",
+  wastelandEdge:
+    "/assets/story-slice/a2-city/map/ground-wasteland-edge-flat-01.png",
+};
+
+const A2_CITY_ROAD_KIT = {
+  straightX: "/assets/story-slice/a2-city/map/road-kit/road-straight-x.png",
+  straightY: "/assets/story-slice/a2-city/map/road-kit/road-straight-y.png",
+  crackedStraightX:
+    "/assets/story-slice/a2-city/map/road-kit/road-cracked-straight-x.png",
+  crackedStraightY:
+    "/assets/story-slice/a2-city/map/road-kit/road-cracked-straight-y.png",
+  intersection:
+    "/assets/story-slice/a2-city/map/road-kit/road-intersection.png",
+  cornerNE: "/assets/story-slice/a2-city/map/road-kit/road-corner-ne.png",
+  cornerNW: "/assets/story-slice/a2-city/map/road-kit/road-corner-nw.png",
+  cornerSE: "/assets/story-slice/a2-city/map/road-kit/road-corner-se.png",
+  cornerSW: "/assets/story-slice/a2-city/map/road-kit/road-corner-sw.png",
+  tNorth: "/assets/story-slice/a2-city/map/road-kit/road-t-north.png",
+  tEast: "/assets/story-slice/a2-city/map/road-kit/road-t-east.png",
+  tSouth: "/assets/story-slice/a2-city/map/road-kit/road-t-south.png",
+  tWest: "/assets/story-slice/a2-city/map/road-kit/road-t-west.png",
+};
+
 const A2_CITY_DECORATIONS = [
   "/assets/story-slice/a2-city/map/debris-small-01.png",
   "/assets/story-slice/a2-city/map/debris-small-02.png",
@@ -29,6 +54,8 @@ const A2_CITY_BUILDINGS = [
 describe("story slice asset manifest", () => {
   it("lists the required map, lighthouse, and effect assets", () => {
     expect(STORY_SLICE_ASSETS.map.groundTiles).toEqual(A2_CITY_GROUND_TILES);
+    expect(STORY_SLICE_ASSETS.map.flatTiles).toEqual(A2_CITY_FLAT_TILES);
+    expect(STORY_SLICE_ASSETS.map.roadKit).toEqual(A2_CITY_ROAD_KIT);
     expect(STORY_SLICE_ASSETS.map.decorations).toEqual(A2_CITY_DECORATIONS);
     expect(STORY_SLICE_ASSETS.map.buildings).toEqual(A2_CITY_BUILDINGS);
     expect(STORY_SLICE_ASSETS.lighthouse.states).toEqual({
@@ -81,6 +108,12 @@ describe("story slice asset manifest", () => {
 
     expect(paths).toContain(
       "/assets/story-slice/a2-city/map/road-straight-01.png",
+    );
+    expect(paths).toContain(
+      "/assets/story-slice/a2-city/map/ground-concrete-flat-01.png",
+    );
+    expect(paths).toContain(
+      "/assets/story-slice/a2-city/map/road-kit/road-intersection.png",
     );
     expect(paths).toContain(
       "/assets/story-slice/a2-city/lighthouse/lighthouse-on.png",

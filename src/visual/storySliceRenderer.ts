@@ -19,6 +19,7 @@ import {
   getStoryIsoMapStats,
   getStoryIsoPropBasePoint,
   getStoryIsoTileWorldPoint,
+  getStoryIsoRoadTextureKey,
   type StoryIsoFootprint,
   type StoryIsoMapDefinition,
   type StoryIsoMapStats,
@@ -176,15 +177,21 @@ function getIsoGroundColor(kind: StoryIsoTileKind): number {
   return STORY_ART_PALETTE.wastelandOchre;
 }
 
-function getA2GroundTexturePath(kind: StoryIsoTileKind): string {
-  const [road, cracked, concrete, pollutedEdge] =
-    STORY_SLICE_ASSETS.map.groundTiles;
-  if (kind === "road") return road;
-  if (kind === "roadCracked") return cracked;
-  if (kind === "curb" || kind === "rubble" || kind === "stain") {
-    return pollutedEdge;
+function getA2GroundTexturePath(
+  tile: StoryIsoTileDefinition,
+  isoMap: StoryIsoMapDefinition,
+): string {
+  if (tile.kind === "road" || tile.kind === "roadCracked") {
+    return STORY_SLICE_ASSETS.map.roadKit[
+      getStoryIsoRoadTextureKey(isoMap, tile)
+    ];
   }
-  return concrete;
+
+  if (tile.kind === "curb" || tile.kind === "rubble" || tile.kind === "stain") {
+    return STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge;
+  }
+
+  return STORY_SLICE_ASSETS.map.flatTiles.concrete;
 }
 
 function decorateIsoGroundTile(
@@ -327,8 +334,7 @@ function makeA2GroundTile(
   const diamondScale = getIsoMapTileScale(isoMap);
   const diamondWidth = STORY_2_5D_CONFIG.isoTileWidth * diamondScale;
   const diamondHeight = STORY_2_5D_CONFIG.isoTileHeight * diamondScale;
-  const spriteSize = STORY_2_5D_CONFIG.isoTileWidth * diamondScale;
-  const texturePath = getA2GroundTexturePath(tile.kind);
+  const texturePath = getA2GroundTexturePath(tile, isoMap);
   const label = `story-a2-ground-${tile.kind}-${tileIndex}`;
   const view = new Container();
   view.label = label;
@@ -338,9 +344,9 @@ function makeA2GroundTile(
   const sprite = new Sprite(Texture.from(texturePath));
   sprite.label = `${label}-sprite`;
   sprite.anchor.set(0.5);
-  sprite.width = spriteSize;
-  sprite.height = spriteSize;
-  sprite.rotation = tile.roadAxis === "y" ? Math.PI / 2 : 0;
+  sprite.width = diamondWidth;
+  sprite.height = diamondHeight;
+  sprite.rotation = 0;
   view.addChild(sprite);
 
   return {

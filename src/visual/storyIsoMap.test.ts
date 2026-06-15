@@ -3,6 +3,7 @@ import { STORY_CENTER_LIGHTHOUSE } from "../systems/storyRegions";
 import { STORY_2_5D_CONFIG } from "./story2_5dProjection";
 import {
   STORY_A2_PREVIEW_MAP,
+  getStoryIsoRoadTextureKey,
   getStoryIsoBlockedFootprints,
   getStoryIsoBlockedRects,
   getStoryIsoMapStats,
@@ -22,7 +23,7 @@ describe("story isometric preview map", () => {
     expect(stats).toEqual({
       mode: "a2-preview",
       tileCount: 143,
-      roadTileCount: 29,
+      roadTileCount: 31,
       propCount: 8,
       blockedFootprintCount: 6,
     });
@@ -48,23 +49,27 @@ describe("story isometric preview map", () => {
     });
   });
 
-  it("builds continuous A2 street corridors with road axis metadata", () => {
+  it("builds continuous A2 street corridors with road topology metadata", () => {
     const roadTiles = STORY_A2_PREVIEW_MAP.tiles.filter(isStoryIsoRoadTile);
 
     const mainStreet = roadTiles.filter((tile) => tile.y === 1);
     const crossStreet = roadTiles.filter((tile) => tile.x === 1);
     const frontageStreet = roadTiles.filter((tile) => tile.y === -2);
+    const sideAlley = roadTiles.filter(
+      (tile) =>
+        (tile.x === -4 && tile.y >= 1 && tile.y <= 3) ||
+        (tile.y === 3 && tile.x >= -4 && tile.x <= -2),
+    );
 
-    expect(roadTiles).toHaveLength(29);
+    expect(roadTiles).toHaveLength(31);
     expect(mainStreet.map((tile) => tile.x)).toEqual([
       -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
     ]);
     expect(crossStreet.map((tile) => tile.y)).toEqual([
       -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5,
     ]);
-    expect(frontageStreet.map((tile) => tile.x)).toEqual([
-      -3, -2, -1, 0, 1, 2, 3,
-    ]);
+    expect(frontageStreet.map((tile) => tile.x)).toEqual([-3, -2, -1, 0, 1]);
+    expect(sideAlley).toHaveLength(5);
     expect(roadTiles).toContainEqual({
       x: -6,
       y: 1,
@@ -85,12 +90,38 @@ describe("story isometric preview map", () => {
     });
   });
 
+  it("selects seamless A2 road-kit assets from road neighbors", () => {
+    const tileAt = (x: number, y: number) => {
+      const tile = STORY_A2_PREVIEW_MAP.tiles.find(
+        (candidate) => candidate.x === x && candidate.y === y,
+      );
+      if (!tile) throw new Error(`Missing tile ${x},${y}`);
+      return tile;
+    };
+
+    expect(getStoryIsoRoadTextureKey(STORY_A2_PREVIEW_MAP, tileAt(0, 1))).toBe(
+      "straightX",
+    );
+    expect(getStoryIsoRoadTextureKey(STORY_A2_PREVIEW_MAP, tileAt(1, -5))).toBe(
+      "crackedStraightY",
+    );
+    expect(getStoryIsoRoadTextureKey(STORY_A2_PREVIEW_MAP, tileAt(1, 1))).toBe(
+      "intersection",
+    );
+    expect(getStoryIsoRoadTextureKey(STORY_A2_PREVIEW_MAP, tileAt(1, -2))).toBe(
+      "tEast",
+    );
+    expect(getStoryIsoRoadTextureKey(STORY_A2_PREVIEW_MAP, tileAt(-4, 3))).toBe(
+      "cornerSE",
+    );
+  });
+
   it("marks blocked footprints for the preview slice", () => {
     const roadTiles = STORY_A2_PREVIEW_MAP.tiles.filter(isStoryIsoRoadTile);
     const blockedFootprints = getStoryIsoBlockedFootprints(STORY_A2_PREVIEW_MAP);
     const firstBuilding = STORY_A2_PREVIEW_MAP.props[0];
 
-    expect(roadTiles).toHaveLength(29);
+    expect(roadTiles).toHaveLength(31);
     expect(blockedFootprints).toHaveLength(6);
     expect(blockedFootprints).toContainEqual({
       x: -3,

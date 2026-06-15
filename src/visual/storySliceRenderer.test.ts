@@ -17,7 +17,6 @@ import {
   getStoryIsoMapStats,
   getStoryIsoTileWorldPoint,
   type StoryIsoMapDefinition,
-  type StoryIsoTileDefinition,
 } from "./storyIsoMap";
 
 const canvasContextStub = {
@@ -117,7 +116,7 @@ describe("story slice renderer", () => {
     expect(firstGroundTile.diamondWidth).toBe(STORY_2_5D_CONFIG.isoTileWidth);
     expect(firstGroundTile.diamondHeight).toBe(STORY_2_5D_CONFIG.isoTileHeight);
     expect(firstGroundTile.texturePath).toBe(
-      STORY_SLICE_ASSETS.map.groundTiles[3],
+      STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge,
     );
     expect(renderer.layers.ground.children[0].label).toBe(firstGroundTile.label);
     const firstGroundTileContainer = renderer.layers.ground
@@ -127,12 +126,11 @@ describe("story slice renderer", () => {
       (child) => child.label === "story-a2-ground-curb-0-sprite",
     ) as PixiSprite;
     expect(firstGroundTileSprite.texture).toBe(
-      cachedTextures.get(STORY_SLICE_ASSETS.map.groundTiles[3]),
+      cachedTextures.get(STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge),
     );
     expect(firstGroundTileSprite.width).toBe(STORY_2_5D_CONFIG.isoTileWidth);
-    expect(firstGroundTileSprite.height).toBe(
-      STORY_2_5D_CONFIG.isoTileWidth,
-    );
+    expect(firstGroundTileSprite.height).toBe(STORY_2_5D_CONFIG.isoTileHeight);
+    expect(firstGroundTileSprite.rotation).toBe(0);
 
     const firstFogSprite = renderer.layers.fog.children[0] as PixiSprite;
     expect(firstFogSprite.scale.x).toBe(2.2);
@@ -306,18 +304,18 @@ describe("story slice renderer", () => {
       blockedFootprintCount: 0,
     });
     expect(renderer.debugGroundTiles()[0].texturePath).toBe(
-      STORY_SLICE_ASSETS.map.groundTiles[0],
+      STORY_SLICE_ASSETS.map.roadKit.straightX,
     );
   });
 
-  it("maps A2 tile kinds to generated ground textures", () => {
+  it("maps A2 tile kinds to flat ground and road-kit textures", () => {
     const center = STORY_CENTER_LIGHTHOUSE.position;
     const customIsoMap: StoryIsoMapDefinition = {
       mode: "a2-preview",
       tileSize: STORY_2_5D_CONFIG.isoLogicalTileSize,
       tiles: [
-        { x: 0, y: 0, kind: "road" },
-        { x: 1, y: 0, kind: "roadCracked" },
+        { x: 0, y: 0, kind: "road", roadAxis: "x" },
+        { x: 1, y: 0, kind: "roadCracked", roadAxis: "y" },
         { x: 2, y: 0, kind: "concrete" },
         { x: 3, y: 0, kind: "plaza" },
         { x: 4, y: 0, kind: "blocked" },
@@ -338,30 +336,30 @@ describe("story slice renderer", () => {
     expect(
       renderer.debugGroundTiles().map((tile) => tile.texturePath),
     ).toEqual([
-      STORY_SLICE_ASSETS.map.groundTiles[0],
-      STORY_SLICE_ASSETS.map.groundTiles[1],
-      STORY_SLICE_ASSETS.map.groundTiles[2],
-      STORY_SLICE_ASSETS.map.groundTiles[2],
-      STORY_SLICE_ASSETS.map.groundTiles[2],
-      STORY_SLICE_ASSETS.map.groundTiles[3],
-      STORY_SLICE_ASSETS.map.groundTiles[3],
-      STORY_SLICE_ASSETS.map.groundTiles[3],
+      STORY_SLICE_ASSETS.map.roadKit.straightX,
+      STORY_SLICE_ASSETS.map.roadKit.crackedStraightY,
+      STORY_SLICE_ASSETS.map.flatTiles.concrete,
+      STORY_SLICE_ASSETS.map.flatTiles.concrete,
+      STORY_SLICE_ASSETS.map.flatTiles.concrete,
+      STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge,
+      STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge,
+      STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge,
     ]);
   });
 
-  it("rotates A2 road sprites to match their street corridor axis", () => {
+  it("uses pre-oriented A2 road-kit sprites without runtime rotation", () => {
     const center = STORY_CENTER_LIGHTHOUSE.position;
     const customIsoMap: StoryIsoMapDefinition = {
       mode: "a2-preview",
       tileSize: STORY_2_5D_CONFIG.isoLogicalTileSize,
       tiles: [
-        { x: 0, y: 0, kind: "road", roadAxis: "x" } as StoryIsoTileDefinition,
+        { x: 0, y: 0, kind: "road", roadAxis: "x" },
         {
           x: 0,
           y: 1,
           kind: "roadCracked",
           roadAxis: "y",
-        } as StoryIsoTileDefinition,
+        },
       ],
       props: [],
     };
@@ -379,7 +377,13 @@ describe("story slice renderer", () => {
     const yRoadSprite = yRoadTile.children[0] as PixiSprite;
 
     expect(xRoadSprite.rotation).toBe(0);
-    expect(yRoadSprite.rotation).toBeCloseTo(Math.PI / 2);
+    expect(yRoadSprite.rotation).toBe(0);
+    expect(xRoadSprite.texture).toBe(
+      cachedTextures.get(STORY_SLICE_ASSETS.map.roadKit.straightX),
+    );
+    expect(yRoadSprite.texture).toBe(
+      cachedTextures.get(STORY_SLICE_ASSETS.map.roadKit.crackedStraightY),
+    );
   });
 
   it("adds textured fog that thins as the lighthouse turns on", () => {

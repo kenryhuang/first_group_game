@@ -26,6 +26,27 @@ export interface StoryIsoTileDefinition extends StoryIsoTileCoord {
   roadAxis?: StoryIsoRoadAxis;
 }
 
+export type StoryIsoRoadConnection =
+  | "xMinus"
+  | "xPlus"
+  | "yMinus"
+  | "yPlus";
+
+export type StoryRoadKitTextureKey =
+  | "straightX"
+  | "straightY"
+  | "crackedStraightX"
+  | "crackedStraightY"
+  | "intersection"
+  | "cornerNE"
+  | "cornerNW"
+  | "cornerSE"
+  | "cornerSW"
+  | "tNorth"
+  | "tEast"
+  | "tSouth"
+  | "tWest";
+
 export type StoryIsoPropRole =
   | "building"
   | "vehicle"
@@ -86,10 +107,12 @@ function getPreviewRoadAxis(
 ): StoryIsoRoadAxis | undefined {
   const isMainStreet = y === 1 && x >= -6 && x <= 6;
   const isCrossStreet = x === 1 && y >= -5 && y <= 5;
-  const isFrontageStreet = y === -2 && x >= -3 && x <= 3;
+  const isFrontageStreet = y === -2 && x >= -3 && x <= 1;
+  const isSideAlleyVertical = x === -4 && y >= 1 && y <= 3;
+  const isSideAlleyHorizontal = y === 3 && x >= -4 && x <= -2;
 
-  if (isCrossStreet) return "y";
-  if (isMainStreet || isFrontageStreet) return "x";
+  if (isCrossStreet || isSideAlleyVertical) return "y";
+  if (isMainStreet || isFrontageStreet || isSideAlleyHorizontal) return "x";
   return undefined;
 }
 
@@ -267,6 +290,82 @@ export const STORY_A2_PREVIEW_MAP: StoryIsoMapDefinition = {
 
 export function isStoryIsoRoadTile(tile: StoryIsoTileDefinition): boolean {
   return tile.kind === "road" || tile.kind === "roadCracked";
+}
+
+function storyIsoTileKey(tile: StoryIsoTileCoord): string {
+  return `${tile.x}:${tile.y}`;
+}
+
+export function getStoryIsoRoadConnections(
+  map: StoryIsoMapDefinition,
+  tile: StoryIsoTileDefinition,
+): StoryIsoRoadConnection[] {
+  if (!isStoryIsoRoadTile(tile)) return [];
+
+  const roadTileKeys = new Set(
+    map.tiles.filter(isStoryIsoRoadTile).map(storyIsoTileKey),
+  );
+  const candidates: Array<[StoryIsoRoadConnection, StoryIsoTileCoord]> = [
+    ["xMinus", { x: tile.x - 1, y: tile.y }],
+    ["xPlus", { x: tile.x + 1, y: tile.y }],
+    ["yMinus", { x: tile.x, y: tile.y - 1 }],
+    ["yPlus", { x: tile.x, y: tile.y + 1 }],
+  ];
+
+  return candidates
+    .filter(([, candidate]) => roadTileKeys.has(storyIsoTileKey(candidate)))
+    .map(([connection]) => connection);
+}
+
+function hasRoadConnection(
+  connections: StoryIsoRoadConnection[],
+  connection: StoryIsoRoadConnection,
+): boolean {
+  return connections.includes(connection);
+}
+
+function getStraightRoadTextureKey(
+  tile: StoryIsoTileDefinition,
+  axis: StoryIsoRoadAxis,
+): StoryRoadKitTextureKey {
+  if (tile.kind === "roadCracked") {
+    return axis === "y" ? "crackedStraightY" : "crackedStraightX";
+  }
+
+  return axis === "y" ? "straightY" : "straightX";
+}
+
+export function getStoryIsoRoadTextureKey(
+  map: StoryIsoMapDefinition,
+  tile: StoryIsoTileDefinition,
+): StoryRoadKitTextureKey {
+  const connections = getStoryIsoRoadConnections(map, tile);
+  const connectionCount = connections.length;
+
+  if (connectionCount >= 4) return "intersection";
+
+  if (connectionCount === 3) {
+    if (!hasRoadConnection(connections, "yMinus")) return "tNorth";
+    if (!hasRoadConnection(connections, "xPlus")) return "tEast";
+    if (!hasRoadConnection(connections, "yPlus")) return "tSouth";
+    return "tWest";
+  }
+
+  if (connectionCount === 2) {
+    const hasXMinus = hasRoadConnection(connections, "xMinus");
+    const hasXPlus = hasRoadConnection(connections, "xPlus");
+    const hasYMinus = hasRoadConnection(connections, "yMinus");
+    const hasYPlus = hasRoadConnection(connections, "yPlus");
+
+    if (hasXMinus && hasXPlus) return getStraightRoadTextureKey(tile, "x");
+    if (hasYMinus && hasYPlus) return getStraightRoadTextureKey(tile, "y");
+    if (hasXPlus && hasYMinus) return "cornerSE";
+    if (hasXPlus && hasYPlus) return "cornerNE";
+    if (hasXMinus && hasYMinus) return "cornerSW";
+    return "cornerNW";
+  }
+
+  return getStraightRoadTextureKey(tile, tile.roadAxis ?? "x");
 }
 
 export function getStoryIsoTileWorldPoint(

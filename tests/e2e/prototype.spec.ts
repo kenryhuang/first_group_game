@@ -158,7 +158,7 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .toBe(143);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapRoadTileCount ?? 0))
-    .toBe(29);
+    .toBe(31);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapPropCount ?? 0))
     .toBe(8);

@@ -35,6 +35,66 @@ const A2_CITY_EXPECTED_DIMENSIONS: Record<
     width: 256,
     height: 256,
   },
+  "/assets/story-slice/a2-city/map/ground-concrete-flat-01.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/ground-wasteland-edge-flat-01.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-straight-x.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-straight-y.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-cracked-straight-x.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-cracked-straight-y.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-intersection.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-corner-ne.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-corner-nw.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-corner-se.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-corner-sw.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-t-north.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-t-east.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-t-south.png": {
+    width: 256,
+    height: 128,
+  },
+  "/assets/story-slice/a2-city/map/road-kit/road-t-west.png": {
+    width: 256,
+    height: 128,
+  },
   "/assets/story-slice/a2-city/map/debris-small-01.png": {
     width: 128,
     height: 128,
