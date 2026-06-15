@@ -346,6 +346,62 @@ function makeFlatGroundTexture(source, topY, options) {
   return pixels;
 }
 
+function lineDistance(value, spacing) {
+  const normalized = Math.abs(value / spacing);
+  return Math.abs(normalized - Math.round(normalized)) * spacing;
+}
+
+function makeFoundationPadTexture(base) {
+  const pixels = Buffer.alloc(WIDTH * HEIGHT * 4);
+
+  for (let y = 0; y < HEIGHT; y += 1) {
+    for (let x = 0; x < WIDTH; x += 1) {
+      const { a, b, edgeDistance } = isoCoords(x, y);
+      const alpha = edgeAlpha(edgeDistance);
+      if (alpha <= 0) continue;
+
+      const index = (y * WIDTH + x) * 4;
+      let color = [
+        base[index],
+        base[index + 1],
+        base[index + 2],
+        alpha,
+      ];
+
+      color = mixColor(color, [124, 132, 119, 255], 0.58);
+      color = colorWithBrightness(
+        color,
+        (valueNoise(x + 89, y - 17, 70, 277) - 0.5) * 3.4 +
+          (hashUnit(x, y, 293) - 0.5) * 1.6,
+      );
+
+      const gridDistance = Math.min(lineDistance(a, 0.5), lineDistance(b, 0.5));
+      if (gridDistance < 0.012 && edgeDistance > 0.1) {
+        color = mixColor(color, [63, 70, 64, 255], 0.22);
+      }
+
+      if (edgeDistance < 0.08) {
+        const curbAmount = (0.08 - edgeDistance) / 0.08;
+        color = mixColor(color, [90, 97, 88, 255], curbAmount * 0.44);
+      }
+      if (edgeDistance < 0.035) {
+        const shadowAmount = (0.035 - edgeDistance) / 0.035;
+        color = mixColor(color, [43, 50, 47, 255], shadowAmount * 0.34);
+      }
+
+      const chipNoise = valueNoise(x - 31, y + 57, 16, 311);
+      if (chipNoise > 0.86 && edgeDistance > 0.18) {
+        color = mixColor(color, [71, 80, 74, 255], 0.18);
+      }
+
+      color[3] = alpha;
+      setPixel(pixels, x, y, color);
+    }
+  }
+
+  return pixels;
+}
+
 function sampleInsetTop(source, x, y, topY, flipX = false) {
   const inset = 0.82;
   const insetX = CENTER_X + (x + 0.5 - CENTER_X) * inset;
@@ -508,8 +564,15 @@ const wastelandFlat = makeFlatGroundTexture(wasteland, SOURCE_TOP_Y.wasteland, {
   grimeStrength: 0.14,
   pitStrength: 0.07,
 });
+const foundationPad = makeFoundationPadTexture(concreteFlat);
 
 writePng(join(MAP_DIR, "ground-concrete-flat-01.png"), WIDTH, HEIGHT, concreteFlat);
+writePng(
+  join(MAP_DIR, "ground-foundation-pad-01.png"),
+  WIDTH,
+  HEIGHT,
+  foundationPad,
+);
 writePng(
   join(MAP_DIR, "ground-wasteland-edge-flat-01.png"),
   WIDTH,

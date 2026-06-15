@@ -22,6 +22,7 @@ export interface StorySliceAssetManifest {
     groundTiles: string[];
     flatTiles: {
       concrete: string;
+      foundation: string;
       wastelandEdge: string;
     };
     roadKit: {
@@ -92,6 +93,7 @@ export const STORY_SLICE_ASSETS: StorySliceAssetManifest = {
     ],
     flatTiles: {
       concrete: `${A2_CITY_PATH}/map/ground-concrete-flat-01.png`,
+      foundation: `${A2_CITY_PATH}/map/ground-foundation-pad-01.png`,
       wastelandEdge: `${A2_CITY_PATH}/map/ground-wasteland-edge-flat-01.png`,
     },
     roadKit: {

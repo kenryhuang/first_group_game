@@ -8,6 +8,7 @@ export type StoryIsoTileKind =
   | "plaza"
   | "road"
   | "roadCracked"
+  | "foundation"
   | "curb"
   | "concrete"
   | "stain"
@@ -101,6 +102,50 @@ export interface StoryIsoBlockingRect {
 
 export const STORY_A2_BLOCKING_FOOTPRINT_SCALE = 0.68;
 
+const STORY_A2_BUILDING_PLACEMENTS = [
+  {
+    tile: { x: -2, y: 0 },
+    footprint: { x: -3, y: -1, width: 2, height: 2 },
+  },
+  {
+    tile: { x: 4, y: 3 },
+    footprint: { x: 3, y: 2, width: 2, height: 2 },
+  },
+  {
+    tile: { x: 0, y: 3 },
+    footprint: { x: -1, y: 2, width: 2, height: 2 },
+  },
+] as const;
+
+const STORY_A2_LIGHTHOUSE_FOUNDATION = {
+  x: -1,
+  y: -1,
+  width: 2,
+  height: 2,
+} as const;
+
+function isWithinFootprint(
+  x: number,
+  y: number,
+  footprint: StoryIsoFootprint,
+): boolean {
+  return (
+    x >= footprint.x &&
+    x < footprint.x + footprint.width &&
+    y >= footprint.y &&
+    y < footprint.y + footprint.height
+  );
+}
+
+function isPreviewFoundationTile(x: number, y: number): boolean {
+  return (
+    isWithinFootprint(x, y, STORY_A2_LIGHTHOUSE_FOUNDATION) ||
+    STORY_A2_BUILDING_PLACEMENTS.some((placement) =>
+      isWithinFootprint(x, y, placement.footprint),
+    )
+  );
+}
+
 function getPreviewRoadAxis(
   x: number,
   y: number,
@@ -121,6 +166,8 @@ function getPreviewRoadKind(x: number, y: number): StoryIsoTileKind {
 }
 
 function getPreviewTileKind(x: number, y: number): StoryIsoTileKind {
+  if (isPreviewFoundationTile(x, y)) return "foundation";
+
   const isCurb =
     Math.abs(x - y) === 1 ||
     Math.abs(x + y) === 1 ||
@@ -184,8 +231,8 @@ export const STORY_A2_PREVIEW_MAP: StoryIsoMapDefinition = {
     {
       label: "story-a2-building-green",
       role: "building",
-      tile: { x: -2, y: 1 },
-      footprint: { x: -3, y: 0, width: 2, height: 2 },
+      tile: { ...STORY_A2_BUILDING_PLACEMENTS[0].tile },
+      footprint: { ...STORY_A2_BUILDING_PLACEMENTS[0].footprint },
       texturePath: buildingGreen,
       scale: 0.48,
       visualHeight: 132,
@@ -197,8 +244,8 @@ export const STORY_A2_PREVIEW_MAP: StoryIsoMapDefinition = {
     {
       label: "story-a2-building-ochre",
       role: "building",
-      tile: { x: 2, y: -1 },
-      footprint: { x: 1, y: 0, width: 2, height: 2 },
+      tile: { ...STORY_A2_BUILDING_PLACEMENTS[1].tile },
+      footprint: { ...STORY_A2_BUILDING_PLACEMENTS[1].footprint },
       texturePath: buildingOchre,
       scale: 0.46,
       visualHeight: 126,
@@ -210,8 +257,8 @@ export const STORY_A2_PREVIEW_MAP: StoryIsoMapDefinition = {
     {
       label: "story-a2-building-teal",
       role: "building",
-      tile: { x: -1, y: 3 },
-      footprint: { x: -2, y: 2, width: 2, height: 2 },
+      tile: { ...STORY_A2_BUILDING_PLACEMENTS[2].tile },
+      footprint: { ...STORY_A2_BUILDING_PLACEMENTS[2].footprint },
       texturePath: buildingTeal,
       scale: 0.44,
       visualHeight: 120,
@@ -249,8 +296,8 @@ export const STORY_A2_PREVIEW_MAP: StoryIsoMapDefinition = {
     {
       label: "story-a2-roadblock",
       role: "roadblock",
-      tile: { x: 0, y: 3 },
-      footprint: { x: 0, y: 3, width: 1, height: 1 },
+      tile: { x: 4, y: 1 },
+      footprint: { x: 4, y: 1, width: 1, height: 1 },
       texturePath: roadblock,
       scale: 0.64,
       visualHeight: 38,
@@ -276,7 +323,7 @@ export const STORY_A2_PREVIEW_MAP: StoryIsoMapDefinition = {
       label: "story-a2-lighthouse",
       role: "lighthouse",
       tile: { x: 0, y: 0 },
-      footprint: { x: -1, y: -1, width: 2, height: 2 },
+      footprint: { ...STORY_A2_LIGHTHOUSE_FOUNDATION },
       texturePath: STORY_SLICE_ASSETS.lighthouse.states.off,
       scale: 0.54,
       visualHeight: 160,

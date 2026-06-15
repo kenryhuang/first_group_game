@@ -13,6 +13,7 @@ const A2_CITY_GROUND_TILES = [
 
 const A2_CITY_FLAT_TILES = {
   concrete: "/assets/story-slice/a2-city/map/ground-concrete-flat-01.png",
+  foundation: "/assets/story-slice/a2-city/map/ground-foundation-pad-01.png",
   wastelandEdge:
     "/assets/story-slice/a2-city/map/ground-wasteland-edge-flat-01.png",
 };

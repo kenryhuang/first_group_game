@@ -25,6 +25,7 @@ import {
   type StoryIsoMapStats,
   type StoryIsoPropDefinition,
   type StoryIsoPropRole,
+  type StoryIsoTileCoord,
   type StoryIsoTileDefinition,
   type StoryIsoTileKind,
 } from "./storyIsoMap";
@@ -70,6 +71,24 @@ export interface StoryVolumePropDebug {
   footprint?: StoryIsoFootprint;
 }
 
+export interface StoryGroundDecalDebug {
+  label: string;
+  texturePath: string;
+  worldPoint: StoryPoint;
+  projectedPoint: StoryPoint;
+  scale: number;
+  rotation: number;
+}
+
+export interface StoryFogDebug {
+  label: string;
+  alpha: number;
+  animated: boolean;
+  driftX: number;
+  driftY: number;
+  duration: number;
+}
+
 export interface StoryGroundTileDebug {
   label: string;
   worldPoint: StoryPoint;
@@ -89,6 +108,8 @@ export interface StorySliceRenderer {
   playScanPulse(origin: { x: number; y: number }): void;
   debugGroundTiles(): StoryGroundTileDebug[];
   debugVolumeProps(): StoryVolumePropDebug[];
+  debugGroundDecals(): StoryGroundDecalDebug[];
+  debugFogSprites(): StoryFogDebug[];
   debugIsoMapStats(): StoryIsoMapStats | undefined;
   debugBlockedFootprints(): StoryIsoFootprint[];
   debugSpriteCount(): number;
@@ -98,6 +119,21 @@ export interface StorySliceRenderer {
 interface ActivePulse {
   sprite: Sprite;
   tweens: ReturnType<typeof gsap.to>[];
+}
+
+interface ActiveFog {
+  sprite: Sprite;
+  tweens: ReturnType<typeof gsap.to>[];
+  debug: Omit<StoryFogDebug, "alpha" | "animated">;
+}
+
+interface GroundDecalDefinition {
+  label: string;
+  texturePath: string;
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
 }
 
 function countDescendants(container: Container): number {
@@ -162,6 +198,7 @@ function makeSprite(
 function getGroundKind(asset: string): StoryIsoTileKind {
   if (asset.includes("road-straight")) return "road";
   if (asset.includes("road-cracked")) return "roadCracked";
+  if (asset.includes("foundation")) return "foundation";
   if (asset.includes("concrete")) return "concrete";
   return "plaza";
 }
@@ -169,6 +206,7 @@ function getGroundKind(asset: string): StoryIsoTileKind {
 function getIsoGroundColor(kind: StoryIsoTileKind): number {
   if (kind === "road") return STORY_ART_PALETTE.roadGreyGreen;
   if (kind === "roadCracked") return 0x39433d;
+  if (kind === "foundation") return 0x758078;
   if (kind === "curb") return 0x59675f;
   if (kind === "concrete") return 0x667368;
   if (kind === "stain") return 0x405f52;
@@ -208,6 +246,10 @@ function getA2GroundTexturePath(
     return STORY_SLICE_ASSETS.map.roadKit[
       getStoryIsoRoadTextureKey(isoMap, tile)
     ];
+  }
+
+  if (tile.kind === "foundation") {
+    return STORY_SLICE_ASSETS.map.flatTiles.foundation;
   }
 
   if (isIsoMapBorderTile(tile, isoMap)) {
@@ -316,7 +358,7 @@ function getIsoMapTileScale(isoMap: StoryIsoMapDefinition): number {
 }
 
 function getIsoTileWorldPoint(
-  tile: StoryIsoTileDefinition,
+  tile: StoryIsoTileCoord,
   center: StoryPoint,
   isoMap: StoryIsoMapDefinition,
 ): StoryPoint {
@@ -579,14 +621,78 @@ function addGroundDecals(
   layers: Record<StorySliceLayerName, Container>,
   center: StoryPoint,
   options: Pick<StorySliceRendererOptions, "projectPoint">,
-): void {
+  isoMap: StoryIsoMapDefinition | undefined,
+): StoryGroundDecalDebug[] {
   const [debrisOne, debrisTwo] = STORY_SLICE_ASSETS.map.decorations;
-  layers.decal.addChild(
-    makeSprite(debrisOne, center.x - 180, center.y + 140, 0.78, options),
-  );
-  layers.decal.addChild(
-    makeSprite(debrisTwo, center.x + 230, center.y - 110, 0.78, options),
-  );
+  const legacyDecals: GroundDecalDefinition[] = [
+    {
+      label: "story-ground-debris-legacy-0",
+      texturePath: debrisOne,
+      x: center.x - 180,
+      y: center.y + 140,
+      scale: 0.78,
+      rotation: -0.14,
+    },
+    {
+      label: "story-ground-debris-legacy-1",
+      texturePath: debrisTwo,
+      x: center.x + 230,
+      y: center.y - 110,
+      scale: 0.78,
+      rotation: 0.12,
+    },
+  ];
+
+  const a2DecalTiles = [
+    { tile: { x: -3, y: -1 }, offset: { x: -34, y: 24 }, texture: debrisOne },
+    { tile: { x: -2, y: 0 }, offset: { x: 28, y: -18 }, texture: debrisTwo },
+    { tile: { x: -1, y: 0 }, offset: { x: 42, y: 28 }, texture: debrisOne },
+    { tile: { x: 3, y: 2 }, offset: { x: -24, y: 18 }, texture: debrisTwo },
+    { tile: { x: 4, y: 3 }, offset: { x: 36, y: -20 }, texture: debrisOne },
+    { tile: { x: -1, y: 2 }, offset: { x: -20, y: 16 }, texture: debrisTwo },
+    { tile: { x: 0, y: 3 }, offset: { x: 34, y: 24 }, texture: debrisOne },
+    { tile: { x: -1, y: 0 }, offset: { x: -36, y: 18 }, texture: debrisTwo },
+    { tile: { x: 0, y: -1 }, offset: { x: 30, y: -20 }, texture: debrisOne },
+    { tile: { x: 2, y: 1 }, offset: { x: 42, y: 20 }, texture: debrisTwo },
+  ];
+
+  const definitions = isoMap
+    ? a2DecalTiles.map((decal, index) => {
+        const worldPoint = getIsoTileWorldPoint(decal.tile, center, isoMap);
+        return {
+          label: `story-a2-ground-debris-${index}`,
+          texturePath: decal.texture,
+          x: worldPoint.x + decal.offset.x,
+          y: worldPoint.y + decal.offset.y,
+          scale: index % 3 === 0 ? 0.5 : index % 3 === 1 ? 0.54 : 0.46,
+          rotation: (index - 4) * 0.07,
+        };
+      })
+    : legacyDecals;
+
+  return definitions.map((definition) => {
+    const sprite = makeSprite(
+      definition.texturePath,
+      definition.x,
+      definition.y,
+      definition.scale,
+      options,
+    );
+    sprite.label = definition.label;
+    sprite.rotation = definition.rotation;
+    layers.decal.addChild(sprite);
+
+    const worldPoint = { x: definition.x, y: definition.y };
+    const projectedPoint = options.projectPoint?.(worldPoint) ?? worldPoint;
+    return {
+      label: definition.label,
+      texturePath: definition.texturePath,
+      worldPoint,
+      projectedPoint,
+      scale: definition.scale,
+      rotation: definition.rotation,
+    };
+  });
 }
 
 interface ActiveVolumeProp {
@@ -653,12 +759,44 @@ function addTexturedFog(
   center: StoryPoint,
   state: StoryLighthouseVisualState,
   options: Pick<StorySliceRendererOptions, "projectPoint">,
-): Sprite[] {
+): ActiveFog[] {
   const offsets = [
-    { x: -520, y: -430, scale: 2.2, rotation: -0.08 },
-    { x: 520, y: -430, scale: 2.2, rotation: 0.07 },
-    { x: -520, y: 430, scale: 2.2, rotation: 0.05 },
-    { x: 520, y: 430, scale: 2.2, rotation: -0.06 },
+    {
+      x: -520,
+      y: -430,
+      scale: 2.2,
+      rotation: -0.08,
+      driftX: 38,
+      driftY: -14,
+      duration: 9.5,
+    },
+    {
+      x: 520,
+      y: -430,
+      scale: 2.2,
+      rotation: 0.07,
+      driftX: -42,
+      driftY: 18,
+      duration: 11,
+    },
+    {
+      x: -520,
+      y: 430,
+      scale: 2.2,
+      rotation: 0.05,
+      driftX: 34,
+      driftY: 16,
+      duration: 10.2,
+    },
+    {
+      x: 520,
+      y: 430,
+      scale: 2.2,
+      rotation: -0.06,
+      driftX: -36,
+      driftY: -12,
+      duration: 12,
+    },
   ];
 
   return offsets.map((offset, index) => {
@@ -675,7 +813,33 @@ function addTexturedFog(
     fog.alpha = STORY_FOG_ALPHA_BY_STATE[state];
     fog.rotation = offset.rotation;
     layers.fog.addChild(fog);
-    return fog;
+    const tweens = [
+      gsap.to(fog.position, {
+        x: fog.position.x + offset.driftX,
+        y: fog.position.y + offset.driftY,
+        duration: offset.duration,
+        repeat: -1,
+        yoyo: true,
+        ease: "sine.inOut",
+      }),
+      gsap.to(fog, {
+        rotation: offset.rotation + (index % 2 === 0 ? 0.035 : -0.035),
+        duration: offset.duration * 1.25,
+        repeat: -1,
+        yoyo: true,
+        ease: "sine.inOut",
+      }),
+    ];
+    return {
+      sprite: fog,
+      tweens,
+      debug: {
+        label: fog.label ?? `story-textured-fog-${index}`,
+        driftX: offset.driftX,
+        driftY: offset.driftY,
+        duration: offset.duration,
+      },
+    };
   });
 }
 
@@ -705,7 +869,12 @@ export function createStorySliceRenderer(
 
   const layers = createLayers(root);
   const groundTiles = addGround(layers, options.center, options, activeIsoMap);
-  addGroundDecals(layers, options.center, options);
+  const groundDecals = addGroundDecals(
+    layers,
+    options.center,
+    options,
+    activeIsoMap,
+  );
   const volumeProps = getVolumePropDefinitions(
     options.center,
     activeIsoMap,
@@ -766,7 +935,7 @@ export function createStorySliceRenderer(
     coreGlow.alpha =
       state === "on" ? 0.82 : state === "charging" ? 0.46 : 0.16;
     for (const fog of fogSprites) {
-      fog.alpha = STORY_FOG_ALPHA_BY_STATE[state];
+      fog.sprite.alpha = STORY_FOG_ALPHA_BY_STATE[state];
     }
   };
 
@@ -807,6 +976,20 @@ export function createStorySliceRenderer(
         shadowChildCount: prop.container.children.filter((child) =>
           child.label?.endsWith("-shadow"),
         ).length,
+      }));
+    },
+    debugGroundDecals(): StoryGroundDecalDebug[] {
+      return groundDecals.map((decal) => ({
+        ...decal,
+        worldPoint: { ...decal.worldPoint },
+        projectedPoint: { ...decal.projectedPoint },
+      }));
+    },
+    debugFogSprites(): StoryFogDebug[] {
+      return fogSprites.map((fog) => ({
+        ...fog.debug,
+        alpha: fog.sprite.alpha,
+        animated: fog.tweens.length > 0,
       }));
     },
     debugIsoMapStats(): StoryIsoMapStats | undefined {
@@ -852,6 +1035,11 @@ export function createStorySliceRenderer(
       }
       for (const prop of volumeProps) {
         prop.container.destroy({ children: true });
+      }
+      for (const fog of fogSprites) {
+        for (const tween of fog.tweens) {
+          tween.kill();
+        }
       }
       root.destroy({ children: true });
     },

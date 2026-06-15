@@ -13,6 +13,25 @@ import {
 } from "./storyIsoMap";
 
 describe("story isometric preview map", () => {
+  function tileKey(tile: { x: number; y: number }): string {
+    return `${tile.x}:${tile.y}`;
+  }
+
+  function footprintTiles(footprint: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): Array<{ x: number; y: number }> {
+    const tiles: Array<{ x: number; y: number }> = [];
+    for (let x = footprint.x; x < footprint.x + footprint.width; x += 1) {
+      for (let y = footprint.y; y < footprint.y + footprint.height; y += 1) {
+        tiles.push({ x, y });
+      }
+    }
+    return tiles;
+  }
+
   it("defines a compact A2 preview map around the lighthouse", () => {
     const stats = getStoryIsoMapStats(STORY_A2_PREVIEW_MAP);
 
@@ -116,6 +135,61 @@ describe("story isometric preview map", () => {
     );
   });
 
+  it("places buildings on raised foundation pads beside roads", () => {
+    const roadKeys = new Set(
+      STORY_A2_PREVIEW_MAP.tiles.filter(isStoryIsoRoadTile).map(tileKey),
+    );
+    const tileByKey = new Map(
+      STORY_A2_PREVIEW_MAP.tiles.map((tile) => [tileKey(tile), tile]),
+    );
+    const buildingProps = STORY_A2_PREVIEW_MAP.props.filter(
+      (prop) => prop.role === "building",
+    );
+
+    expect(buildingProps.map((prop) => prop.tile)).toEqual([
+      { x: -2, y: 0 },
+      { x: 4, y: 3 },
+      { x: 0, y: 3 },
+    ]);
+
+    for (const prop of buildingProps) {
+      const foundationTiles = footprintTiles(prop.footprint);
+      expect(
+        foundationTiles.some((tile) =>
+          [
+            { x: tile.x - 1, y: tile.y },
+            { x: tile.x + 1, y: tile.y },
+            { x: tile.x, y: tile.y - 1 },
+            { x: tile.x, y: tile.y + 1 },
+          ].some((neighbor) => roadKeys.has(tileKey(neighbor))),
+        ),
+      ).toBe(true);
+
+      for (const tile of foundationTiles) {
+        expect(roadKeys.has(tileKey(tile))).toBe(false);
+        expect(tileByKey.get(tileKey(tile))?.kind).toBe("foundation");
+      }
+    }
+  });
+
+  it("places the lighthouse on a raised central foundation pad", () => {
+    const roadKeys = new Set(
+      STORY_A2_PREVIEW_MAP.tiles.filter(isStoryIsoRoadTile).map(tileKey),
+    );
+    const tileByKey = new Map(
+      STORY_A2_PREVIEW_MAP.tiles.map((tile) => [tileKey(tile), tile]),
+    );
+    const lighthouse = STORY_A2_PREVIEW_MAP.props.find(
+      (prop) => prop.role === "lighthouse",
+    );
+
+    expect(lighthouse).toBeDefined();
+    for (const tile of footprintTiles(lighthouse!.footprint)) {
+      expect(roadKeys.has(tileKey(tile))).toBe(false);
+      expect(tileByKey.get(tileKey(tile))?.kind).toBe("foundation");
+    }
+  });
+
   it("marks blocked footprints for the preview slice", () => {
     const roadTiles = STORY_A2_PREVIEW_MAP.tiles.filter(isStoryIsoRoadTile);
     const blockedFootprints = getStoryIsoBlockedFootprints(STORY_A2_PREVIEW_MAP);
@@ -125,12 +199,12 @@ describe("story isometric preview map", () => {
     expect(blockedFootprints).toHaveLength(6);
     expect(blockedFootprints).toContainEqual({
       x: -3,
-      y: 0,
+      y: -1,
       width: 2,
       height: 2,
     });
     expect(getStoryIsoPropBasePoint(firstBuilding, STORY_CENTER_LIGHTHOUSE.position))
-      .toEqual({ x: 19488, y: 20056 });
+      .toEqual({ x: 19488, y: 19800 });
   });
 
   it("converts blocked footprints into world collision rectangles around prop bases", () => {
@@ -143,7 +217,7 @@ describe("story isometric preview map", () => {
     expect(blockedRects[0]).toEqual({
       id: "story-a2-blocking-story-a2-building-green",
       x: 19232,
-      y: 19800,
+      y: 19544,
       width: 348,
       height: 348,
     });

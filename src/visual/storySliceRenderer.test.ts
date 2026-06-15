@@ -90,7 +90,7 @@ describe("story slice renderer", () => {
     expect(renderer.debugBlockedFootprints()).toEqual(
       getStoryIsoBlockedFootprints(STORY_A2_PREVIEW_MAP),
     );
-    expect(renderer.layers.decal.children).toHaveLength(2);
+    expect(renderer.layers.decal.children).toHaveLength(10);
     expect(renderer.layers.prop.children).toHaveLength(0);
     expect(renderer.layers.fog.children).toHaveLength(4);
     expect(renderer.layers.lighthouse.children).toHaveLength(0);
@@ -179,16 +179,16 @@ describe("story slice renderer", () => {
 
     const firstBuilding = props[0];
     expect(firstBuilding.label).toBe("story-a2-building-green");
-    expect(firstBuilding.tile).toEqual({ x: -2, y: 1 });
+    expect(firstBuilding.tile).toEqual({ x: -2, y: 0 });
     expect(firstBuilding.footprint).toEqual({
       x: -3,
-      y: 0,
+      y: -1,
       width: 2,
       height: 2,
     });
     expect(firstBuilding.basePoint).toEqual({
       x: center.x - 512,
-      y: center.y + 256,
+      y: center.y,
     });
     expect(firstBuilding.projectedPoint).toEqual(
       projectStoryPoint(firstBuilding.basePoint, center),
@@ -212,6 +212,40 @@ describe("story slice renderer", () => {
     expect(lighthouseSprite.texture).toBe(
       cachedTextures.get(STORY_SLICE_ASSETS.lighthouse.states.off),
     );
+  });
+
+  it("renders raised foundations, ruin decals, and animated fog for A2 city blocks", () => {
+    const center = STORY_CENTER_LIGHTHOUSE.position;
+    const renderer = createStorySliceRenderer({
+      world: new Container(),
+      center,
+      lit: false,
+      projectPoint: (point) => projectStoryPoint(point, center),
+    });
+
+    const foundationTiles = renderer.debugGroundTiles().filter((tile) => {
+      return tile.kind === "foundation";
+    });
+    expect(foundationTiles).toHaveLength(16);
+    expect(
+      foundationTiles.every(
+        (tile) => tile.texturePath === STORY_SLICE_ASSETS.map.flatTiles.foundation,
+      ),
+    ).toBe(true);
+
+    const decals = renderer.debugGroundDecals();
+    expect(decals).toHaveLength(10);
+    expect(
+      decals.filter((decal) => decal.texturePath.includes("debris-small")),
+    ).toHaveLength(10);
+    expect(decals.every((decal) => decal.scale <= 0.58)).toBe(true);
+
+    const fogSprites = renderer.debugFogSprites();
+    expect(fogSprites).toHaveLength(4);
+    expect(fogSprites.every((fog) => fog.animated)).toBe(true);
+    expect(
+      fogSprites.every((fog) => Math.abs(fog.driftX) + Math.abs(fog.driftY) > 0),
+    ).toBe(true);
   });
 
   it("preserves default ground and fog layout without projection", () => {
@@ -316,12 +350,13 @@ describe("story slice renderer", () => {
       tiles: [
         { x: 0, y: 0, kind: "road", roadAxis: "x" },
         { x: 1, y: 0, kind: "roadCracked", roadAxis: "y" },
-        { x: 2, y: 0, kind: "concrete" },
-        { x: 3, y: 0, kind: "plaza" },
-        { x: 4, y: 0, kind: "blocked" },
-        { x: 5, y: 0, kind: "curb" },
-        { x: 6, y: 0, kind: "rubble" },
-        { x: 7, y: 0, kind: "stain" },
+        { x: 2, y: 0, kind: "foundation" },
+        { x: 3, y: 0, kind: "concrete" },
+        { x: 4, y: 0, kind: "plaza" },
+        { x: 5, y: 0, kind: "blocked" },
+        { x: 6, y: 0, kind: "curb" },
+        { x: 7, y: 0, kind: "rubble" },
+        { x: 8, y: 0, kind: "stain" },
       ],
       props: [],
     };
@@ -338,6 +373,7 @@ describe("story slice renderer", () => {
     ).toEqual([
       STORY_SLICE_ASSETS.map.roadKit.straightX,
       STORY_SLICE_ASSETS.map.roadKit.crackedStraightY,
+      STORY_SLICE_ASSETS.map.flatTiles.foundation,
       STORY_SLICE_ASSETS.map.flatTiles.concrete,
       STORY_SLICE_ASSETS.map.flatTiles.concrete,
       STORY_SLICE_ASSETS.map.flatTiles.concrete,

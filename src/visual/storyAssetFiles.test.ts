@@ -50,6 +50,10 @@ const A2_CITY_EXPECTED_DIMENSIONS: Record<
     width: 256,
     height: 128,
   },
+  "/assets/story-slice/a2-city/map/ground-foundation-pad-01.png": {
+    width: 256,
+    height: 128,
+  },
   "/assets/story-slice/a2-city/map/ground-wasteland-edge-flat-01.png": {
     width: 256,
     height: 128,
