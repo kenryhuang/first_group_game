@@ -5,6 +5,7 @@ import {
   PLAYER_WEAPON_MUZZLE_DISTANCE,
   PLAYER_WEAPON_VISUAL_GEOMETRY,
   getPlayerWeaponDepthOffset,
+  getStoryPlayerWeaponPose,
 } from "./playerWeaponVisuals";
 
 describe("player weapon visuals", () => {
@@ -24,5 +25,37 @@ describe("player weapon visuals", () => {
     expect(getPlayerWeaponDepthOffset(-Math.PI / 4)).toBe(PLAYER_WEAPON_BACK_DEPTH_OFFSET);
     expect(getPlayerWeaponDepthOffset(0)).toBe(PLAYER_WEAPON_FRONT_DEPTH_OFFSET);
     expect(getPlayerWeaponDepthOffset(Math.PI / 2)).toBe(PLAYER_WEAPON_FRONT_DEPTH_OFFSET);
+  });
+
+  it("uses 2.5d hand anchors and a flatter barrel for front and back aim poses", () => {
+    const backAim = Math.atan2(-64, 128);
+    const frontAim = Math.atan2(64, -128);
+    const sideAim = 0;
+
+    expect(getStoryPlayerWeaponPose(backAim)).toEqual({
+      rotation: expect.any(Number),
+      offsetX: 4,
+      offsetY: -30,
+      barrelScaleY: 0.72,
+      depthOffset: PLAYER_WEAPON_BACK_DEPTH_OFFSET,
+    });
+    expect(getStoryPlayerWeaponPose(backAim).rotation).toBeGreaterThan(backAim);
+
+    expect(getStoryPlayerWeaponPose(frontAim)).toEqual({
+      rotation: expect.any(Number),
+      offsetX: 3,
+      offsetY: -14,
+      barrelScaleY: 0.76,
+      depthOffset: PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
+    });
+    expect(getStoryPlayerWeaponPose(frontAim).rotation).toBeGreaterThan(frontAim);
+
+    expect(getStoryPlayerWeaponPose(sideAim)).toEqual({
+      rotation: 0,
+      offsetX: 2,
+      offsetY: -18,
+      barrelScaleY: 0.9,
+      depthOffset: PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
+    });
   });
 });

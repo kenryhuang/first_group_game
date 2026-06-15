@@ -46,6 +46,29 @@ describe("story actor animation locks", () => {
     });
   });
 
+  it("lets running locomotion override an active attack one-shot", () => {
+    const lock = createStoryActorAnimationLock();
+
+    expect(triggerStoryActorOneShot(lock, "attack", "right", 200, 280)).toBe(true);
+
+    expect(
+      getStoryActorPlayback(lock, "run", "left", 240, {
+        allowRunToOverrideAttack: true,
+      }),
+    ).toEqual({
+      animation: "run",
+      direction: "left",
+    });
+    expect(
+      getStoryActorPlayback(lock, "idle", "left", 240, {
+        allowRunToOverrideAttack: true,
+      }),
+    ).toEqual({
+      animation: "attack",
+      direction: "right",
+    });
+  });
+
   it("does not ask callers to restart an active repeated one-shot", () => {
     const lock = createStoryActorAnimationLock();
 
