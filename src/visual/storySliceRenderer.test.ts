@@ -341,9 +341,9 @@ describe("story slice renderer", () => {
       STORY_SLICE_ASSETS.map.flatTiles.concrete,
       STORY_SLICE_ASSETS.map.flatTiles.concrete,
       STORY_SLICE_ASSETS.map.flatTiles.concrete,
-      STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge,
-      STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge,
-      STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge,
+      STORY_SLICE_ASSETS.map.flatTiles.concrete,
+      STORY_SLICE_ASSETS.map.flatTiles.concrete,
+      STORY_SLICE_ASSETS.map.flatTiles.concrete,
     ]);
   });
 

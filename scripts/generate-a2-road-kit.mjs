@@ -173,6 +173,61 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function lerp(start, end, amount) {
+  return start + (end - start) * amount;
+}
+
+function smoothStep(value) {
+  return value * value * (3 - 2 * value);
+}
+
+function mixColor(start, end, amount) {
+  const mixAmount = clamp(amount, 0, 1);
+  return [
+    Math.round(lerp(start[0], end[0], mixAmount)),
+    Math.round(lerp(start[1], end[1], mixAmount)),
+    Math.round(lerp(start[2], end[2], mixAmount)),
+    Math.round(lerp(start[3] ?? 255, end[3] ?? 255, mixAmount)),
+  ];
+}
+
+function colorWithBrightness(color, amount) {
+  return [
+    clamp(Math.round(color[0] + amount), 0, 255),
+    clamp(Math.round(color[1] + amount), 0, 255),
+    clamp(Math.round(color[2] + amount), 0, 255),
+    color[3] ?? 255,
+  ];
+}
+
+function hashUnit(x, y, seed) {
+  let hash =
+    Math.imul(x, 374761393) ^
+    Math.imul(y, 668265263) ^
+    Math.imul(seed, 1442695041);
+  hash = (hash ^ (hash >>> 13)) >>> 0;
+  hash = Math.imul(hash, 1274126177) >>> 0;
+  hash = (hash ^ (hash >>> 16)) >>> 0;
+  return hash / 0xffffffff;
+}
+
+function valueNoise(x, y, scale, seed) {
+  const scaledX = x / scale;
+  const scaledY = y / scale;
+  const x0 = Math.floor(scaledX);
+  const y0 = Math.floor(scaledY);
+  const tx = smoothStep(scaledX - x0);
+  const ty = smoothStep(scaledY - y0);
+
+  const top = lerp(hashUnit(x0, y0, seed), hashUnit(x0 + 1, y0, seed), tx);
+  const bottom = lerp(
+    hashUnit(x0, y0 + 1, seed),
+    hashUnit(x0 + 1, y0 + 1, seed),
+    tx,
+  );
+  return lerp(top, bottom, ty);
+}
+
 function sample(image, x, y) {
   const sx = clamp(Math.round(x), 0, image.width - 1);
   const sy = clamp(Math.round(y), 0, image.height - 1);
@@ -222,28 +277,72 @@ function isoCoords(x, y) {
 }
 
 function edgeAlpha(edgeDistance) {
-  if (edgeDistance <= 0) return 0;
-  if (edgeDistance < 0.012) return 235;
+  if (edgeDistance <= -0.006) return 0;
   return 255;
 }
 
-function extractFlatTop(source, topY, options = {}) {
+function averageTopColor(source, topY) {
+  let count = 0;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+
+  for (let y = 42; y <= 88; y += 1) {
+    for (let x = 52; x <= 204; x += 1) {
+      const color = sample(source, x, topY + y);
+      if (color[3] < 180) continue;
+      red += color[0];
+      green += color[1];
+      blue += color[2];
+      count += 1;
+    }
+  }
+
+  if (count === 0) return [92, 108, 101, 255];
+  return [
+    Math.round(red / count),
+    Math.round(green / count),
+    Math.round(blue / count),
+    255,
+  ];
+}
+
+function makeFlatGroundTexture(source, topY, options) {
   const pixels = Buffer.alloc(WIDTH * HEIGHT * 4);
-  const inset = options.inset ?? 0.82;
+  const sourceAverage = averageTopColor(source, topY);
+  const baseColor = mixColor(sourceAverage, options.paletteBase, 0.62);
+
   for (let y = 0; y < HEIGHT; y += 1) {
     for (let x = 0; x < WIDTH; x += 1) {
       const { edgeDistance } = isoCoords(x, y);
       const alpha = edgeAlpha(edgeDistance);
       if (alpha <= 0) continue;
 
-      const insetX = CENTER_X + (x + 0.5 - CENTER_X) * inset;
-      const insetY = CENTER_Y + (y + 0.5 - CENTER_Y) * inset;
-      const sampleX = options.flipX ? WIDTH - 1 - insetX : insetX;
-      const color = sample(source, sampleX, topY + insetY);
-      color[3] = Math.min(color[3], alpha);
+      const broadNoise = valueNoise(x + 19, y - 31, 96, options.seed) - 0.5;
+      const midNoise = valueNoise(x - 73, y + 41, 42, options.seed + 11) - 0.5;
+      const fineNoise = hashUnit(x, y, options.seed + 23) - 0.5;
+      const stainNoise = valueNoise(x + 211, y + 137, 58, options.seed + 37);
+      const pitNoise = valueNoise(x - 17, y + 83, 18, options.seed + 53);
+
+      let color = colorWithBrightness(
+        baseColor,
+        broadNoise * options.broadContrast +
+          midNoise * options.midContrast +
+          fineNoise * options.fineContrast,
+      );
+
+      const grime = Math.max(0, stainNoise - 0.58) * options.grimeStrength;
+      color = mixColor(color, options.grimeColor, grime);
+
+      if (pitNoise > 0.82 && hashUnit(x >> 1, y >> 1, options.seed + 71) > 0.78) {
+        color = mixColor(color, options.pitColor, options.pitStrength);
+      }
+
+      color[3] = alpha;
       setPixel(pixels, x, y, color);
     }
   }
+
   return pixels;
 }
 
@@ -387,8 +486,28 @@ const wasteland = readPng(join(MAP_DIR, "wasteland-grass-01.png"));
 const road = readPng(join(MAP_DIR, "road-straight-01.png"));
 const crackedRoad = readPng(join(MAP_DIR, "road-cracked-01.png"));
 
-const concreteFlat = extractFlatTop(concrete, SOURCE_TOP_Y.concrete);
-const wastelandFlat = extractFlatTop(wasteland, SOURCE_TOP_Y.wasteland);
+const concreteFlat = makeFlatGroundTexture(concrete, SOURCE_TOP_Y.concrete, {
+  seed: 101,
+  paletteBase: [89, 111, 106, 255],
+  grimeColor: [61, 91, 82, 255],
+  pitColor: [49, 57, 53, 255],
+  broadContrast: 2,
+  midContrast: 1.2,
+  fineContrast: 1.4,
+  grimeStrength: 0.1,
+  pitStrength: 0.06,
+});
+const wastelandFlat = makeFlatGroundTexture(wasteland, SOURCE_TOP_Y.wasteland, {
+  seed: 173,
+  paletteBase: [78, 100, 89, 255],
+  grimeColor: [48, 83, 63, 255],
+  pitColor: [44, 51, 46, 255],
+  broadContrast: 2.2,
+  midContrast: 1.4,
+  fineContrast: 1.6,
+  grimeStrength: 0.14,
+  pitStrength: 0.07,
+});
 
 writePng(join(MAP_DIR, "ground-concrete-flat-01.png"), WIDTH, HEIGHT, concreteFlat);
 writePng(

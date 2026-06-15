@@ -177,6 +177,29 @@ function getIsoGroundColor(kind: StoryIsoTileKind): number {
   return STORY_ART_PALETTE.wastelandOchre;
 }
 
+function isIsoMapBorderTile(
+  tile: StoryIsoTileDefinition,
+  isoMap: StoryIsoMapDefinition,
+): boolean {
+  const xValues = isoMap.tiles.map((candidate) => candidate.x);
+  const yValues = isoMap.tiles.map((candidate) => candidate.y);
+  const minX = Math.min(...xValues);
+  const maxX = Math.max(...xValues);
+  const minY = Math.min(...yValues);
+  const maxY = Math.max(...yValues);
+
+  if (minX === maxX || minY === maxY) {
+    return false;
+  }
+
+  return (
+    tile.x === minX ||
+    tile.x === maxX ||
+    tile.y === minY ||
+    tile.y === maxY
+  );
+}
+
 function getA2GroundTexturePath(
   tile: StoryIsoTileDefinition,
   isoMap: StoryIsoMapDefinition,
@@ -187,7 +210,7 @@ function getA2GroundTexturePath(
     ];
   }
 
-  if (tile.kind === "curb" || tile.kind === "rubble" || tile.kind === "stain") {
+  if (isIsoMapBorderTile(tile, isoMap)) {
     return STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge;
   }
 

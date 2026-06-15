@@ -13,6 +13,17 @@ interface PngInfo {
   bitDepth: number;
   colorType: number;
   transparentPixelCount: number;
+  rgbaPixels: Buffer;
+}
+
+interface LuminanceStats {
+  average: number;
+  standardDeviation: number;
+}
+
+interface DiamondFlatnessStats {
+  edge: LuminanceStats;
+  inner: LuminanceStats;
 }
 
 const A2_CITY_EXPECTED_DIMENSIONS: Record<
@@ -276,7 +287,108 @@ function readPngInfo(filePath: string): PngInfo {
     bitDepth,
     colorType,
     transparentPixelCount,
+    rgbaPixels,
   };
+}
+
+function getDiamondBandLuminanceStats(
+  png: PngInfo,
+  minDiamondDistance: number,
+  maxDiamondDistance: number,
+): LuminanceStats {
+  const centerX = png.width / 2;
+  const centerY = png.height / 2;
+  let count = 0;
+  let sum = 0;
+  let sumSquares = 0;
+
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const normalizedX = Math.abs((x + 0.5 - centerX) / centerX);
+      const normalizedY = Math.abs((y + 0.5 - centerY) / centerY);
+      const diamondDistance = normalizedX + normalizedY;
+      if (
+        diamondDistance < minDiamondDistance ||
+        diamondDistance > maxDiamondDistance
+      ) {
+        continue;
+      }
+
+      const index = (y * png.width + x) * 4;
+      if (png.rgbaPixels[index + 3] < 220) {
+        continue;
+      }
+
+      const luminance =
+        0.2126 * png.rgbaPixels[index] +
+        0.7152 * png.rgbaPixels[index + 1] +
+        0.0722 * png.rgbaPixels[index + 2];
+      count += 1;
+      sum += luminance;
+      sumSquares += luminance * luminance;
+    }
+  }
+
+  expect(count).toBeGreaterThan(0);
+  const average = sum / count;
+  return {
+    average,
+    standardDeviation: Math.sqrt(sumSquares / count - average * average),
+  };
+}
+
+function getDiamondFlatnessStats(png: PngInfo): DiamondFlatnessStats {
+  return {
+    edge: getDiamondBandLuminanceStats(png, 0.78, 0.92),
+    inner: getDiamondBandLuminanceStats(png, 0.28, 0.62),
+  };
+}
+
+function getDiamondQuadrantAverageSpread(png: PngInfo): number {
+  const centerX = png.width / 2;
+  const centerY = png.height / 2;
+  const quadrants = {
+    northwest: { count: 0, sum: 0 },
+    northeast: { count: 0, sum: 0 },
+    southwest: { count: 0, sum: 0 },
+    southeast: { count: 0, sum: 0 },
+  };
+
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const normalizedX = (x + 0.5 - centerX) / centerX;
+      const normalizedY = (y + 0.5 - centerY) / centerY;
+      if (Math.abs(normalizedX) + Math.abs(normalizedY) > 0.86) {
+        continue;
+      }
+
+      const index = (y * png.width + x) * 4;
+      if (png.rgbaPixels[index + 3] < 220) {
+        continue;
+      }
+
+      const luminance =
+        0.2126 * png.rgbaPixels[index] +
+        0.7152 * png.rgbaPixels[index + 1] +
+        0.0722 * png.rgbaPixels[index + 2];
+      const quadrant =
+        normalizedY < 0
+          ? normalizedX < 0
+            ? quadrants.northwest
+            : quadrants.northeast
+          : normalizedX < 0
+            ? quadrants.southwest
+            : quadrants.southeast;
+      quadrant.count += 1;
+      quadrant.sum += luminance;
+    }
+  }
+
+  const averages = Object.values(quadrants).map((quadrant) => {
+    expect(quadrant.count).toBeGreaterThan(0);
+    return quadrant.sum / quadrant.count;
+  });
+  return Math.max(...averages) - Math.min(...averages);
 }
 
 describe("story slice asset files", () => {
@@ -298,6 +410,22 @@ describe("story slice asset files", () => {
       expect(png.bitDepth).toBe(8);
       expect(png.colorType).toBe(6);
       expect(png.transparentPixelCount).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the flat A2 ground tiles visually coplanar", () => {
+    const flatGroundAssets = [
+      "/assets/story-slice/a2-city/map/ground-concrete-flat-01.png",
+      "/assets/story-slice/a2-city/map/ground-wasteland-edge-flat-01.png",
+    ];
+
+    for (const assetPath of flatGroundAssets) {
+      const png = readPngInfo(publicAssetPath(assetPath));
+      const flatness = getDiamondFlatnessStats(png);
+
+      expect(flatness.inner.average - flatness.edge.average).toBeLessThan(6);
+      expect(flatness.edge.standardDeviation).toBeLessThan(18);
+      expect(getDiamondQuadrantAverageSpread(png)).toBeLessThan(2);
     }
   });
 });
