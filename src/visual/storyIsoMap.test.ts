@@ -208,65 +208,91 @@ describe("story isometric preview map", () => {
       .toEqual({ x: 19488, y: 19800 });
   });
 
-  it("converts blocked footprints into world collision rectangles around prop bases", () => {
+  it("places building blockers inside the foundation footprint instead of on the curb edge", () => {
     const blockedRects = getStoryIsoBlockedRects(
       STORY_A2_PREVIEW_MAP,
       STORY_CENTER_LIGHTHOUSE.position,
     );
 
     expect(blockedRects).toHaveLength(6);
-    expect(blockedRects[0]).toEqual({
-      id: "story-a2-blocking-story-a2-building-green",
-      x: 19488,
-      y: 19800,
-      width: 348,
-      height: 348,
+    expect(blockedRects).toContainEqual({
+      id: "story-a2-blocking-story-a2-building-green-core",
+      x: 19360,
+      y: 19672,
+      width: 358,
+      height: 358,
     });
     expect(
-      blockedRects.find((rect) => rect.id.endsWith("building-ochre")),
+      blockedRects.find((rect) => rect.id.endsWith("building-ochre-core")),
     ).toEqual({
-      id: "story-a2-blocking-story-a2-building-ochre",
-      x: 21024,
-      y: 20568,
-      width: 348,
-      height: 348,
+      id: "story-a2-blocking-story-a2-building-ochre-core",
+      x: 20896,
+      y: 20440,
+      width: 358,
+      height: 358,
     });
-    expect(blockedRects.find((rect) => rect.id.endsWith("lighthouse"))).toEqual({
-      id: "story-a2-blocking-story-a2-lighthouse",
-      x: 20000,
-      y: 19800,
-      width: 348,
-      height: 348,
-    });
+    expect(blockedRects.find((rect) => rect.id.endsWith("lighthouse-core")))
+      .toEqual({
+        id: "story-a2-blocking-story-a2-lighthouse-core",
+        x: 19872,
+        y: 19672,
+        width: 399,
+        height: 399,
+      });
+    expect(blockedRects.find((rect) => rect.id.endsWith("wrecked-car-2:2")))
+      .toEqual({
+        id: "story-a2-blocking-story-a2-wrecked-car-2:2",
+        x: 20512,
+        y: 20312,
+        width: 230,
+        height: 230,
+      });
   });
 
-  it("blocks movement into the orange building at its visible base", () => {
+  it("allows stepping onto the orange building foundation apron but blocks the wall core", () => {
     const blockedRects = getStoryIsoBlockedRects(
       STORY_A2_PREVIEW_MAP,
       STORY_CENTER_LIGHTHOUSE.position,
     );
     const orangeBuilding = blockedRects.find((rect) =>
-      rect.id.endsWith("building-ochre"),
+      rect.id.endsWith("building-ochre-core"),
     );
     if (!orangeBuilding) throw new Error("Missing orange building blocker");
 
-    const from = {
-      x: orangeBuilding.x + orangeBuilding.width / 2 + 96,
-      y: orangeBuilding.y,
+    const apronY = orangeBuilding.y + 130;
+    const fromFoundationEdge = {
+      x: orangeBuilding.x - orangeBuilding.width / 2 - 96,
+      y: apronY,
     };
-    const intoVisibleBase = {
+    const ontoApron = {
+      x: orangeBuilding.x - orangeBuilding.width / 2 - 24,
+      y: apronY,
+    };
+    const fromRightSide = {
+      x: orangeBuilding.x + orangeBuilding.width / 2 + 96,
+      y: apronY,
+    };
+    const intoWallCore = {
       x: orangeBuilding.x + orangeBuilding.width / 2 - 18,
-      y: orangeBuilding.y,
+      y: apronY,
     };
 
     expect(
       resolveBlockedMovementWithBlockingBuildings(
-        from,
-        intoVisibleBase,
+        fromFoundationEdge,
+        ontoApron,
         16,
         blockedRects,
       ),
-    ).toEqual(from);
+    ).toEqual(ontoApron);
+    expect(
+      resolveBlockedMovementWithBlockingBuildings(
+        fromRightSide,
+        intoWallCore,
+        16,
+        blockedRects,
+      ),
+    ).toEqual(fromRightSide);
   });
 
   it("keeps the upper center movement lane clear of A2 prop footprints", () => {

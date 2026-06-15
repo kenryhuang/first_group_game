@@ -100,7 +100,9 @@ export interface StoryIsoBlockingRect {
   height: number;
 }
 
-export const STORY_A2_BLOCKING_FOOTPRINT_SCALE = 0.68;
+export const STORY_A2_BLOCKING_TILE_SCALE = 0.9;
+export const STORY_A2_BUILDING_BLOCKING_FOOTPRINT_SCALE = 0.7;
+export const STORY_A2_LIGHTHOUSE_BLOCKING_FOOTPRINT_SCALE = 0.78;
 
 const STORY_A2_BUILDING_PLACEMENTS = [
   {
@@ -135,6 +137,29 @@ function isWithinFootprint(
     y >= footprint.y &&
     y < footprint.y + footprint.height
   );
+}
+
+function getStoryIsoFootprintTiles(
+  footprint: StoryIsoFootprint,
+): StoryIsoTileCoord[] {
+  const tiles: StoryIsoTileCoord[] = [];
+  for (let x = footprint.x; x < footprint.x + footprint.width; x += 1) {
+    for (let y = footprint.y; y < footprint.y + footprint.height; y += 1) {
+      tiles.push({ x, y });
+    }
+  }
+  return tiles;
+}
+
+function getStoryIsoFootprintCenterPoint(
+  footprint: StoryIsoFootprint,
+  center: StoryPoint,
+  tileSize: number,
+): StoryPoint {
+  return {
+    x: center.x + (footprint.x + (footprint.width - 1) / 2) * tileSize,
+    y: center.y + (footprint.y + (footprint.height - 1) / 2) * tileSize,
+  };
 }
 
 function isPreviewFoundationTile(x: number, y: number): boolean {
@@ -444,21 +469,43 @@ export function getStoryIsoBlockedRects(
   map: StoryIsoMapDefinition,
   center: StoryPoint,
 ): StoryIsoBlockingRect[] {
+  const tileBlockerSize = Math.round(map.tileSize * STORY_A2_BLOCKING_TILE_SCALE);
+
   return map.props
     .filter((prop) => prop.blocksMovement)
-    .map((prop) => {
-      const basePoint = getStoryIsoPropBasePoint(prop, center);
-      return {
-        id: `story-a2-blocking-${prop.label}`,
-        x: basePoint.x,
-        y: basePoint.y,
-        width: Math.round(
-          prop.footprint.width * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
-        ),
-        height: Math.round(
-          prop.footprint.height * map.tileSize * STORY_A2_BLOCKING_FOOTPRINT_SCALE,
-        ),
-      };
+    .flatMap((prop) => {
+      if (prop.role === "building" || prop.role === "lighthouse") {
+        const footprintCenter = getStoryIsoFootprintCenterPoint(
+          prop.footprint,
+          center,
+          map.tileSize,
+        );
+        const footprintScale = prop.role === "lighthouse"
+          ? STORY_A2_LIGHTHOUSE_BLOCKING_FOOTPRINT_SCALE
+          : STORY_A2_BUILDING_BLOCKING_FOOTPRINT_SCALE;
+
+        return [
+          {
+            id: `story-a2-blocking-${prop.label}-core`,
+            x: footprintCenter.x,
+            y: footprintCenter.y,
+            width: Math.round(
+              prop.footprint.width * map.tileSize * footprintScale,
+            ),
+            height: Math.round(
+              prop.footprint.height * map.tileSize * footprintScale,
+            ),
+          },
+        ];
+      }
+
+      return getStoryIsoFootprintTiles(prop.footprint).map((tile) => ({
+        id: `story-a2-blocking-${prop.label}-${storyIsoTileKey(tile)}`,
+        x: center.x + tile.x * map.tileSize,
+        y: center.y + tile.y * map.tileSize,
+        width: tileBlockerSize,
+        height: tileBlockerSize,
+      }));
     });
 }
 
