@@ -28,6 +28,8 @@ import {
   getEnemySpawnQueueDrainCount,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
+  getStoryEnemyMaxAlive,
+  getStoryEnemySpawnBatchSize,
   shouldAllowSmallEnemySpawning,
 } from "../systems/spawning";
 import {
@@ -2530,7 +2532,13 @@ export class PixiWastelandGame {
     }
     this.enemySpawnElapsed += deltaMs;
     const pressureMultiplier = this.getStoryMonsterPressureMultiplier();
-    const maxAlive = Math.round(getEnemyMaxAlive(this.state.level) * pressureMultiplier);
+    const baseMaxAlive = this.isStoryMode()
+      ? getStoryEnemyMaxAlive(this.state.level)
+      : getEnemyMaxAlive(this.state.level);
+    const baseSpawnBatchSize = this.isStoryMode()
+      ? getStoryEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS)
+      : getEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS);
+    const maxAlive = Math.round(baseMaxAlive * pressureMultiplier);
     let ticks = 0;
     while (
       this.enemySpawnElapsed >= ENEMY_SPAWN_TICK_MS &&
@@ -2541,7 +2549,7 @@ export class PixiWastelandGame {
       ticks += 1;
       const availableSlots = maxAlive - this.enemies.length - this.pendingEnemySpawnCount;
       const spawnCount = Math.min(
-        Math.max(1, Math.round(getEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS) * pressureMultiplier)),
+        Math.max(1, Math.round(baseSpawnBatchSize * pressureMultiplier)),
         availableSlots,
       );
       this.pendingEnemySpawnCount += spawnCount;
