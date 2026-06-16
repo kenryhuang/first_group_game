@@ -243,6 +243,7 @@ import {
 import {
   attachStoryActorVisual,
   getStoryActorDirection,
+  getStoryActorLocomotionPose,
   type StoryActorVisual,
 } from "../visual/storyActorVisuals";
 import {
@@ -659,6 +660,7 @@ export class PixiWastelandGame {
   private keys = new Set<string>();
   private pointerWorld = { x: PLAYER_START.x + 1, y: PLAYER_START.y };
   private movementDirection = { x: 1, y: 0 };
+  private playerFacingDirection = { x: 1, y: 0 };
   private attackMode: AttackMode = "auto";
   private enemySpawnElapsed = 0;
   private pendingEnemySpawnCount = 0;
@@ -985,6 +987,7 @@ export class PixiWastelandGame {
     vector: { x: number; y: number },
     lock?: StoryActorAnimationLock,
     options?: StoryActorPlaybackOptions,
+    visualOptions?: { reversed?: boolean },
   ): void {
     if (!visual) return;
     const direction = getStoryActorDirection(vector);
@@ -997,11 +1000,12 @@ export class PixiWastelandGame {
     );
     if (
       visual.animation === playback.animation &&
-      visual.direction === playback.direction
+      visual.direction === playback.direction &&
+      visual.reversed === Boolean(visualOptions?.reversed && playback.animation === "run")
     ) {
       return;
     }
-    visual.play(playback.animation, playback.direction);
+    visual.play(playback.animation, playback.direction, visualOptions);
   }
 
   private triggerStoryActorOneShot(
@@ -1814,12 +1818,19 @@ export class PixiWastelandGame {
     if (dx !== 0 || dy !== 0) {
       this.movementDirection = { x: dx / length, y: dy / length };
     }
+    const moving = dx !== 0 || dy !== 0;
+    const facingDirection = this.getPlayerFacingDirection();
+    const locomotionPose = getStoryActorLocomotionPose(
+      facingDirection,
+      moving ? this.movementDirection : facingDirection,
+    );
     this.playStoryActorVisual(
       this.playerStoryVisual,
-      dx !== 0 || dy !== 0 ? "run" : "idle",
-      this.movementDirection,
+      moving ? "run" : "idle",
+      facingDirection,
       this.playerStoryAnimationLock,
       { allowRunToOverrideAttack: true },
+      { reversed: locomotionPose.reversed },
     );
     if (this.playerFreezeMs > 0) return;
     const moveSpeed = this.getPlayerMoveSpeed();
@@ -4344,6 +4355,19 @@ export class PixiWastelandGame {
       this.playerWeapon.barrel.scale.y = 1;
     }
     this.player.view.rotation = this.playerStoryVisual ? 0 : angle + Math.PI / 2;
+  }
+
+  private getPlayerFacingDirection(): { x: number; y: number } {
+    if (!this.player) return this.playerFacingDirection;
+    const target = this.getWeaponAimTarget();
+    const facing = {
+      x: target.x - this.player.x,
+      y: target.y - this.player.y,
+    };
+    if (Math.hypot(facing.x, facing.y) > 0.001) {
+      this.playerFacingDirection = facing;
+    }
+    return this.playerFacingDirection;
   }
 
   private getWeaponAimTarget(): { x: number; y: number } {

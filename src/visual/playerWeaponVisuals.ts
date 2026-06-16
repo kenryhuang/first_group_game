@@ -1,39 +1,39 @@
 export const PLAYER_WEAPON_VISUAL_GEOMETRY = {
   barrel: {
-    x: 4,
-    y: -5,
-    width: 34,
-    height: 10,
-    radius: 3,
+    x: 2,
+    y: -4.5,
+    width: 30,
+    height: 9,
+    radius: 2.5,
   },
   energyCore: {
-    x: 10,
-    y: -1.5,
-    width: 17,
-    height: 3,
+    x: 8,
+    y: -1.3,
+    width: 15,
+    height: 2.6,
   },
   sideVents: {
-    x: 24,
-    upperY: -7.5,
-    lowerY: 3.5,
-    width: 10,
-    height: 4,
+    x: 22,
+    upperY: -6.5,
+    lowerY: 3,
+    width: 8,
+    height: 3.4,
   },
   muzzleTips: {
-    x: 35,
-    upperY: -3,
-    lowerY: 1,
-    width: 10,
-    height: 2.5,
+    x: 31,
+    upperY: -2.6,
+    lowerY: 0.8,
+    width: 8.5,
+    height: 2.2,
   },
   muzzleFlash: {
-    baseX: 40,
-    tipX: 56,
-    upperY: -8,
-    lowerY: 8,
-    innerX: 50,
-    circleX: 44,
-    circleRadius: 5,
+    baseX: 35,
+    tipX: 50,
+    upperY: -6.5,
+    lowerY: 6.5,
+    innerX: 44,
+    circleX: 39,
+    circleRadius: 4.2,
   },
 } as const;
 
@@ -51,7 +51,7 @@ export interface StoryPlayerWeaponPose {
   depthOffset: number;
 }
 
-const STORY_PLAYER_WEAPON_PITCH_SCALE = 0.55;
+const STORY_PLAYER_WEAPON_PITCH_SCALE = 0.38;
 
 export function getPlayerWeaponDepthOffset(angle: number): number {
   return Math.sin(angle) < -0.25
@@ -71,8 +71,8 @@ export function getStoryPlayerWeaponPose(angle: number): StoryPlayerWeaponPose {
     return {
       rotation,
       offsetX: side * 4,
-      offsetY: -30,
-      barrelScaleY: 0.72,
+      offsetY: -28,
+      barrelScaleY: 0.62,
       depthOffset,
     };
   }
@@ -81,8 +81,8 @@ export function getStoryPlayerWeaponPose(angle: number): StoryPlayerWeaponPose {
     return {
       rotation,
       offsetX: side * -3,
-      offsetY: -14,
-      barrelScaleY: 0.76,
+      offsetY: -13,
+      barrelScaleY: 0.66,
       depthOffset,
     };
   }

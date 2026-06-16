@@ -22,8 +22,13 @@ export interface StoryActorVisual {
   character: StoryActorCharacter;
   animation: StoryAnimationName;
   direction: StoryDirection;
+  reversed: boolean;
   sprite: AnimatedSprite;
-  play(animation: StoryAnimationName, direction: StoryDirection): void;
+  play(
+    animation: StoryAnimationName,
+    direction: StoryDirection,
+    options?: { reversed?: boolean },
+  ): void;
   flash(tint?: number): void;
   destroy(): void;
 }
@@ -36,6 +41,24 @@ export function getStoryActorDirection(vector: {
     return vector.x >= 0 ? "right" : "left";
   }
   return vector.y >= 0 ? "down" : "up";
+}
+
+export function getStoryActorLocomotionPose(
+  facingVector: { x: number; y: number },
+  movementVector: { x: number; y: number },
+): { direction: StoryDirection; reversed: boolean } {
+  const facingMagnitude = Math.hypot(facingVector.x, facingVector.y);
+  const movementMagnitude = Math.hypot(movementVector.x, movementVector.y);
+  const dot =
+    facingMagnitude > 0 && movementMagnitude > 0
+      ? (facingVector.x * movementVector.x + facingVector.y * movementVector.y) /
+        (facingMagnitude * movementMagnitude)
+      : 0;
+
+  return {
+    direction: getStoryActorDirection(facingVector),
+    reversed: dot < -0.45,
+  };
 }
 
 function getTextures(
@@ -118,16 +141,24 @@ export function attachStoryActorVisual(
     character,
     animation,
     direction,
+    reversed: false,
     sprite,
-    play(nextAnimation: StoryAnimationName, nextDirection: StoryDirection): void {
+    play(
+      nextAnimation: StoryAnimationName,
+      nextDirection: StoryDirection,
+      options: { reversed?: boolean } = {},
+    ): void {
       if (destroyed || sprite.destroyed) return;
+      const nextReversed = nextAnimation === "run" && Boolean(options.reversed);
+      const animationSpeed =
+        1000 / getFrameMs(character, nextAnimation, nextDirection) / 60;
       visual.animation = nextAnimation;
       visual.direction = nextDirection;
+      visual.reversed = nextReversed;
       sprite.textures = getTextures(character, nextAnimation, nextDirection);
-      sprite.animationSpeed =
-        1000 / getFrameMs(character, nextAnimation, nextDirection) / 60;
+      sprite.animationSpeed = nextReversed ? -animationSpeed : animationSpeed;
       sprite.loop = shouldLoop(character, nextAnimation, nextDirection);
-      sprite.gotoAndPlay(0);
+      sprite.gotoAndPlay(nextReversed ? Math.max(0, sprite.textures.length - 1) : 0);
     },
     flash(tint = STORY_ART_PALETTE.hitRed): void {
       if (destroyed || sprite.destroyed) return;

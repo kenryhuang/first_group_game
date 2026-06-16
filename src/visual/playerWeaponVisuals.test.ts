@@ -10,10 +10,11 @@ import {
 
 describe("player weapon visuals", () => {
   it("keeps the weapon compact enough to reveal the redrawn story character", () => {
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.width).toBeLessThanOrEqual(34);
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.height).toBeLessThanOrEqual(10);
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.tipX).toBeLessThanOrEqual(56);
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.circleRadius).toBeLessThanOrEqual(5);
+    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.x).toBeLessThanOrEqual(2);
+    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.width).toBeLessThanOrEqual(30);
+    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.height).toBeLessThanOrEqual(9);
+    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.tipX).toBeLessThanOrEqual(50);
+    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.circleRadius).toBeLessThanOrEqual(4.4);
   });
 
   it("exposes the muzzle distance used by bullets and muzzle sparks", () => {
@@ -35,20 +36,22 @@ describe("player weapon visuals", () => {
     expect(getStoryPlayerWeaponPose(backAim)).toEqual({
       rotation: expect.any(Number),
       offsetX: 4,
-      offsetY: -30,
-      barrelScaleY: 0.72,
+      offsetY: -28,
+      barrelScaleY: 0.62,
       depthOffset: PLAYER_WEAPON_BACK_DEPTH_OFFSET,
     });
     expect(getStoryPlayerWeaponPose(backAim).rotation).toBeGreaterThan(backAim);
+    expect(Math.abs(getStoryPlayerWeaponPose(backAim).rotation)).toBeLessThan(0.2);
 
     expect(getStoryPlayerWeaponPose(frontAim)).toEqual({
       rotation: expect.any(Number),
       offsetX: 3,
-      offsetY: -14,
-      barrelScaleY: 0.76,
+      offsetY: -13,
+      barrelScaleY: 0.66,
       depthOffset: PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
     });
     expect(getStoryPlayerWeaponPose(frontAim).rotation).toBeGreaterThan(frontAim);
+    expect(Math.abs(Math.PI - getStoryPlayerWeaponPose(frontAim).rotation)).toBeLessThan(0.2);
 
     expect(getStoryPlayerWeaponPose(sideAim)).toEqual({
       rotation: 0,
