@@ -11,6 +11,10 @@ export interface StoryActorPlayback {
   direction: StoryDirection;
 }
 
+export interface StoryActorPlaybackOptions {
+  allowRunToOverrideAttack?: boolean;
+}
+
 export function createStoryActorAnimationLock(): StoryActorAnimationLock {
   return { lockedUntilMs: 0 };
 }
@@ -39,12 +43,24 @@ export function getStoryActorPlayback(
   fallbackAnimation: StoryAnimationName,
   fallbackDirection: StoryDirection,
   nowMs: number,
+  options: StoryActorPlaybackOptions = {},
 ): StoryActorPlayback {
   if (
     lock?.animation &&
     lock.direction &&
     nowMs < lock.lockedUntilMs
   ) {
+    if (
+      options.allowRunToOverrideAttack &&
+      fallbackAnimation === "run" &&
+      lock.animation === "attack"
+    ) {
+      return {
+        animation: fallbackAnimation,
+        direction: fallbackDirection,
+      };
+    }
+
     return {
       animation: lock.animation,
       direction: lock.direction,

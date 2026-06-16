@@ -28,6 +28,8 @@ import {
   getEnemySpawnQueueDrainCount,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
+  getStoryEnemyMaxAlive,
+  getStoryEnemySpawnBatchSize,
   shouldAllowSmallEnemySpawning,
 } from "../systems/spawning";
 import {
@@ -236,10 +238,12 @@ import {
   getStoryActorPlayback,
   triggerStoryActorOneShot as triggerStoryActorOneShotLock,
   type StoryActorAnimationLock,
+  type StoryActorPlaybackOptions,
 } from "../visual/storyActorAnimationLocks";
 import {
   attachStoryActorVisual,
   getStoryActorDirection,
+  getStoryActorLocomotionPose,
   type StoryActorVisual,
 } from "../visual/storyActorVisuals";
 import {
@@ -247,6 +251,9 @@ import {
   PLAYER_WEAPON_MUZZLE_DISTANCE,
   PLAYER_WEAPON_VISUAL_GEOMETRY,
   getPlayerWeaponDepthOffset,
+  getPlayerWeaponVisualAimAngle,
+  getStoryPlayerWeaponHoldPose,
+  getStoryPlayerWeaponPose,
 } from "../visual/playerWeaponVisuals";
 import {
   createStorySliceRenderer,
@@ -260,6 +267,10 @@ import {
   unprojectStoryPoint,
   type StoryPoint,
 } from "../visual/story2_5dProjection";
+import {
+  STORY_A2_PREVIEW_MAP,
+  getStoryIsoBlockedRects,
+} from "../visual/storyIsoMap";
 
 type AttackMode = "auto" | "manual";
 type BossMode = "roam" | "chase" | "charge" | "windup";
@@ -585,6 +596,9 @@ interface FinalBossCrawlerActor extends Actor {
 const BULLET_SOUND =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 const METRICS_EMIT_INTERVAL_MS = 250;
+const STORY_A2_PROJECTED_ROAD_UNDERLAY_ALPHA = 0.08;
+const STORY_A2_PROJECTED_DISTRICT_UNDERLAY_ALPHA = 0.08;
+const STORY_PLAYER_WEAPON_AIM_LOCK_MS = 160;
 
 export class PixiWastelandGame {
   private app = new Application();
@@ -592,6 +606,9 @@ export class PixiWastelandGame {
   private player?: Actor;
   private playerWeapon?: WeaponVisual;
   private storySliceRenderer?: StorySliceRenderer;
+  private storyProjectedUnderlayEnabled = false;
+  private storyProjectedRoadUnderlayAlpha: number | undefined;
+  private storyProjectedDistrictUnderlayAlpha: number | undefined;
   private playerStoryVisual?: StoryActorVisual;
   private readonly playerStoryAnimationLock = createStoryActorAnimationLock();
   private readonly enemyStoryVisuals = new WeakMap<EnemyActor, StoryActorVisual>();
@@ -646,6 +663,9 @@ export class PixiWastelandGame {
   private keys = new Set<string>();
   private pointerWorld = { x: PLAYER_START.x + 1, y: PLAYER_START.y };
   private movementDirection = { x: 1, y: 0 };
+  private playerFacingDirection = { x: 1, y: 0 };
+  private playerWeaponAimLockMs = 0;
+  private playerWeaponAimLockTarget?: StoryPoint;
   private attackMode: AttackMode = "auto";
   private enemySpawnElapsed = 0;
   private pendingEnemySpawnCount = 0;
@@ -705,6 +725,40 @@ export class PixiWastelandGame {
     view.position.set(projected.x, projected.y + (this.isStoryMode() ? visualYOffset : 0));
   }
 
+  private drawProjectedStoryQuad(
+    view: Graphics,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): Graphics {
+    const left = x - width / 2;
+    const right = x + width / 2;
+    const top = y - height / 2;
+    const bottom = y + height / 2;
+    const topLeft = this.projectPoint({ x: left, y: top });
+    const topRight = this.projectPoint({ x: right, y: top });
+    const bottomRight = this.projectPoint({ x: right, y: bottom });
+    const bottomLeft = this.projectPoint({ x: left, y: bottom });
+
+    return view.poly([
+      topLeft.x,
+      topLeft.y,
+      topRight.x,
+      topRight.y,
+      bottomRight.x,
+      bottomRight.y,
+      bottomLeft.x,
+      bottomLeft.y,
+    ]);
+  }
+
+  private placeStoryWorldLabel(label: Text, x: number, y: number, depthOffset = 160): void {
+    const projected = this.projectPoint({ x, y });
+    label.position.set(projected.x, projected.y);
+    label.zIndex = this.getStoryVisualDepth({ x, y }, depthOffset);
+  }
+
   private projectEffectPoint(point: StoryPoint): StoryPoint {
     const projected = this.projectPoint(point);
     return {
@@ -734,14 +788,10 @@ export class PixiWastelandGame {
   private getPlayerWeaponMuzzleVisualPoint(): StoryPoint {
     if (!this.player || !this.playerWeapon) return this.projectPoint(this.getPlayerStart());
     const angle = this.playerWeapon.container.rotation;
-    const projectedPlayer = this.projectPoint(this.player);
 
     return {
-      x: projectedPlayer.x + Math.cos(angle) * PLAYER_WEAPON_MUZZLE_DISTANCE,
-      y:
-        projectedPlayer.y +
-        (this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0) +
-        Math.sin(angle) * PLAYER_WEAPON_MUZZLE_DISTANCE,
+      x: this.playerWeapon.container.x + Math.cos(angle) * PLAYER_WEAPON_MUZZLE_DISTANCE,
+      y: this.playerWeapon.container.y + Math.sin(angle) * PLAYER_WEAPON_MUZZLE_DISTANCE,
     };
   }
 
@@ -783,7 +833,18 @@ export class PixiWastelandGame {
   }
 
   private getActiveBlockingBuildings(): Rect[] {
-    this.activeBlockingBuildingsCache ??= this.getActiveBuildings().filter(isBlockingBuilding);
+    if (!this.activeBlockingBuildingsCache) {
+      const blockingBuildings = this.getActiveBuildings().filter(isBlockingBuilding);
+      this.activeBlockingBuildingsCache = this.isStoryMode()
+        ? [
+            ...blockingBuildings,
+            ...getStoryIsoBlockedRects(
+              STORY_A2_PREVIEW_MAP,
+              STORY_CENTER_LIGHTHOUSE.position,
+            ),
+          ]
+        : blockingBuildings;
+    }
     return this.activeBlockingBuildingsCache;
   }
 
@@ -930,6 +991,8 @@ export class PixiWastelandGame {
     animation: "idle" | "run",
     vector: { x: number; y: number },
     lock?: StoryActorAnimationLock,
+    options?: StoryActorPlaybackOptions,
+    visualOptions?: { reversed?: boolean },
   ): void {
     if (!visual) return;
     const direction = getStoryActorDirection(vector);
@@ -938,14 +1001,16 @@ export class PixiWastelandGame {
       animation,
       direction,
       this.storyAnimationClockMs,
+      options,
     );
     if (
       visual.animation === playback.animation &&
-      visual.direction === playback.direction
+      visual.direction === playback.direction &&
+      visual.reversed === Boolean(visualOptions?.reversed && playback.animation === "run")
     ) {
       return;
     }
-    visual.play(playback.animation, playback.direction);
+    visual.play(playback.animation, playback.direction, visualOptions);
   }
 
   private triggerStoryActorOneShot(
@@ -1088,12 +1153,19 @@ export class PixiWastelandGame {
   }
 
   private drawStoryCity(): void {
+    this.storyProjectedUnderlayEnabled = true;
+    this.storyProjectedRoadUnderlayAlpha = STORY_A2_PROJECTED_ROAD_UNDERLAY_ALPHA;
+    this.storyProjectedDistrictUnderlayAlpha = STORY_A2_PROJECTED_DISTRICT_UNDERLAY_ALPHA;
+
     const road = new Graphics();
+    road.zIndex = this.getStoryVisualDepth({ x: 0, y: 0 }, -900);
     for (let x = 2200; x <= this.getMapWidth(); x += 2600) {
-      road.rect(x - 42, 0, 84, this.getMapHeight()).fill({ color: 0x151914, alpha: 0.82 });
+      this.drawProjectedStoryQuad(road, x, this.getMapHeight() / 2, 84, this.getMapHeight())
+        .fill({ color: 0x151914, alpha: this.storyProjectedRoadUnderlayAlpha });
     }
     for (let y = 2200; y <= this.getMapHeight(); y += 2600) {
-      road.rect(0, y - 42, this.getMapWidth(), 84).fill({ color: 0x151914, alpha: 0.82 });
+      this.drawProjectedStoryQuad(road, this.getMapWidth() / 2, y, this.getMapWidth(), 84)
+        .fill({ color: 0x151914, alpha: this.storyProjectedRoadUnderlayAlpha });
     }
     this.world.addChild(road);
 
@@ -1101,15 +1173,31 @@ export class PixiWastelandGame {
     for (const region of STORY_REGIONS) {
       const unlocked = this.unlockedStoryRegionIds.has(region.id);
       const district = new Graphics();
-      district
-        .rect(region.x - region.width / 2, region.y - region.height / 2, region.width, region.height)
-        .fill({ color: region.color, alpha: unlocked ? 0.76 : 0.28 })
-        .stroke({ color: unlocked ? 0x59614f : 0x1a080b, alpha: unlocked ? 0.58 : 0.95, width: unlocked ? 3 : 28 });
+      this.drawProjectedStoryQuad(district, region.x, region.y, region.width, region.height)
+        .fill({
+          color: region.color,
+          alpha: unlocked
+            ? this.storyProjectedDistrictUnderlayAlpha
+            : this.storyProjectedDistrictUnderlayAlpha * 0.5,
+        })
+        .stroke({
+          color: unlocked ? 0x59614f : 0x1a080b,
+          alpha: unlocked ? 0.16 : 0.24,
+          width: unlocked ? 2 : 6,
+        });
+      district.zIndex = this.getStoryVisualDepth(
+        { x: region.x, y: region.y + region.height / 2 },
+        -820,
+      );
       this.world.addChild(district);
 
       const label = new Text({ text: region.name, style });
       label.alpha = unlocked ? 1 : 0.45;
-      label.position.set(region.x - region.width / 2 + 34, region.y - region.height / 2 + 24);
+      this.placeStoryWorldLabel(
+        label,
+        region.x - region.width / 2 + 34,
+        region.y - region.height / 2 + 24,
+      );
       this.world.addChild(label);
 
       if (!unlocked) {
@@ -1118,7 +1206,7 @@ export class PixiWastelandGame {
           style: new TextStyle({ fill: "#ff9f1c", fontFamily: "Arial", fontSize: 20, fontWeight: "700" }),
         });
         lockLabel.anchor.set(0.5);
-        lockLabel.position.set(region.x, region.y);
+        this.placeStoryWorldLabel(lockLabel, region.x, region.y, 170);
         this.world.addChild(lockLabel);
       }
     }
@@ -1129,10 +1217,17 @@ export class PixiWastelandGame {
         this.unlockedStoryRegionIds.has(passage.toRegionId);
       for (const rect of getStoryPassageRects(passage)) {
         const gate = new Graphics();
-        gate
-          .rect(rect.x - rect.width / 2, rect.y - rect.height / 2, rect.width, rect.height)
-          .fill({ color: unlocked ? 0x151914 : 0x160709, alpha: unlocked ? 0.92 : 0.8 })
-          .stroke({ color: unlocked ? 0x050706 : 0x9a1f2f, alpha: unlocked ? 0.92 : 0.92, width: unlocked ? 10 : 12 });
+        this.drawProjectedStoryQuad(gate, rect.x, rect.y, rect.width, rect.height)
+          .fill({ color: unlocked ? 0x151914 : 0x160709, alpha: unlocked ? 0.36 : 0.34 })
+          .stroke({
+            color: unlocked ? 0x050706 : 0x9a1f2f,
+            alpha: unlocked ? 0.5 : 0.64,
+            width: unlocked ? 4 : 6,
+          });
+        gate.zIndex = this.getStoryVisualDepth(
+          { x: rect.x, y: rect.y + rect.height / 2 },
+          -780,
+        );
         const vertical = rect.height >= rect.width;
         const markerCount = Math.max(2, Math.floor((vertical ? rect.height : rect.width) / 680));
         for (let index = 0; index < markerCount; index += 1) {
@@ -1140,40 +1235,16 @@ export class PixiWastelandGame {
           const markerX = vertical ? rect.x : rect.x - rect.width / 2 + rect.width * progress;
           const markerY = vertical ? rect.y - rect.height / 2 + rect.height * progress : rect.y;
           if (vertical) {
-            gate.rect(markerX - 8, markerY - 120, 16, 240).fill({ color: 0xffd166, alpha: unlocked ? 0.12 : 0.04 });
+            this.drawProjectedStoryQuad(gate, markerX, markerY, 16, 240)
+              .fill({ color: 0xffd166, alpha: unlocked ? 0.05 : 0.025 });
           } else {
-            gate.rect(markerX - 120, markerY - 8, 240, 16).fill({ color: 0xffd166, alpha: unlocked ? 0.12 : 0.04 });
+            this.drawProjectedStoryQuad(gate, markerX, markerY, 240, 16)
+              .fill({ color: 0xffd166, alpha: unlocked ? 0.05 : 0.025 });
           }
         }
         this.world.addChild(gate);
       }
     }
-
-    const tower = new Graphics();
-    tower
-      .circle(0, 0, 58)
-      .fill({ color: 0x59614f, alpha: 0.96 })
-      .stroke({ color: 0xf8f4e3, alpha: 0.9, width: 4 })
-      .rect(-14, -92, 28, 128)
-      .fill({ color: 0x8a817c, alpha: 0.9 });
-    tower.position.set(STORY_CENTER_LIGHTHOUSE.position.x, STORY_CENTER_LIGHTHOUSE.position.y);
-    this.world.addChild(tower);
-
-    const label = new Text({
-      text: "中心灯塔",
-      style: new TextStyle({ fill: "#f8f4e3", fontFamily: "Arial", fontSize: 30, fontWeight: "700" }),
-    });
-    label.anchor.set(0.5);
-    label.position.set(STORY_CENTER_LIGHTHOUSE.position.x, STORY_CENTER_LIGHTHOUSE.position.y + 88);
-    this.world.addChild(label);
-
-    const subLabel = new Text({
-      text: "靠近后按 E 点亮，视野扩大但怪物压力上升。",
-      style: new TextStyle({ fill: "#d8dfd0", fontFamily: "Arial", fontSize: 18 }),
-    });
-    subLabel.anchor.set(0.5);
-    subLabel.position.set(STORY_CENTER_LIGHTHOUSE.position.x, STORY_CENTER_LIGHTHOUSE.position.y + 124);
-    this.world.addChild(subLabel);
 
     this.storySliceRenderer = createStorySliceRenderer({
       world: this.world,
@@ -1752,11 +1823,19 @@ export class PixiWastelandGame {
     if (dx !== 0 || dy !== 0) {
       this.movementDirection = { x: dx / length, y: dy / length };
     }
+    const moving = dx !== 0 || dy !== 0;
+    const facingDirection = this.getPlayerFacingDirection();
+    const locomotionPose = getStoryActorLocomotionPose(
+      facingDirection,
+      moving ? this.movementDirection : facingDirection,
+    );
     this.playStoryActorVisual(
       this.playerStoryVisual,
-      dx !== 0 || dy !== 0 ? "run" : "idle",
-      this.movementDirection,
+      moving ? "run" : "idle",
+      facingDirection,
       this.playerStoryAnimationLock,
+      { allowRunToOverrideAttack: true },
+      { reversed: locomotionPose.reversed },
     );
     if (this.playerFreezeMs > 0) return;
     const moveSpeed = this.getPlayerMoveSpeed();
@@ -2455,6 +2534,10 @@ export class PixiWastelandGame {
     this.playerFreezeMs = Math.max(0, this.playerFreezeMs - deltaMs);
     this.playerVisionNarrowMs = Math.max(0, this.playerVisionNarrowMs - deltaMs);
     this.skillSuppressMs = Math.max(0, this.skillSuppressMs - deltaMs);
+    this.playerWeaponAimLockMs = Math.max(0, this.playerWeaponAimLockMs - deltaMs);
+    if (this.playerWeaponAimLockMs === 0) {
+      this.playerWeaponAimLockTarget = undefined;
+    }
   }
 
   private updateSpawning(deltaMs: number): void {
@@ -2470,7 +2553,13 @@ export class PixiWastelandGame {
     }
     this.enemySpawnElapsed += deltaMs;
     const pressureMultiplier = this.getStoryMonsterPressureMultiplier();
-    const maxAlive = Math.round(getEnemyMaxAlive(this.state.level) * pressureMultiplier);
+    const baseMaxAlive = this.isStoryMode()
+      ? getStoryEnemyMaxAlive(this.state.level)
+      : getEnemyMaxAlive(this.state.level);
+    const baseSpawnBatchSize = this.isStoryMode()
+      ? getStoryEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS)
+      : getEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS);
+    const maxAlive = Math.round(baseMaxAlive * pressureMultiplier);
     let ticks = 0;
     while (
       this.enemySpawnElapsed >= ENEMY_SPAWN_TICK_MS &&
@@ -2481,7 +2570,7 @@ export class PixiWastelandGame {
       ticks += 1;
       const availableSlots = maxAlive - this.enemies.length - this.pendingEnemySpawnCount;
       const spawnCount = Math.min(
-        Math.max(1, Math.round(getEnemySpawnBatchSize(this.state.level, ENEMY_SPAWN_TICK_MS) * pressureMultiplier)),
+        Math.max(1, Math.round(baseSpawnBatchSize * pressureMultiplier)),
         availableSlots,
       );
       this.pendingEnemySpawnCount += spawnCount;
@@ -2651,7 +2740,21 @@ export class PixiWastelandGame {
     label?: string,
   ): void {
     if (!this.player) return;
-    this.updateWeaponAim(target);
+    const firingVector = {
+      x: target.x - this.player.x,
+      y: target.y - this.player.y,
+    };
+    if (kind === "basic" && this.isStoryMode()) {
+      this.playerWeaponAimLockMs = Math.max(
+        this.playerWeaponAimLockMs,
+        STORY_PLAYER_WEAPON_AIM_LOCK_MS,
+      );
+      this.playerWeaponAimLockTarget = { x: target.x, y: target.y };
+      if (Math.hypot(firingVector.x, firingVector.y) > 0.001) {
+        this.playerFacingDirection = firingVector;
+      }
+    }
+    this.updateWeaponAim(target, kind === "basic");
     const projectileOrigin = kind === "basic" ? this.getPlayerWeaponProjectileOrigin() : this.player;
     const projectile = createProjectileState(projectileOrigin, target, kind, speed, damage);
     const view = new Graphics();
@@ -2679,10 +2782,7 @@ export class PixiWastelandGame {
     if (kind === "basic") {
       this.animateGunshot();
     }
-    this.triggerPlayerStoryOneShot("attack", {
-      x: target.x - this.player.x,
-      y: target.y - this.player.y,
-    });
+    this.triggerPlayerStoryOneShot("attack", firingVector);
     this.playShotSound();
     if (label) {
       this.emitState(`${label}: projectile fired.`);
@@ -4247,23 +4347,59 @@ export class PixiWastelandGame {
     ).length;
   }
 
-  private updateWeaponAim(target = this.getWeaponAimTarget()): void {
+  private updateWeaponAim(target?: { x: number; y: number }, firing = false): void {
     if (!this.player || !this.playerWeapon) return;
-    this.setViewPosition(
-      this.playerWeapon.container,
-      this.player.x,
-      this.player.y,
-      this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0,
-    );
+    const aimTarget =
+      target ??
+      (this.isStoryMode() ? this.playerWeaponAimLockTarget : undefined) ??
+      this.getWeaponAimTarget();
     const angle = this.isStoryMode()
-      ? projectStoryAngle(this.player, target, this.getStoryProjectionOrigin())
-      : Math.atan2(target.y - this.player.y, target.x - this.player.x);
-    this.playerWeapon.container.zIndex = this.getStoryVisualDepth(
-      this.player,
-      getPlayerWeaponDepthOffset(angle),
-    );
-    this.playerWeapon.container.rotation = angle;
+      ? projectStoryAngle(this.player, aimTarget, this.getStoryProjectionOrigin())
+      : Math.atan2(aimTarget.y - this.player.y, aimTarget.x - this.player.x);
+    if (this.isStoryMode()) {
+      const shouldAimWeapon = firing || this.playerWeaponAimLockMs > 0;
+      const pose = shouldAimWeapon
+        ? getStoryPlayerWeaponPose(angle)
+        : getStoryPlayerWeaponHoldPose(this.playerFacingDirection);
+      const projectedPlayer = this.projectPoint(this.player);
+      const weaponAnchor = {
+        x: projectedPlayer.x + pose.offsetX,
+        y: projectedPlayer.y + pose.offsetY,
+      };
+      this.playerWeapon.container.position.set(weaponAnchor.x, weaponAnchor.y);
+      this.playerWeapon.container.zIndex = this.getStoryVisualDepth(
+        this.player,
+        pose.depthOffset,
+      );
+      this.playerWeapon.container.rotation = shouldAimWeapon
+        ? getPlayerWeaponVisualAimAngle(weaponAnchor, this.projectEffectPoint(aimTarget))
+        : pose.rotation;
+      this.playerWeapon.barrel.scale.y = pose.barrelScaleY;
+    } else {
+      this.setViewPosition(this.playerWeapon.container, this.player.x, this.player.y);
+      this.playerWeapon.container.zIndex = this.getStoryVisualDepth(
+        this.player,
+        getPlayerWeaponDepthOffset(angle),
+      );
+      this.playerWeapon.container.rotation = angle;
+      this.playerWeapon.barrel.scale.y = 1;
+    }
     this.player.view.rotation = this.playerStoryVisual ? 0 : angle + Math.PI / 2;
+  }
+
+  private getPlayerFacingDirection(): { x: number; y: number } {
+    if (!this.player) return this.playerFacingDirection;
+    const target =
+      (this.isStoryMode() ? this.playerWeaponAimLockTarget : undefined) ??
+      this.getWeaponAimTarget();
+    const facing = {
+      x: target.x - this.player.x,
+      y: target.y - this.player.y,
+    };
+    if (Math.hypot(facing.x, facing.y) > 0.001) {
+      this.playerFacingDirection = facing;
+    }
+    return this.playerFacingDirection;
   }
 
   private getWeaponAimTarget(): { x: number; y: number } {
@@ -8040,6 +8176,20 @@ export class PixiWastelandGame {
       this.player && !this.isStoryFullVisibilityMode()
         ? pointInsideBuildings(this.player, this.getActiveBuildings())
         : false;
+    const storyVolumeProps = this.isStoryMode()
+      ? this.storySliceRenderer?.debugVolumeProps()
+      : undefined;
+    const storyIsoMapStats = this.isStoryMode()
+      ? this.storySliceRenderer?.debugIsoMapStats()
+      : undefined;
+    const storyIsoBlockedFootprints = this.isStoryMode()
+      ? this.storySliceRenderer?.debugBlockedFootprints()
+      : undefined;
+    const storyDepthSortedPropCount = storyVolumeProps?.filter(
+      (prop) => prop.containerParentLabel === "story-world-root",
+    ).length;
+    const projectedPlayer =
+      this.isStoryMode() && this.player ? this.projectPoint(this.player) : undefined;
     const metrics = {
       enemyCount: this.enemies.length,
       bossCount: this.bosses.length + finalBosses.length + hospitalKnights.length,
@@ -8078,8 +8228,42 @@ export class PixiWastelandGame {
       storyLighthouseVisualState: this.storySliceRenderer?.getLighthouseVisualState(),
       storyArtSpriteCount: this.storySliceRenderer?.debugSpriteCount(),
       story2_5dEnabled: this.isStoryMode(),
-      story2_5dGroundScaleY: this.isStoryMode() ? STORY_2_5D_CONFIG.groundScaleY : undefined,
-      story2_5dPlayerScreenY: this.isStoryMode() && this.player ? this.projectPoint(this.player).y : undefined,
+      story2_5dProjectionMode: this.isStoryMode()
+        ? STORY_2_5D_CONFIG.projectionMode
+        : undefined,
+      story2_5dGroundScaleY: undefined,
+      story2_5dIsoTileWidth: this.isStoryMode()
+        ? STORY_2_5D_CONFIG.isoTileWidth
+        : undefined,
+      story2_5dIsoTileHeight: this.isStoryMode()
+        ? STORY_2_5D_CONFIG.isoTileHeight
+        : undefined,
+      story2_5dIsoLogicalTileSize: this.isStoryMode()
+        ? STORY_2_5D_CONFIG.isoLogicalTileSize
+        : undefined,
+      story2_5dPlayerScreenX: projectedPlayer?.x,
+      story2_5dPlayerScreenY: projectedPlayer?.y,
+      story2_5dVolumePropCount: storyVolumeProps?.length,
+      story2_5dDepthSortedPropCount: storyDepthSortedPropCount,
+      story2_5dProjectedUnderlayEnabled: this.isStoryMode()
+        ? this.storyProjectedUnderlayEnabled
+        : false,
+      story2_5dProjectedRoadUnderlayAlpha: this.isStoryMode()
+        ? this.storyProjectedRoadUnderlayAlpha
+        : undefined,
+      story2_5dProjectedDistrictUnderlayAlpha: this.isStoryMode()
+        ? this.storyProjectedDistrictUnderlayAlpha
+        : undefined,
+      storyIsoMapMode: storyIsoMapStats?.mode,
+      storyIsoMapTileCount: storyIsoMapStats?.tileCount,
+      storyIsoMapRoadTileCount: storyIsoMapStats?.roadTileCount,
+      storyIsoMapPropCount: storyIsoMapStats?.propCount,
+      storyIsoMapDepthSortedPropCount: storyIsoMapStats
+        ? storyDepthSortedPropCount
+        : undefined,
+      storyIsoMapBlockedFootprintCount: storyIsoMapStats
+        ? storyIsoBlockedFootprints?.length
+        : undefined,
     };
     this.callbacks.onMetrics(metrics);
     window.__prototypeDebug = metrics;

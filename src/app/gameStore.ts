@@ -39,6 +39,22 @@ export interface GameMetrics {
   story2_5dEnabled?: boolean;
   story2_5dGroundScaleY?: number;
   story2_5dPlayerScreenY?: number;
+  story2_5dVolumePropCount?: number;
+  story2_5dDepthSortedPropCount?: number;
+  story2_5dProjectedUnderlayEnabled?: boolean;
+  story2_5dProjectedRoadUnderlayAlpha?: number;
+  story2_5dProjectedDistrictUnderlayAlpha?: number;
+  story2_5dProjectionMode?: "isometric-a1";
+  story2_5dIsoTileWidth?: number;
+  story2_5dIsoTileHeight?: number;
+  story2_5dIsoLogicalTileSize?: number;
+  story2_5dPlayerScreenX?: number;
+  storyIsoMapMode?: "a2-preview";
+  storyIsoMapTileCount?: number;
+  storyIsoMapRoadTileCount?: number;
+  storyIsoMapPropCount?: number;
+  storyIsoMapDepthSortedPropCount?: number;
+  storyIsoMapBlockedFootprintCount?: number;
 }
 
 interface GameStoreState extends GameMetrics {
@@ -80,6 +96,22 @@ function createInitialMetrics(): GameMetrics {
     story2_5dEnabled: false,
     story2_5dGroundScaleY: undefined,
     story2_5dPlayerScreenY: undefined,
+    story2_5dVolumePropCount: undefined,
+    story2_5dDepthSortedPropCount: undefined,
+    story2_5dProjectedUnderlayEnabled: false,
+    story2_5dProjectedRoadUnderlayAlpha: undefined,
+    story2_5dProjectedDistrictUnderlayAlpha: undefined,
+    story2_5dProjectionMode: undefined,
+    story2_5dIsoTileWidth: undefined,
+    story2_5dIsoTileHeight: undefined,
+    story2_5dIsoLogicalTileSize: undefined,
+    story2_5dPlayerScreenX: undefined,
+    storyIsoMapMode: undefined,
+    storyIsoMapTileCount: undefined,
+    storyIsoMapRoadTileCount: undefined,
+    storyIsoMapPropCount: undefined,
+    storyIsoMapDepthSortedPropCount: undefined,
+    storyIsoMapBlockedFootprintCount: undefined,
   };
 }
 
@@ -213,6 +245,22 @@ export const useGameStore = defineStore("game", {
       this.story2_5dEnabled = metrics.story2_5dEnabled;
       this.story2_5dGroundScaleY = metrics.story2_5dGroundScaleY;
       this.story2_5dPlayerScreenY = metrics.story2_5dPlayerScreenY;
+      this.story2_5dVolumePropCount = metrics.story2_5dVolumePropCount;
+      this.story2_5dDepthSortedPropCount = metrics.story2_5dDepthSortedPropCount;
+      this.story2_5dProjectedUnderlayEnabled = metrics.story2_5dProjectedUnderlayEnabled;
+      this.story2_5dProjectedRoadUnderlayAlpha = metrics.story2_5dProjectedRoadUnderlayAlpha;
+      this.story2_5dProjectedDistrictUnderlayAlpha = metrics.story2_5dProjectedDistrictUnderlayAlpha;
+      this.story2_5dProjectionMode = metrics.story2_5dProjectionMode;
+      this.story2_5dIsoTileWidth = metrics.story2_5dIsoTileWidth;
+      this.story2_5dIsoTileHeight = metrics.story2_5dIsoTileHeight;
+      this.story2_5dIsoLogicalTileSize = metrics.story2_5dIsoLogicalTileSize;
+      this.story2_5dPlayerScreenX = metrics.story2_5dPlayerScreenX;
+      this.storyIsoMapMode = metrics.storyIsoMapMode;
+      this.storyIsoMapTileCount = metrics.storyIsoMapTileCount;
+      this.storyIsoMapRoadTileCount = metrics.storyIsoMapRoadTileCount;
+      this.storyIsoMapPropCount = metrics.storyIsoMapPropCount;
+      this.storyIsoMapDepthSortedPropCount = metrics.storyIsoMapDepthSortedPropCount;
+      this.storyIsoMapBlockedFootprintCount = metrics.storyIsoMapBlockedFootprintCount;
     },
     setMessage(message: string): void {
       this.message = message;

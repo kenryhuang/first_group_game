@@ -7,6 +7,8 @@ import {
   getEnemyMaxAlive,
   getEnemySpawnBatchSize,
   getEnemySpawnQueueDrainCount,
+  getStoryEnemyMaxAlive,
+  getStoryEnemySpawnBatchSize,
   getBossSpawnPosition,
   getNodeWorldPosition,
   getSpawnPositionAroundPlayer,
@@ -84,6 +86,15 @@ describe("spawning", () => {
     expect(getEnemySpawnBatchSize(60, ENEMY_SPAWN_TICK_MS)).toBe(69);
     expect(getEnemyMaxAlive(1)).toBe(80);
     expect(getEnemyMaxAlive(60)).toBe(260);
+  });
+
+  it("uses a lower story-mode enemy budget for animated 2.5d zombies", () => {
+    expect(getStoryEnemySpawnBatchSize(1, ENEMY_SPAWN_TICK_MS)).toBe(6);
+    expect(getStoryEnemySpawnBatchSize(10, ENEMY_SPAWN_TICK_MS)).toBe(11);
+    expect(getStoryEnemySpawnBatchSize(60, ENEMY_SPAWN_TICK_MS)).toBe(41);
+    expect(getStoryEnemyMaxAlive(1)).toBe(56);
+    expect(getStoryEnemyMaxAlive(17)).toBe(73);
+    expect(getStoryEnemyMaxAlive(60)).toBe(120);
   });
 
   it("drains queued enemy spawns across frames to avoid sprite creation spikes", () => {

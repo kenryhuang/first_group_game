@@ -25,6 +25,7 @@ const { Cache, Graphics, Texture } = await import("pixi.js");
 const {
   attachStoryActorVisual,
   getStoryActorDirection,
+  getStoryActorLocomotionPose,
   STORY_ACTOR_FOOT_ANCHORS,
   STORY_ACTOR_SCALES,
 } = await import("./storyActorVisuals");
@@ -113,6 +114,27 @@ describe("story actor visuals", () => {
     expect(getStoryActorDirection({ x: 0.1, y: 0.8 })).toBe("down");
   });
 
+  it("keeps facing locked to aim direction and marks opposite movement as backpedaling", () => {
+    expect(
+      getStoryActorLocomotionPose({ x: 1, y: 0 }, { x: -1, y: 0 }),
+    ).toEqual({
+      direction: "right",
+      reversed: true,
+    });
+    expect(
+      getStoryActorLocomotionPose({ x: 0, y: -1 }, { x: 0, y: 1 }),
+    ).toEqual({
+      direction: "up",
+      reversed: true,
+    });
+    expect(
+      getStoryActorLocomotionPose({ x: 1, y: 0 }, { x: 0, y: 1 }),
+    ).toEqual({
+      direction: "right",
+      reversed: false,
+    });
+  });
+
   it("attaches an animated sprite child to an existing graphics actor", () => {
     const view = new Graphics();
     const visual = attachStoryActorVisual(view, "vanguard", "idle", "down");
@@ -174,6 +196,27 @@ describe("story actor visuals", () => {
     );
     expect(visual.sprite.loop).toBe(
       getExpectedLoop("vanguard", "attack", "right"),
+    );
+  });
+
+  it("can reverse the run cycle for backpedaling while preserving facing direction", () => {
+    const view = new Graphics();
+    const visual = attachStoryActorVisual(view, "vanguard", "idle", "down");
+
+    visual.play("run", "right", { reversed: true });
+
+    expect(visual.animation).toBe("run");
+    expect(visual.direction).toBe("right");
+    expect(visual.reversed).toBe(true);
+    expect(visual.sprite.animationSpeed).toBeCloseTo(
+      -getExpectedAnimationSpeed("vanguard", "run", "right"),
+    );
+
+    visual.play("run", "right");
+
+    expect(visual.reversed).toBe(false);
+    expect(visual.sprite.animationSpeed).toBeCloseTo(
+      getExpectedAnimationSpeed("vanguard", "run", "right"),
     );
   });
 

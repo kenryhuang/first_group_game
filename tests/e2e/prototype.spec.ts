@@ -84,6 +84,8 @@ test.skip("story mode can be selected from the main menu", async ({ page }) => {
 });
 
 test("story mode map tuning starts with zombie waves and without boss encounters", async ({ page }) => {
+  test.setTimeout(45_000);
+
   await page.goto("/");
 
   await page.getByTestId("story-mode-button").click();
@@ -137,19 +139,76 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dEnabled ?? false))
     .toBe(true);
   await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dGroundScaleY ?? 0))
-    .toBe(0.56);
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dProjectionMode ?? null))
+    .toBe("isometric-a1");
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dIsoTileWidth ?? 0))
+    .toBe(256);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dIsoTileHeight ?? 0))
+    .toBe(128);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dIsoLogicalTileSize ?? 0))
+    .toBe(256);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapMode ?? null))
+    .toBe("a2-preview");
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapTileCount ?? 0))
+    .toBe(143);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapRoadTileCount ?? 0))
+    .toBe(31);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapPropCount ?? 0))
+    .toBe(8);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapDepthSortedPropCount ?? 0))
+    .toBe(8);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapBlockedFootprintCount ?? 0))
+    .toBe(6);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dVolumePropCount ?? 0))
+    .toBeGreaterThanOrEqual(8);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dDepthSortedPropCount ?? 0))
+    .toBeGreaterThanOrEqual(8);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dProjectedUnderlayEnabled ?? false))
+    .toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dProjectedRoadUnderlayAlpha ?? 1))
+    .toBeLessThanOrEqual(0.1);
+  await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dProjectedDistrictUnderlayAlpha ?? 1))
+    .toBeLessThanOrEqual(0.1);
   await expect
     .poll(() =>
       page.evaluate(() => {
         const metrics = window.__prototypeDebug;
-        if (!metrics?.playerY || !metrics.story2_5dPlayerScreenY || !metrics.story2_5dGroundScaleY) return false;
-        const lighthouseY = 19800;
-        const expected =
-          lighthouseY + (metrics.playerY - lighthouseY) * metrics.story2_5dGroundScaleY;
+        if (
+          !metrics?.playerX ||
+          !metrics.playerY ||
+          !metrics.story2_5dPlayerScreenX ||
+          !metrics.story2_5dPlayerScreenY ||
+          !metrics.story2_5dIsoTileWidth ||
+          !metrics.story2_5dIsoTileHeight ||
+          !metrics.story2_5dIsoLogicalTileSize
+        ) {
+          return false;
+        }
+        const originX = 20000;
+        const originY = 19800;
+        const dx = (metrics.playerX - originX) / metrics.story2_5dIsoLogicalTileSize;
+        const dy = (metrics.playerY - originY) / metrics.story2_5dIsoLogicalTileSize;
+        const expectedX = originX + (dx - dy) * (metrics.story2_5dIsoTileWidth / 2);
+        const expectedY = originY + (dx + dy) * (metrics.story2_5dIsoTileHeight / 2);
 
         return (
-          Math.abs(metrics.story2_5dPlayerScreenY - expected) < 0.5 &&
+          Math.abs(metrics.story2_5dPlayerScreenX - expectedX) < 0.5 &&
+          Math.abs(metrics.story2_5dPlayerScreenY - expectedY) < 0.5 &&
+          Math.abs(metrics.story2_5dPlayerScreenX - metrics.playerX) > 1 &&
           Math.abs(metrics.story2_5dPlayerScreenY - metrics.playerY) > 1
         );
       }),
@@ -174,11 +233,14 @@ test("story mode map tuning starts with zombie waves and without boss encounters
   await page.waitForTimeout(2700);
   await page.keyboard.up("w");
 
+  const beforeRightMoveX = await page.evaluate(
+    () => window.__prototypeDebug?.playerX ?? 0,
+  );
   await page.keyboard.down("d");
   try {
     await expect
       .poll(() => page.evaluate(() => window.__prototypeDebug?.playerX ?? 99999), { timeout: 10000 })
-      .toBeGreaterThan(22200);
+      .toBeGreaterThan(beforeRightMoveX + 600);
   } finally {
     await page.keyboard.up("d");
   }

@@ -11,6 +11,9 @@ const ENEMY_MAX_SPAWN_DISTANCE = 620;
 const BASE_ENEMY_SPAWN_BATCH = 10;
 const MIN_ENEMY_MAX_ALIVE = 80;
 const MAX_ENEMY_MAX_ALIVE = 260;
+const STORY_MIN_ENEMY_MAX_ALIVE = 56;
+const STORY_MAX_ENEMY_MAX_ALIVE = 120;
+const STORY_ENEMY_SPAWN_RATE_MULTIPLIER = 0.6;
 const SPAWN_PRESSURE_LEVEL_CAP = 60;
 const DEFAULT_ENEMY_SPAWN_QUEUE_DRAIN_PER_FRAME = 2;
 
@@ -71,6 +74,13 @@ export function getEnemySpawnBatchSize(level: number, elapsedMs: number): number
   return Math.max(1, Math.round((getEnemySpawnRatePerSecond(level) * elapsedMs) / 1000));
 }
 
+export function getStoryEnemySpawnBatchSize(level: number, elapsedMs: number): number {
+  return Math.max(
+    1,
+    Math.round(getEnemySpawnBatchSize(level, elapsedMs) * STORY_ENEMY_SPAWN_RATE_MULTIPLIER),
+  );
+}
+
 export function getEnemySpawnQueueDrainCount(
   pendingCount: number,
   maxPerFrame = DEFAULT_ENEMY_SPAWN_QUEUE_DRAIN_PER_FRAME,
@@ -81,6 +91,14 @@ export function getEnemySpawnQueueDrainCount(
 export function getEnemyMaxAlive(level: number): number {
   const progress = getLevelProgress(level);
   return Math.round(MIN_ENEMY_MAX_ALIVE + (MAX_ENEMY_MAX_ALIVE - MIN_ENEMY_MAX_ALIVE) * progress);
+}
+
+export function getStoryEnemyMaxAlive(level: number): number {
+  const progress = getLevelProgress(level);
+  return Math.round(
+    STORY_MIN_ENEMY_MAX_ALIVE +
+      (STORY_MAX_ENEMY_MAX_ALIVE - STORY_MIN_ENEMY_MAX_ALIVE) * progress,
+  );
 }
 
 export function shouldAllowSmallEnemySpawning({
