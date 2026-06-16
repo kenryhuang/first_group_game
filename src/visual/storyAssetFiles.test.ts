@@ -26,6 +26,19 @@ interface DiamondFlatnessStats {
   inner: LuminanceStats;
 }
 
+interface LowerBodyMotionStats {
+  horizontalCenterSpread: number;
+  opaquePixelSpread: number;
+}
+
+interface LowerBodyLegReadabilityStats {
+  averageSideToCenterLuminanceGap: number;
+}
+
+interface LowerBodyBulkStats {
+  averageOpaqueCoverage: number;
+}
+
 const A2_CITY_EXPECTED_DIMENSIONS: Record<
   string,
   { width: number; height: number }
@@ -395,6 +408,112 @@ function getDiamondQuadrantAverageSpread(png: PngInfo): number {
   return Math.max(...averages) - Math.min(...averages);
 }
 
+function getLowerBodyMotionStats(assetPaths: string[]): LowerBodyMotionStats {
+  const centers: number[] = [];
+  const opaquePixelCounts: number[] = [];
+
+  for (const assetPath of assetPaths) {
+    const png = readPngInfo(publicAssetPath(assetPath));
+    let weightedX = 0;
+    let alphaSum = 0;
+    let opaquePixelCount = 0;
+    const top = Math.floor(png.height * 0.76);
+    const bottom = Math.floor(png.height * 0.96);
+
+    for (let y = top; y < bottom; y += 1) {
+      for (let x = 0; x < png.width; x += 1) {
+        const index = (y * png.width + x) * 4;
+        const alpha = png.rgbaPixels[index + 3];
+        if (alpha < 150) continue;
+
+        weightedX += (x + 0.5) * alpha;
+        alphaSum += alpha;
+        opaquePixelCount += 1;
+      }
+    }
+
+    expect(alphaSum).toBeGreaterThan(0);
+    centers.push(weightedX / alphaSum);
+    opaquePixelCounts.push(opaquePixelCount);
+  }
+
+  return {
+    horizontalCenterSpread: Math.max(...centers) - Math.min(...centers),
+    opaquePixelSpread: Math.max(...opaquePixelCounts) - Math.min(...opaquePixelCounts),
+  };
+}
+
+function getLowerBodyLegReadabilityStats(assetPaths: string[]): LowerBodyLegReadabilityStats {
+  const sideToCenterLuminanceGaps: number[] = [];
+
+  for (const assetPath of assetPaths) {
+    const png = readPngInfo(publicAssetPath(assetPath));
+    let centerSum = 0;
+    let centerCount = 0;
+    let sideSum = 0;
+    let sideCount = 0;
+
+    for (let y = 95; y < 118; y += 1) {
+      for (let x = 0; x < png.width; x += 1) {
+        const index = (y * png.width + x) * 4;
+        if (png.rgbaPixels[index + 3] < 150) continue;
+
+        const luminance =
+          0.2126 * png.rgbaPixels[index] +
+          0.7152 * png.rgbaPixels[index + 1] +
+          0.0722 * png.rgbaPixels[index + 2];
+
+        if (x >= 60 && x <= 68) {
+          centerSum += luminance;
+          centerCount += 1;
+        } else if ((x >= 45 && x <= 56) || (x >= 72 && x <= 83)) {
+          sideSum += luminance;
+          sideCount += 1;
+        }
+      }
+    }
+
+    expect(centerCount).toBeGreaterThan(0);
+    expect(sideCount).toBeGreaterThan(0);
+    sideToCenterLuminanceGaps.push(sideSum / sideCount - centerSum / centerCount);
+  }
+
+  return {
+    averageSideToCenterLuminanceGap:
+      sideToCenterLuminanceGaps.reduce((sum, gap) => sum + gap, 0) /
+      sideToCenterLuminanceGaps.length,
+  };
+}
+
+function getLowerBodyBulkStats(assetPaths: string[]): LowerBodyBulkStats {
+  const opaqueCoverages: number[] = [];
+
+  for (const assetPath of assetPaths) {
+    const png = readPngInfo(publicAssetPath(assetPath));
+    let opaquePixels = 0;
+    let sampledPixels = 0;
+
+    for (let y = 92; y < 118; y += 1) {
+      for (let x = 42; x <= 86; x += 1) {
+        const index = (y * png.width + x) * 4;
+        sampledPixels += 1;
+        if (png.rgbaPixels[index + 3] > 150) {
+          opaquePixels += 1;
+        }
+      }
+    }
+
+    expect(sampledPixels).toBeGreaterThan(0);
+    opaqueCoverages.push(opaquePixels / sampledPixels);
+  }
+
+  return {
+    averageOpaqueCoverage:
+      opaqueCoverages.reduce((sum, coverage) => sum + coverage, 0) /
+      opaqueCoverages.length,
+  };
+}
+
 describe("story slice asset files", () => {
   it("has a committed file for every manifest path", () => {
     const missing = getStorySliceAssetPaths(STORY_SLICE_ASSETS).filter((assetPath) => {
@@ -430,6 +549,37 @@ describe("story slice asset files", () => {
       expect(flatness.inner.average - flatness.edge.average).toBeLessThan(6);
       expect(flatness.edge.standardDeviation).toBeLessThan(18);
       expect(getDiamondQuadrantAverageSpread(png)).toBeLessThan(2);
+    }
+  });
+
+  it("gives vanguard left and right running frames visible alternating leg motion", () => {
+    const run = STORY_SLICE_ASSETS.characters.vanguard.animations.run!;
+
+    for (const direction of ["left", "right"] as const) {
+      const motion = getLowerBodyMotionStats(run[direction].frames);
+
+      expect(motion.horizontalCenterSpread).toBeGreaterThan(3.2);
+      expect(motion.opaquePixelSpread).toBeGreaterThan(34);
+    }
+  });
+
+  it("keeps vanguard horizontal running legs free of a harsh center seam", () => {
+    const run = STORY_SLICE_ASSETS.characters.vanguard.animations.run!;
+
+    for (const direction of ["left", "right"] as const) {
+      const readability = getLowerBodyLegReadabilityStats(run[direction].frames);
+
+      expect(readability.averageSideToCenterLuminanceGap).toBeLessThan(45);
+    }
+  });
+
+  it("keeps vanguard horizontal running legs close to the idle armored mass", () => {
+    const run = STORY_SLICE_ASSETS.characters.vanguard.animations.run!;
+
+    for (const direction of ["left", "right"] as const) {
+      const bulk = getLowerBodyBulkStats(run[direction].frames);
+
+      expect(bulk.averageOpaqueCoverage).toBeGreaterThan(0.74);
     }
   });
 });
