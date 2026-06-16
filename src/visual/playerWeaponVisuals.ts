@@ -65,8 +65,8 @@ export function getStoryPlayerWeaponPose(angle: number): StoryPlayerWeaponPose {
     return {
       rotation: angle,
       offsetX: side * 4,
-      offsetY: -28,
-      barrelScaleY: 0.62,
+      offsetY: -6,
+      barrelScaleY: 0.5,
       depthOffset,
     };
   }
@@ -94,6 +94,16 @@ export function getStoryPlayerWeaponHoldPose(facingVector: {
   x: number;
   y: number;
 }): StoryPlayerWeaponPose {
+  if (facingVector.y < -0.25) {
+    return {
+      rotation: -Math.PI / 2,
+      offsetX: 0,
+      offsetY: -6,
+      barrelScaleY: 0.5,
+      depthOffset: PLAYER_WEAPON_BACK_DEPTH_OFFSET,
+    };
+  }
+
   const side = facingVector.x < -0.25 ? -1 : 1;
 
   return {

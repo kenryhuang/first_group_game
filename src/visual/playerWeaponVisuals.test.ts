@@ -38,8 +38,8 @@ describe("player weapon visuals", () => {
     expect(getStoryPlayerWeaponPose(backAim)).toEqual({
       rotation: expect.any(Number),
       offsetX: 4,
-      offsetY: -28,
-      barrelScaleY: 0.62,
+      offsetY: -6,
+      barrelScaleY: 0.5,
       depthOffset: PLAYER_WEAPON_BACK_DEPTH_OFFSET,
     });
     expect(getStoryPlayerWeaponPose(backAim).rotation).toBeCloseTo(backAim);
@@ -62,7 +62,15 @@ describe("player weapon visuals", () => {
     });
   });
 
-  it("keeps the idle story weapon held horizontally in front of both hands", () => {
+  it("keeps the idle story weapon held from the rear hand anchor", () => {
+    expect(getStoryPlayerWeaponHoldPose({ x: 0, y: -1 })).toEqual({
+      rotation: -Math.PI / 2,
+      offsetX: 0,
+      offsetY: -6,
+      barrelScaleY: 0.5,
+      depthOffset: PLAYER_WEAPON_BACK_DEPTH_OFFSET,
+    });
+
     expect(getStoryPlayerWeaponHoldPose({ x: 0, y: 1 })).toEqual({
       rotation: 0,
       offsetX: -14,
