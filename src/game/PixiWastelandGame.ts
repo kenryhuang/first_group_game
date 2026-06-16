@@ -251,6 +251,8 @@ import {
   PLAYER_WEAPON_MUZZLE_DISTANCE,
   PLAYER_WEAPON_VISUAL_GEOMETRY,
   getPlayerWeaponDepthOffset,
+  getPlayerWeaponVisualAimAngle,
+  getStoryPlayerWeaponHoldPose,
   getStoryPlayerWeaponPose,
 } from "../visual/playerWeaponVisuals";
 import {
@@ -596,6 +598,7 @@ const BULLET_SOUND =
 const METRICS_EMIT_INTERVAL_MS = 250;
 const STORY_A2_PROJECTED_ROAD_UNDERLAY_ALPHA = 0.08;
 const STORY_A2_PROJECTED_DISTRICT_UNDERLAY_ALPHA = 0.08;
+const STORY_PLAYER_WEAPON_AIM_LOCK_MS = 160;
 
 export class PixiWastelandGame {
   private app = new Application();
@@ -661,6 +664,8 @@ export class PixiWastelandGame {
   private pointerWorld = { x: PLAYER_START.x + 1, y: PLAYER_START.y };
   private movementDirection = { x: 1, y: 0 };
   private playerFacingDirection = { x: 1, y: 0 };
+  private playerWeaponAimLockMs = 0;
+  private playerWeaponAimLockTarget?: StoryPoint;
   private attackMode: AttackMode = "auto";
   private enemySpawnElapsed = 0;
   private pendingEnemySpawnCount = 0;
@@ -2529,6 +2534,10 @@ export class PixiWastelandGame {
     this.playerFreezeMs = Math.max(0, this.playerFreezeMs - deltaMs);
     this.playerVisionNarrowMs = Math.max(0, this.playerVisionNarrowMs - deltaMs);
     this.skillSuppressMs = Math.max(0, this.skillSuppressMs - deltaMs);
+    this.playerWeaponAimLockMs = Math.max(0, this.playerWeaponAimLockMs - deltaMs);
+    if (this.playerWeaponAimLockMs === 0) {
+      this.playerWeaponAimLockTarget = undefined;
+    }
   }
 
   private updateSpawning(deltaMs: number): void {
@@ -2731,7 +2740,21 @@ export class PixiWastelandGame {
     label?: string,
   ): void {
     if (!this.player) return;
-    this.updateWeaponAim(target);
+    const firingVector = {
+      x: target.x - this.player.x,
+      y: target.y - this.player.y,
+    };
+    if (kind === "basic" && this.isStoryMode()) {
+      this.playerWeaponAimLockMs = Math.max(
+        this.playerWeaponAimLockMs,
+        STORY_PLAYER_WEAPON_AIM_LOCK_MS,
+      );
+      this.playerWeaponAimLockTarget = { x: target.x, y: target.y };
+      if (Math.hypot(firingVector.x, firingVector.y) > 0.001) {
+        this.playerFacingDirection = firingVector;
+      }
+    }
+    this.updateWeaponAim(target, kind === "basic");
     const projectileOrigin = kind === "basic" ? this.getPlayerWeaponProjectileOrigin() : this.player;
     const projectile = createProjectileState(projectileOrigin, target, kind, speed, damage);
     const view = new Graphics();
@@ -2759,10 +2782,7 @@ export class PixiWastelandGame {
     if (kind === "basic") {
       this.animateGunshot();
     }
-    this.triggerPlayerStoryOneShot("attack", {
-      x: target.x - this.player.x,
-      y: target.y - this.player.y,
-    });
+    this.triggerPlayerStoryOneShot("attack", firingVector);
     this.playShotSound();
     if (label) {
       this.emitState(`${label}: projectile fired.`);
@@ -4327,23 +4347,33 @@ export class PixiWastelandGame {
     ).length;
   }
 
-  private updateWeaponAim(target = this.getWeaponAimTarget()): void {
+  private updateWeaponAim(target?: { x: number; y: number }, firing = false): void {
     if (!this.player || !this.playerWeapon) return;
+    const aimTarget =
+      target ??
+      (this.isStoryMode() ? this.playerWeaponAimLockTarget : undefined) ??
+      this.getWeaponAimTarget();
     const angle = this.isStoryMode()
-      ? projectStoryAngle(this.player, target, this.getStoryProjectionOrigin())
-      : Math.atan2(target.y - this.player.y, target.x - this.player.x);
+      ? projectStoryAngle(this.player, aimTarget, this.getStoryProjectionOrigin())
+      : Math.atan2(aimTarget.y - this.player.y, aimTarget.x - this.player.x);
     if (this.isStoryMode()) {
-      const pose = getStoryPlayerWeaponPose(angle);
+      const shouldAimWeapon = firing || this.playerWeaponAimLockMs > 0;
+      const pose = shouldAimWeapon
+        ? getStoryPlayerWeaponPose(angle)
+        : getStoryPlayerWeaponHoldPose(this.playerFacingDirection);
       const projectedPlayer = this.projectPoint(this.player);
-      this.playerWeapon.container.position.set(
-        projectedPlayer.x + pose.offsetX,
-        projectedPlayer.y + pose.offsetY,
-      );
+      const weaponAnchor = {
+        x: projectedPlayer.x + pose.offsetX,
+        y: projectedPlayer.y + pose.offsetY,
+      };
+      this.playerWeapon.container.position.set(weaponAnchor.x, weaponAnchor.y);
       this.playerWeapon.container.zIndex = this.getStoryVisualDepth(
         this.player,
         pose.depthOffset,
       );
-      this.playerWeapon.container.rotation = pose.rotation;
+      this.playerWeapon.container.rotation = shouldAimWeapon
+        ? getPlayerWeaponVisualAimAngle(weaponAnchor, this.projectEffectPoint(aimTarget))
+        : pose.rotation;
       this.playerWeapon.barrel.scale.y = pose.barrelScaleY;
     } else {
       this.setViewPosition(this.playerWeapon.container, this.player.x, this.player.y);
@@ -4359,7 +4389,9 @@ export class PixiWastelandGame {
 
   private getPlayerFacingDirection(): { x: number; y: number } {
     if (!this.player) return this.playerFacingDirection;
-    const target = this.getWeaponAimTarget();
+    const target =
+      (this.isStoryMode() ? this.playerWeaponAimLockTarget : undefined) ??
+      this.getWeaponAimTarget();
     const facing = {
       x: target.x - this.player.x,
       y: target.y - this.player.y,

@@ -5,6 +5,8 @@ import {
   PLAYER_WEAPON_MUZZLE_DISTANCE,
   PLAYER_WEAPON_VISUAL_GEOMETRY,
   getPlayerWeaponDepthOffset,
+  getPlayerWeaponVisualAimAngle,
+  getStoryPlayerWeaponHoldPose,
   getStoryPlayerWeaponPose,
 } from "./playerWeaponVisuals";
 
@@ -28,7 +30,7 @@ describe("player weapon visuals", () => {
     expect(getPlayerWeaponDepthOffset(Math.PI / 2)).toBe(PLAYER_WEAPON_FRONT_DEPTH_OFFSET);
   });
 
-  it("uses 2.5d hand anchors and a flatter barrel for front and back aim poses", () => {
+  it("uses 2.5d hand anchors while preserving the firing line angle", () => {
     const backAim = Math.atan2(-64, 128);
     const frontAim = Math.atan2(64, -128);
     const sideAim = 0;
@@ -40,8 +42,7 @@ describe("player weapon visuals", () => {
       barrelScaleY: 0.62,
       depthOffset: PLAYER_WEAPON_BACK_DEPTH_OFFSET,
     });
-    expect(getStoryPlayerWeaponPose(backAim).rotation).toBeGreaterThan(backAim);
-    expect(Math.abs(getStoryPlayerWeaponPose(backAim).rotation)).toBeLessThan(0.2);
+    expect(getStoryPlayerWeaponPose(backAim).rotation).toBeCloseTo(backAim);
 
     expect(getStoryPlayerWeaponPose(frontAim)).toEqual({
       rotation: expect.any(Number),
@@ -50,8 +51,7 @@ describe("player weapon visuals", () => {
       barrelScaleY: 0.66,
       depthOffset: PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
     });
-    expect(getStoryPlayerWeaponPose(frontAim).rotation).toBeGreaterThan(frontAim);
-    expect(Math.abs(Math.PI - getStoryPlayerWeaponPose(frontAim).rotation)).toBeLessThan(0.2);
+    expect(getStoryPlayerWeaponPose(frontAim).rotation).toBeCloseTo(frontAim);
 
     expect(getStoryPlayerWeaponPose(sideAim)).toEqual({
       rotation: 0,
@@ -60,5 +60,29 @@ describe("player weapon visuals", () => {
       barrelScaleY: 0.9,
       depthOffset: PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
     });
+  });
+
+  it("keeps the idle story weapon held horizontally in front of both hands", () => {
+    expect(getStoryPlayerWeaponHoldPose({ x: 0, y: 1 })).toEqual({
+      rotation: 0,
+      offsetX: -14,
+      offsetY: -17,
+      barrelScaleY: 0.72,
+      depthOffset: PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
+    });
+
+    expect(getStoryPlayerWeaponHoldPose({ x: -1, y: 0 })).toEqual({
+      rotation: Math.PI,
+      offsetX: 14,
+      offsetY: -17,
+      barrelScaleY: 0.72,
+      depthOffset: PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
+    });
+  });
+
+  it("aims the weapon visual from the held rear anchor toward the bullet target plane", () => {
+    expect(
+      getPlayerWeaponVisualAimAngle({ x: 10, y: 20 }, { x: 110, y: 70 }),
+    ).toBeCloseTo(Math.atan2(50, 100));
   });
 });

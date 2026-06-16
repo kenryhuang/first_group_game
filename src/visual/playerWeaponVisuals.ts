@@ -51,8 +51,6 @@ export interface StoryPlayerWeaponPose {
   depthOffset: number;
 }
 
-const STORY_PLAYER_WEAPON_PITCH_SCALE = 0.38;
-
 export function getPlayerWeaponDepthOffset(angle: number): number {
   return Math.sin(angle) < -0.25
     ? PLAYER_WEAPON_BACK_DEPTH_OFFSET
@@ -62,14 +60,10 @@ export function getPlayerWeaponDepthOffset(angle: number): number {
 export function getStoryPlayerWeaponPose(angle: number): StoryPlayerWeaponPose {
   const depthOffset = getPlayerWeaponDepthOffset(angle);
   const side = Math.cos(angle) >= 0 ? 1 : -1;
-  const rotation = Math.atan2(
-    Math.sin(angle) * STORY_PLAYER_WEAPON_PITCH_SCALE,
-    Math.cos(angle),
-  );
 
   if (depthOffset === PLAYER_WEAPON_BACK_DEPTH_OFFSET) {
     return {
-      rotation,
+      rotation: angle,
       offsetX: side * 4,
       offsetY: -28,
       barrelScaleY: 0.62,
@@ -79,7 +73,7 @@ export function getStoryPlayerWeaponPose(angle: number): StoryPlayerWeaponPose {
 
   if (Math.sin(angle) > 0.25) {
     return {
-      rotation,
+      rotation: angle,
       offsetX: side * -3,
       offsetY: -13,
       barrelScaleY: 0.66,
@@ -88,10 +82,32 @@ export function getStoryPlayerWeaponPose(angle: number): StoryPlayerWeaponPose {
   }
 
   return {
-    rotation,
+    rotation: angle,
     offsetX: side * 2,
     offsetY: -18,
     barrelScaleY: 0.9,
     depthOffset,
   };
+}
+
+export function getStoryPlayerWeaponHoldPose(facingVector: {
+  x: number;
+  y: number;
+}): StoryPlayerWeaponPose {
+  const side = facingVector.x < -0.25 ? -1 : 1;
+
+  return {
+    rotation: side < 0 ? Math.PI : 0,
+    offsetX: side * -14,
+    offsetY: -17,
+    barrelScaleY: 0.72,
+    depthOffset: PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
+  };
+}
+
+export function getPlayerWeaponVisualAimAngle(
+  anchor: { x: number; y: number },
+  target: { x: number; y: number },
+): number {
+  return Math.atan2(target.y - anchor.y, target.x - anchor.x);
 }
