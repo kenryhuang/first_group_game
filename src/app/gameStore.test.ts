@@ -65,6 +65,8 @@ describe("game store phases", () => {
     expect(store.story2_5dPlayerScreenY).toBeUndefined();
     expect(store.story2_5dVolumePropCount).toBeUndefined();
     expect(store.story2_5dDepthSortedPropCount).toBeUndefined();
+    expect(store.story2_5dBuildingVisualCount).toBeUndefined();
+    expect(store.storyLegacyOverlayCount).toBeUndefined();
     expect(store.story2_5dProjectedUnderlayEnabled).toBe(false);
     expect(store.story2_5dProjectedRoadUnderlayAlpha).toBeUndefined();
     expect(store.story2_5dProjectedDistrictUnderlayAlpha).toBeUndefined();
@@ -101,6 +103,8 @@ describe("game store phases", () => {
       story2_5dPlayerScreenY: 19888,
       story2_5dVolumePropCount: 8,
       story2_5dDepthSortedPropCount: 8,
+      story2_5dBuildingVisualCount: 535,
+      storyLegacyOverlayCount: 0,
       story2_5dProjectedUnderlayEnabled: true,
       story2_5dProjectedRoadUnderlayAlpha: 0.08,
       story2_5dProjectedDistrictUnderlayAlpha: 0.08,
@@ -125,6 +129,8 @@ describe("game store phases", () => {
     expect(store.story2_5dPlayerScreenY).toBe(19888);
     expect(store.story2_5dVolumePropCount).toBe(8);
     expect(store.story2_5dDepthSortedPropCount).toBe(8);
+    expect(store.story2_5dBuildingVisualCount).toBe(535);
+    expect(store.storyLegacyOverlayCount).toBe(0);
     expect(store.story2_5dProjectedUnderlayEnabled).toBe(true);
     expect(store.story2_5dProjectedRoadUnderlayAlpha).toBe(0.08);
     expect(store.story2_5dProjectedDistrictUnderlayAlpha).toBe(0.08);
