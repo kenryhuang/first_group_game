@@ -1251,7 +1251,22 @@ export class PixiWastelandGame {
       center: STORY_CENTER_LIGHTHOUSE.position,
       lit: this.litStoryLighthouseIds.has(STORY_CENTER_LIGHTHOUSE.id),
       projectPoint: (point) => this.projectPoint(point),
+      visibleWorldBounds: this.getStoryVisibleWorldBounds(),
     });
+  }
+
+  private getStoryVisibleWorldBounds(): { x: number; y: number; width: number; height: number } | undefined {
+    if (!this.isStoryMode()) return undefined;
+    const anchor = this.player ?? getStoryPlayerStart();
+    const width = Math.max(3600, this.app.screen.width * 4);
+    const height = Math.max(3000, this.app.screen.height * 4);
+
+    return {
+      x: anchor.x - width / 2,
+      y: anchor.y - height / 2,
+      width,
+      height,
+    };
   }
 
   private drawStoryStartArea(): void {
@@ -7988,6 +8003,10 @@ export class PixiWastelandGame {
       this.app.screen.width / 2 - projectedPlayer.x + Math.cos(shakeAngle) * shakeDistance,
       this.app.screen.height / 2 - projectedPlayer.y + Math.sin(shakeAngle) * shakeDistance,
     );
+    const visibleWorldBounds = this.getStoryVisibleWorldBounds();
+    if (visibleWorldBounds) {
+      this.storySliceRenderer?.updateVisibleWorldBounds(visibleWorldBounds);
+    }
   }
 
   private updateVisibility(): void {

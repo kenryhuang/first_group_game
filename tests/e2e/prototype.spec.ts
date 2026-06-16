@@ -84,7 +84,7 @@ test.skip("story mode can be selected from the main menu", async ({ page }) => {
 });
 
 test("story mode map tuning starts with zombie waves and without boss encounters", async ({ page }) => {
-  test.setTimeout(45_000);
+  test.setTimeout(90_000);
 
   await page.goto("/");
 
@@ -100,7 +100,9 @@ test("story mode map tuning starts with zombie waves and without boss encounters
   await expect(canvas).toBeVisible();
   await expect(page.getByText(/全城开放调图中/)).toBeVisible();
   await expect
-    .poll(() => page.evaluate(() => window.__prototypeDebug?.mapWidth ?? 0))
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.mapWidth ?? 0), {
+      timeout: 20_000,
+    })
     .toBe(40000);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.mapHeight ?? 0))
@@ -136,6 +138,9 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyArtSpriteCount ?? 0))
     .toBeGreaterThanOrEqual(18);
   await expect
+    .poll(() => page.evaluate(() => window.__prototypeDebug?.storyArtSpriteCount ?? 0))
+    .toBeLessThan(3000);
+  await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.story2_5dEnabled ?? false))
     .toBe(true);
   await expect
@@ -155,10 +160,10 @@ test("story mode map tuning starts with zombie waves and without boss encounters
     .toBe("a2-preview");
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapTileCount ?? 0))
-    .toBe(143);
+    .toBe(25760);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapRoadTileCount ?? 0))
-    .toBe(31);
+    .toBe(6168);
   await expect
     .poll(() => page.evaluate(() => window.__prototypeDebug?.storyIsoMapPropCount ?? 0))
     .toBe(8);

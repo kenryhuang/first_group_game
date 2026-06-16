@@ -15,7 +15,6 @@ import {
   STORY_A2_PREVIEW_MAP,
   getStoryIsoBlockedFootprints,
   getStoryIsoMapStats,
-  getStoryIsoTileWorldPoint,
   type StoryIsoMapDefinition,
 } from "./storyIsoMap";
 
@@ -35,6 +34,19 @@ Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
 const { Cache, Container, Sprite, Texture } = await import("pixi.js");
 const { gsap } = await import("gsap");
 const { createStorySliceRenderer } = await import("./storySliceRenderer");
+
+function centeredVisibleBounds(
+  center: { x: number; y: number },
+  width = 2600,
+  height = 2200,
+) {
+  return {
+    x: center.x - width / 2,
+    y: center.y - height / 2,
+    width,
+    height,
+  };
+}
 
 const cachedTextures = new Map<string, PixiTexture>();
 let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -79,13 +91,21 @@ describe("story slice renderer", () => {
       lit: false,
       projectPoint: (point) =>
         projectStoryPoint(point, STORY_CENTER_LIGHTHOUSE.position),
+      visibleWorldBounds: centeredVisibleBounds(
+        STORY_CENTER_LIGHTHOUSE.position,
+      ),
     });
 
     expect(world.children).toContain(renderer.root);
     expect(Object.keys(renderer.layers)).toEqual([...STORY_SLICE_LAYER_NAMES]);
     const isoStats = getStoryIsoMapStats(STORY_A2_PREVIEW_MAP);
-    expect(renderer.layers.ground.children).toHaveLength(isoStats.tileCount);
-    expect(renderer.debugGroundTiles()).toHaveLength(isoStats.tileCount);
+    expect(renderer.layers.ground.children.length).toBeLessThan(
+      isoStats.tileCount,
+    );
+    expect(renderer.debugGroundTiles().length).toBeLessThan(300);
+    expect(renderer.layers.ground.children).toHaveLength(
+      renderer.debugGroundTiles().length,
+    );
     expect(renderer.debugIsoMapStats()).toEqual(isoStats);
     expect(renderer.debugBlockedFootprints()).toEqual(
       getStoryIsoBlockedFootprints(STORY_A2_PREVIEW_MAP),
@@ -98,35 +118,26 @@ describe("story slice renderer", () => {
     expect(renderer.layers.worldUi.children).toHaveLength(0);
     expect(renderer.debugSpriteCount()).toBeGreaterThanOrEqual(300);
 
-    const firstMapTile = STORY_A2_PREVIEW_MAP.tiles[0];
     const firstGroundTile = renderer.debugGroundTiles()[0];
-    const firstGroundWorldPoint = getStoryIsoTileWorldPoint(
-      firstMapTile,
-      STORY_CENTER_LIGHTHOUSE.position,
-    );
     const projectedFirstGroundPosition = projectStoryPoint(
-      firstGroundWorldPoint,
+      firstGroundTile.worldPoint,
       STORY_CENTER_LIGHTHOUSE.position,
     );
 
-    expect(firstGroundTile.label).toBe("story-a2-ground-curb-0");
-    expect(firstGroundTile.kind).toBe(firstMapTile.kind);
-    expect(firstGroundTile.worldPoint).toEqual(firstGroundWorldPoint);
+    expect(firstGroundTile.label).toMatch(/^story-a2-ground-[a-zA-Z]+-\d+$/);
     expect(firstGroundTile.projectedPoint).toEqual(projectedFirstGroundPosition);
     expect(firstGroundTile.diamondWidth).toBe(STORY_2_5D_CONFIG.isoTileWidth);
     expect(firstGroundTile.diamondHeight).toBe(STORY_2_5D_CONFIG.isoTileHeight);
-    expect(firstGroundTile.texturePath).toBe(
-      STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge,
-    );
+    expect(firstGroundTile.texturePath).toBeDefined();
     expect(renderer.layers.ground.children[0].label).toBe(firstGroundTile.label);
     const firstGroundTileContainer = renderer.layers.ground
       .children[0] as InstanceType<typeof Container>;
     expect(firstGroundTileContainer.children).toHaveLength(1);
     const firstGroundTileSprite = firstGroundTileContainer.children.find(
-      (child) => child.label === "story-a2-ground-curb-0-sprite",
+      (child) => child.label === `${firstGroundTile.label}-sprite`,
     ) as PixiSprite;
     expect(firstGroundTileSprite.texture).toBe(
-      cachedTextures.get(STORY_SLICE_ASSETS.map.flatTiles.wastelandEdge),
+      cachedTextures.get(firstGroundTile.texturePath!),
     );
     expect(firstGroundTileSprite.width).toBe(STORY_2_5D_CONFIG.isoTileWidth);
     expect(firstGroundTileSprite.height).toBe(STORY_2_5D_CONFIG.isoTileHeight);
@@ -143,6 +154,44 @@ describe("story slice renderer", () => {
     ).toBe(false);
   });
 
+  it("loads and unloads A2 ground tiles as the visible world window moves", () => {
+    const world = new Container();
+    const center = STORY_CENTER_LIGHTHOUSE.position;
+    const renderer = createStorySliceRenderer({
+      world,
+      center,
+      lit: false,
+      projectPoint: (point) => projectStoryPoint(point, center),
+      visibleWorldBounds: centeredVisibleBounds(center, 1800, 1600),
+    });
+
+    const initialTiles = renderer.debugGroundTiles();
+    const initialLabels = new Set(initialTiles.map((tile) => tile.label));
+
+    expect(initialTiles.length).toBeGreaterThan(0);
+    expect(initialTiles.length).toBeLessThan(180);
+
+    renderer.updateVisibleWorldBounds({
+      x: center.x + 9000,
+      y: center.y + 9000,
+      width: 1800,
+      height: 1600,
+    });
+
+    const movedTiles = renderer.debugGroundTiles();
+    const movedLabels = new Set(movedTiles.map((tile) => tile.label));
+
+    expect(movedTiles.length).toBeGreaterThan(0);
+    expect(movedTiles.length).toBeLessThan(180);
+    expect([...movedLabels].some((label) => !initialLabels.has(label))).toBe(
+      true,
+    );
+    expect([...initialLabels].some((label) => !movedLabels.has(label))).toBe(
+      true,
+    );
+    expect(renderer.layers.ground.children).toHaveLength(movedTiles.length);
+  });
+
   it("promotes volumetric story props to top-level depth-sorted world children", () => {
     const world = new Container();
     const center = STORY_CENTER_LIGHTHOUSE.position;
@@ -151,11 +200,12 @@ describe("story slice renderer", () => {
       center,
       lit: false,
       projectPoint: (point) => projectStoryPoint(point, center),
+      visibleWorldBounds: centeredVisibleBounds(center),
     });
 
     const props = renderer.debugVolumeProps();
     const isoStats = getStoryIsoMapStats(STORY_A2_PREVIEW_MAP);
-    expect(renderer.debugGroundTiles()).toHaveLength(isoStats.tileCount);
+    expect(renderer.debugGroundTiles().length).toBeLessThan(isoStats.tileCount);
     expect(renderer.debugIsoMapStats()).toEqual(isoStats);
 
     expect(props.map((prop) => prop.role)).toEqual([
@@ -222,6 +272,7 @@ describe("story slice renderer", () => {
       center,
       lit: false,
       projectPoint: (point) => projectStoryPoint(point, center),
+      visibleWorldBounds: centeredVisibleBounds(center),
     });
 
     const foundationTiles = renderer.debugGroundTiles().filter((tile) => {

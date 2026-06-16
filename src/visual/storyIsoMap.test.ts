@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { STORY_CENTER_LIGHTHOUSE } from "../systems/storyRegions";
+import {
+  STORY_CENTER_LIGHTHOUSE,
+  STORY_MAP_HEIGHT,
+  STORY_MAP_WIDTH,
+} from "../systems/storyRegions";
 import { resolveBlockedMovementWithBlockingBuildings } from "../systems/terrain";
 import { STORY_2_5D_CONFIG } from "./story2_5dProjection";
 import {
@@ -33,25 +37,47 @@ describe("story isometric preview map", () => {
     return tiles;
   }
 
-  it("defines a compact A2 preview map around the lighthouse", () => {
+  function tileBounds() {
+    const xValues = STORY_A2_PREVIEW_MAP.tiles.map((tile) => tile.x);
+    const yValues = STORY_A2_PREVIEW_MAP.tiles.map((tile) => tile.y);
+    return {
+      minX: Math.min(...xValues),
+      maxX: Math.max(...xValues),
+      minY: Math.min(...yValues),
+      maxY: Math.max(...yValues),
+    };
+  }
+
+  it("defines an A2 map that covers the full story map footprint", () => {
     const stats = getStoryIsoMapStats(STORY_A2_PREVIEW_MAP);
+    const bounds = tileBounds();
+    const tileSize = STORY_A2_PREVIEW_MAP.tileSize;
+    const expectedMinX = Math.floor(
+      -STORY_CENTER_LIGHTHOUSE.position.x / tileSize,
+    );
+    const expectedMaxX = Math.ceil(
+      (STORY_MAP_WIDTH - STORY_CENTER_LIGHTHOUSE.position.x) / tileSize,
+    );
+    const expectedMinY = Math.floor(
+      -STORY_CENTER_LIGHTHOUSE.position.y / tileSize,
+    );
+    const expectedMaxY = Math.ceil(
+      (STORY_MAP_HEIGHT - STORY_CENTER_LIGHTHOUSE.position.y) / tileSize,
+    );
 
     expect(STORY_A2_PREVIEW_MAP.mode).toBe("a2-preview");
     expect(STORY_A2_PREVIEW_MAP.tileSize).toBe(
       STORY_2_5D_CONFIG.isoLogicalTileSize,
     );
-    expect(stats).toEqual({
-      mode: "a2-preview",
-      tileCount: 143,
-      roadTileCount: 31,
-      propCount: 8,
-      blockedFootprintCount: 6,
-    });
-    expect(STORY_A2_PREVIEW_MAP.tiles[0]).toEqual({
-      x: -6,
-      y: -5,
-      kind: "curb",
-    });
+    expect(stats.mode).toBe("a2-preview");
+    expect(stats.tileCount).toBeGreaterThan(20_000);
+    expect(stats.roadTileCount).toBeGreaterThan(3_000);
+    expect(stats.propCount).toBe(8);
+    expect(stats.blockedFootprintCount).toBe(6);
+    expect(bounds.minX).toBeLessThanOrEqual(expectedMinX);
+    expect(bounds.maxX).toBeGreaterThanOrEqual(expectedMaxX);
+    expect(bounds.minY).toBeLessThanOrEqual(expectedMinY);
+    expect(bounds.maxY).toBeGreaterThanOrEqual(expectedMaxY);
   });
 
   it("places the lighthouse on the center tile and maps tile anchors to world points", () => {
@@ -72,16 +98,22 @@ describe("story isometric preview map", () => {
   it("builds continuous A2 street corridors with road topology metadata", () => {
     const roadTiles = STORY_A2_PREVIEW_MAP.tiles.filter(isStoryIsoRoadTile);
 
-    const mainStreet = roadTiles.filter((tile) => tile.y === 1);
-    const crossStreet = roadTiles.filter((tile) => tile.x === 1);
-    const frontageStreet = roadTiles.filter((tile) => tile.y === -2);
+    const mainStreet = roadTiles.filter(
+      (tile) => tile.y === 1 && tile.x >= -6 && tile.x <= 6,
+    );
+    const crossStreet = roadTiles.filter(
+      (tile) => tile.x === 1 && tile.y >= -5 && tile.y <= 5,
+    );
+    const frontageStreet = roadTiles.filter(
+      (tile) => tile.y === -2 && tile.x >= -3 && tile.x <= 1,
+    );
     const sideAlley = roadTiles.filter(
       (tile) =>
         (tile.x === -4 && tile.y >= 1 && tile.y <= 3) ||
         (tile.y === 3 && tile.x >= -4 && tile.x <= -2),
     );
 
-    expect(roadTiles).toHaveLength(31);
+    expect(roadTiles.length).toBeGreaterThan(3_000);
     expect(mainStreet.map((tile) => tile.x)).toEqual([
       -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
     ]);
@@ -196,7 +228,7 @@ describe("story isometric preview map", () => {
     const blockedFootprints = getStoryIsoBlockedFootprints(STORY_A2_PREVIEW_MAP);
     const firstBuilding = STORY_A2_PREVIEW_MAP.props[0];
 
-    expect(roadTiles).toHaveLength(31);
+    expect(roadTiles.length).toBeGreaterThan(3_000);
     expect(blockedFootprints).toHaveLength(6);
     expect(blockedFootprints).toContainEqual({
       x: -3,
