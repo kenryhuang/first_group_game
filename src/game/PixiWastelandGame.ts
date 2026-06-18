@@ -1,4 +1,4 @@
-import { Assets, Application, Container, Graphics, Text, TextStyle, type Ticker } from "pixi.js";
+import { Assets, Application, Container, Graphics, Sprite, Text, TextStyle, Texture, type Ticker } from "pixi.js";
 import { Howl } from "howler";
 import { gsap } from "gsap";
 import { BOSS_DEFINITIONS, SKILL_UPGRADES } from "../data/prototypeData";
@@ -611,6 +611,8 @@ export class PixiWastelandGame {
   private storyProjectedDistrictUnderlayAlpha: number | undefined;
   private storyLegacyOverlayCount = 0;
   private story2_5dBuildingVisualCount = 0;
+  private storyTexturedCompoundVisualCount = 0;
+  private storyCompoundVolumeBoxCount = 0;
   private playerStoryVisual?: StoryActorVisual;
   private readonly playerStoryAnimationLock = createStoryActorAnimationLock();
   private readonly enemyStoryVisuals = new WeakMap<EnemyActor, StoryActorVisual>();
@@ -1158,6 +1160,8 @@ export class PixiWastelandGame {
   private drawWorld(): void {
     this.storyLegacyOverlayCount = 0;
     this.story2_5dBuildingVisualCount = 0;
+    this.storyTexturedCompoundVisualCount = 0;
+    this.storyCompoundVolumeBoxCount = 0;
     const background = new Graphics();
     background.rect(0, 0, this.getMapWidth(), this.getMapHeight()).fill(0x20251e);
     this.world.addChild(background);
@@ -1396,6 +1400,9 @@ export class PixiWastelandGame {
   }
 
   private drawBuilding(id: string, x: number, y: number, width: number, height: number): void {
+    if (id.endsWith("-compound-entry-marker") || id.endsWith("-compound-center-marker")) {
+      return;
+    }
     if (this.isStoryMode()) {
       this.drawStoryBuildingVolume(id, x, y, width, height);
       return;
@@ -1461,10 +1468,22 @@ export class PixiWastelandGame {
   }
 
   private drawStoryBuildingVolume(id: string, x: number, y: number, width: number, height: number): void {
+    if (id.endsWith("-compound-entry-marker") || id.endsWith("-compound-center-marker")) {
+      return;
+    }
+    if (id.includes("-compound-building-")) {
+      this.drawStoryCompoundBuildingSprite(id, x, y, width, height);
+      return;
+    }
+    if (id.includes("-compound-wall-")) {
+      this.drawStoryCompoundBrokenWall(id, x, y, width, height);
+      return;
+    }
     const labelText = BUILDING_LABELS[id];
     const accentColor = getBuildingAccentColor(id);
     const major = Boolean(labelText);
     const isWall =
+      id.includes("-compound-wall-") ||
       id.startsWith("story-gate-wall-") ||
       id.startsWith("story-region-wall-") ||
       id.startsWith("story-passage-wall-") ||
@@ -1472,7 +1491,9 @@ export class PixiWastelandGame {
       id.startsWith("ent-maze-fake-wall-");
     const fakeWall = id.startsWith("ent-maze-fake-wall-");
     const visualHeight = isWall
-      ? id.startsWith("story-gate-wall-")
+      ? id.includes("-compound-wall-")
+        ? 68
+        : id.startsWith("story-gate-wall-")
         ? 130
         : fakeWall
           ? 58
@@ -1481,6 +1502,9 @@ export class PixiWastelandGame {
         ? 230
         : 170;
     const palette = this.getStoryBuildingVolumePalette(id, major, accentColor);
+    if (id.includes("-compound-")) {
+      this.storyCompoundVolumeBoxCount += 1;
+    }
     const shell = new Graphics();
     shell.label = `story-2-5d-building-shell-${id}`;
     this.drawStoryBuildingVolumeShell(
@@ -1549,6 +1573,150 @@ export class PixiWastelandGame {
     });
   }
 
+  private drawStoryCompoundBuildingSprite(
+    id: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): void {
+    const labelText = BUILDING_LABELS[id];
+    const major = Boolean(labelText);
+    const basePoint = { x, y: y + height / 2 };
+    const projectedBase = this.projectPoint(basePoint);
+    const container = new Container();
+    container.label = `story-textured-compound-building-${id}`;
+    container.position.set(projectedBase.x, projectedBase.y);
+    container.sortableChildren = true;
+    container.zIndex = this.getStoryVisualDepth(basePoint, major ? 112 : 86);
+
+    const shadow = new Graphics();
+    shadow.label = `${container.label}-shadow`;
+    shadow
+      .ellipse(0, 0, Math.max(84, width * 0.18), Math.max(18, height * 0.055))
+      .fill({ color: 0x050706, alpha: major ? 0.42 : 0.32 });
+    shadow.zIndex = -2;
+    container.addChild(shadow);
+
+    const sprite = new Sprite(Texture.from(this.getStoryCompoundBuildingTexture(id)));
+    sprite.label = `${container.label}-sprite`;
+    sprite.anchor.set(0.5, 1);
+    sprite.scale.set(this.getStoryCompoundBuildingScale(id, width, height));
+    sprite.position.set(0, -Math.max(8, height * 0.03));
+    sprite.zIndex = 2;
+    container.addChild(sprite);
+
+    this.world.addChild(container);
+
+    if (labelText) {
+      const label = new Text({
+        text: labelText,
+        style: new TextStyle({
+          fill: "#fff3b0",
+          fontFamily: "Arial",
+          fontSize: 26,
+          fontWeight: "700",
+          stroke: { color: "#050706", width: 4 },
+        }),
+      });
+      label.label = `${container.label}-label`;
+      label.anchor.set(0.5);
+      label.position.set(projectedBase.x, projectedBase.y - Math.max(145, height * 0.28));
+      label.zIndex = container.zIndex + 3;
+      this.world.addChild(label);
+    }
+
+    this.registerLogicalBuildingVisual(id, x, y, width, height);
+    this.story2_5dBuildingVisualCount += 1;
+    this.storyTexturedCompoundVisualCount += 1;
+  }
+
+  private drawStoryCompoundBrokenWall(
+    id: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): void {
+    const horizontal = width >= height;
+    const length = Math.max(width, height);
+    const chunkCount = Math.max(2, Math.min(9, Math.floor(length / 150)));
+    for (let index = 0; index < chunkCount; index += 1) {
+      const ratio = (index + 0.5) / chunkCount - 0.5;
+      const jitter = index % 2 === 0 ? -10 : 12;
+      const point = horizontal
+        ? { x: x + ratio * width, y: y + jitter }
+        : { x: x + jitter, y: y + ratio * height };
+      const projected = this.projectPoint(point);
+      const texturePath = index % 3 === 1
+        ? STORY_SLICE_ASSETS.map.decorations[0]
+        : index % 3 === 2
+          ? STORY_SLICE_ASSETS.map.decorations[1]
+          : STORY_SLICE_ASSETS.map.decorations[4];
+      const chunk = new Sprite(Texture.from(texturePath));
+      chunk.label = `story-textured-compound-wall-${id}-${index}`;
+      chunk.anchor.set(0.5, 1);
+      chunk.position.set(projected.x, projected.y);
+      chunk.scale.set(texturePath === STORY_SLICE_ASSETS.map.decorations[4] ? 0.56 : 0.72);
+      chunk.rotation = horizontal ? 0 : -0.08;
+      chunk.alpha = 0.95;
+      chunk.zIndex = this.getStoryVisualDepth(point, 42 + index);
+      this.world.addChild(chunk);
+      this.storyTexturedCompoundVisualCount += 1;
+    }
+
+    this.story2_5dBuildingVisualCount += 1;
+  }
+
+  private getStoryCompoundBuildingTexture(id: string): string {
+    const [buildingGreen, buildingOchre, buildingTeal] = STORY_SLICE_ASSETS.map.buildings;
+    if (id.startsWith("res-police-hq-compound-building-")) return buildingTeal;
+    if (id.startsWith("res-hospital-compound-building-")) return buildingGreen;
+    if (id.startsWith("res-fire-station-compound-building-")) return buildingOchre;
+    if (id.startsWith("res-courier-station-compound-building-")) return buildingOchre;
+    return buildingGreen;
+  }
+
+  private getStoryCompoundBuildingScale(id: string, width: number, height: number): number {
+    const footprintScale = Math.max(width, height) / 1250;
+    const roleScale = id.endsWith("-building-main") ? 0.78 : id.includes("-watch-post") ? 0.38 : 0.52;
+    return Math.max(0.34, Math.min(0.86, footprintScale * roleScale));
+  }
+
+  private registerLogicalBuildingVisual(
+    id: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): void {
+    const shell = new Graphics();
+    shell.label = `story-logical-building-shell-${id}`;
+    shell.visible = false;
+    shell.zIndex = this.getStoryVisualDepth({ x, y: y + height / 2 }, 1);
+    this.world.addChild(shell);
+
+    const roof = new Graphics();
+    roof.label = `story-logical-building-roof-${id}`;
+    roof.visible = false;
+    roof.zIndex = shell.zIndex + 1;
+    this.world.addChild(roof);
+
+    this.buildingVisuals.push({
+      id,
+      shell,
+      roof,
+      x,
+      y,
+      width,
+      height,
+      chargeCooldownMs: 0,
+      weaponCooldownMs: 0,
+      sniperCooldownMs: 0,
+      isSniperNest: false,
+    });
+  }
+
   private getStoryBuildingVolumePalette(
     id: string,
     major: boolean,
@@ -1559,6 +1727,12 @@ export class PixiWastelandGame {
     }
     if (id.startsWith("ent-maze-wall-")) {
       return { roof: 0x4b184c, side: 0x351136, front: 0x220d2a, trim: 0xffd166, detail: 0x9d4edd, alpha: 0.9 };
+    }
+    if (id.includes("-compound-wall-")) {
+      return { roof: 0x33423a, side: 0x1f2b25, front: 0x131b17, trim: 0x8fa68e, detail: 0xffd166, alpha: 0.9 };
+    }
+    if (id.includes("-compound-building-")) {
+      return { roof: major ? 0x3c4b47 : 0x303e3a, side: 0x26312e, front: 0x18211e, trim: accentColor, detail: 0xd8dfd0, alpha: major ? 0.94 : 0.86 };
     }
     if (id.startsWith("story-gate-wall-")) {
       return { roof: 0x22252b, side: 0x12151b, front: 0x07090d, trim: 0xffd166, detail: 0xfff3b0, alpha: 0.98 };
@@ -5545,6 +5719,7 @@ export class PixiWastelandGame {
       const accentColor = getBuildingAccentColor(building.id);
       const major = Boolean(labelText);
       const isWall =
+        building.id.includes("-compound-wall-") ||
         building.id.startsWith("story-gate-wall-") ||
         building.id.startsWith("story-region-wall-") ||
         building.id.startsWith("story-passage-wall-") ||
@@ -8567,6 +8742,12 @@ export class PixiWastelandGame {
       story2_5dBuildingVisualCount: this.isStoryMode()
         ? this.story2_5dBuildingVisualCount
         : undefined,
+      storyTexturedCompoundVisualCount: this.isStoryMode()
+        ? this.storyTexturedCompoundVisualCount
+        : undefined,
+      storyCompoundVolumeBoxCount: this.isStoryMode()
+        ? this.storyCompoundVolumeBoxCount
+        : undefined,
       storyLegacyOverlayCount: this.isStoryMode()
         ? this.storyLegacyOverlayCount
         : undefined,
@@ -8826,10 +9007,10 @@ function lerp(start: number, end: number, amount: number): number {
 }
 
 function getBuildingAccentColor(id: string): number {
-  if (id === "res-police-hq") return 0x68e1fd;
-  if (id === "res-hospital") return 0xff4d6d;
-  if (id === "res-fire-station") return 0xff9f1c;
-  if (id === "res-courier-station") return 0xffd166;
+  if (id.startsWith("res-police-hq-compound-building-")) return 0x68e1fd;
+  if (id.startsWith("res-hospital-compound-building-")) return 0xff4d6d;
+  if (id.startsWith("res-fire-station-compound-building-")) return 0xff9f1c;
+  if (id.startsWith("res-courier-station-compound-building-")) return 0xffd166;
   if (id.startsWith("story-gate-wall-")) return 0xffd166;
   if (id.startsWith("story-passage-wall-")) return 0xffd166;
   if (id.startsWith("story-region-wall-")) return getStoryWallPalette(id).trim;

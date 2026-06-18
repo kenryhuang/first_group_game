@@ -20,20 +20,20 @@ export interface Point {
 }
 
 export const BUILDING_LABELS: Record<string, string> = {
-  "res-police-hq": "警局",
-  "res-hospital": "医院",
-  "res-fire-station": "消防局",
-  "res-courier-station": "快递站",
+  "res-police-hq-compound-building-main": "警局",
+  "res-hospital-compound-building-main": "医院",
+  "res-fire-station-compound-building-main": "消防局",
+  "res-courier-station-compound-building-main": "快递站",
   "ent-circus-main-tent": "马戏团",
   "ent-circus-magic-stage": "魔术舞台",
   "ent-beast-cage": "万兽笼",
 };
 
-const RESIDENTIAL_MAJOR_BUILDINGS: Rect[] = [
-  { id: "res-police-hq", x: 26000, y: 6200, width: 1100, height: 850 },
-  { id: "res-hospital", x: 34200, y: 6500, width: 1500, height: 1000 },
-  { id: "res-fire-station", x: 26000, y: 12500, width: 1100, height: 800 },
-  { id: "res-courier-station", x: 34200, y: 12500, width: 1400, height: 820 },
+const RESIDENTIAL_CIVIC_COMPOUNDS: Rect[] = [
+  ...createResidentialCivicCompound("res-police-hq", 26000, 6200, 1100, 850, "bottom"),
+  ...createResidentialCivicCompound("res-hospital", 34200, 6500, 1500, 1000, "left"),
+  ...createResidentialCivicCompound("res-fire-station", 26000, 12500, 1100, 800, "top"),
+  ...createResidentialCivicCompound("res-courier-station", 34200, 12500, 1400, 820, "left"),
 ];
 
 const RESIDENTIAL_DENSE_BLOCKS: Rect[] = [
@@ -131,7 +131,7 @@ export const BUILDINGS: Rect[] = [
   { id: "theater-block", x: 7420, y: 2320, width: 580, height: 320 },
   { id: "hospital-campus", x: 2820, y: 7420, width: 620, height: 360 },
   { id: "courier-campus", x: 7280, y: 8060, width: 500, height: 460 },
-  ...RESIDENTIAL_MAJOR_BUILDINGS,
+  ...RESIDENTIAL_CIVIC_COMPOUNDS,
   ...RESIDENTIAL_DENSE_BLOCKS,
   ...STORY_REGION_WALLS,
   ...STORY_PASSAGE_WALLS,
@@ -140,8 +140,63 @@ export const BUILDINGS: Rect[] = [
 ];
 
 export function getBuildingsForMode(mode: "classic" | "story" | "bossRush", buildings = BUILDINGS): Rect[] {
-  if (mode === "story") return buildings;
-  return buildings.filter((building) => !isStoryCityWall(building));
+  if (mode === "story") return buildings.filter(isStoryModeBuilding);
+  return buildings.filter((building) => !isStoryModeBuilding(building));
+}
+
+function createResidentialCivicCompound(
+  idPrefix: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  entranceSide: "top" | "right" | "bottom" | "left",
+): Rect[] {
+  const thickness = 96;
+  const gap = Math.min(420, Math.max(300, Math.min(width, height) * 0.32));
+  const halfGap = gap / 2;
+  const wallLengthX = (width - gap) / 2;
+  const wallLengthY = (height - gap) / 2;
+  const top = y - height / 2;
+  const bottom = y + height / 2;
+  const left = x - width / 2;
+  const right = x + width / 2;
+  const walls: Rect[] = [
+    { id: `${idPrefix}-compound-wall-top-left`, x: left + wallLengthX / 2, y: top, width: wallLengthX, height: thickness },
+    { id: `${idPrefix}-compound-wall-top-right`, x: right - wallLengthX / 2, y: top, width: wallLengthX, height: thickness },
+    { id: `${idPrefix}-compound-wall-bottom-left`, x: left + wallLengthX / 2, y: bottom, width: wallLengthX, height: thickness },
+    { id: `${idPrefix}-compound-wall-bottom-right`, x: right - wallLengthX / 2, y: bottom, width: wallLengthX, height: thickness },
+    { id: `${idPrefix}-compound-wall-left-upper`, x: left, y: top + wallLengthY / 2, width: thickness, height: wallLengthY },
+    { id: `${idPrefix}-compound-wall-left-lower`, x: left, y: bottom - wallLengthY / 2, width: thickness, height: wallLengthY },
+    { id: `${idPrefix}-compound-wall-right-upper`, x: right, y: top + wallLengthY / 2, width: thickness, height: wallLengthY },
+    { id: `${idPrefix}-compound-wall-right-lower`, x: right, y: bottom - wallLengthY / 2, width: thickness, height: wallLengthY },
+  ];
+
+  const extraGapWallIds =
+    entranceSide === "top"
+      ? [`${idPrefix}-compound-wall-top-left`, `${idPrefix}-compound-wall-top-right`]
+      : entranceSide === "bottom"
+        ? [`${idPrefix}-compound-wall-bottom-left`, `${idPrefix}-compound-wall-bottom-right`]
+        : entranceSide === "left"
+          ? [`${idPrefix}-compound-wall-left-upper`, `${idPrefix}-compound-wall-left-lower`]
+          : [`${idPrefix}-compound-wall-right-upper`, `${idPrefix}-compound-wall-right-lower`];
+  const entry = {
+    x: entranceSide === "left" ? left + thickness * 1.6 : entranceSide === "right" ? right - thickness * 1.6 : x,
+    y: entranceSide === "top" ? top + thickness * 1.6 : entranceSide === "bottom" ? bottom - thickness * 1.6 : y,
+  };
+  const wallsWithEntrance = walls.filter((wall) => !extraGapWallIds.includes(wall.id));
+
+  return [
+    ...wallsWithEntrance,
+    { id: `${idPrefix}-compound-entry-marker`, x: entry.x, y: entry.y, width: 24, height: 24 },
+    { id: `${idPrefix}-compound-center-marker`, x, y, width: 24, height: 24 },
+    { id: `${idPrefix}-compound-building-main`, x, y: y - height * 0.12, width: width * 0.32, height: height * 0.26 },
+    { id: `${idPrefix}-compound-building-left-wing`, x: x - width * 0.26, y: y + height * 0.08, width: width * 0.22, height: height * 0.24 },
+    { id: `${idPrefix}-compound-building-right-wing`, x: x + width * 0.26, y: y + height * 0.08, width: width * 0.22, height: height * 0.24 },
+    { id: `${idPrefix}-compound-building-yard-shed`, x: x - width * 0.18, y: y + height * 0.34, width: width * 0.18, height: height * 0.16 },
+    { id: `${idPrefix}-compound-building-garage`, x: x + width * 0.2, y: y + height * 0.34, width: width * 0.24, height: height * 0.15 },
+    { id: `${idPrefix}-compound-building-watch-post`, x: x + width * 0.34, y: y - height * 0.28, width: width * 0.12, height: height * 0.13 },
+  ];
 }
 
 function createResidentialBlock(
@@ -189,6 +244,10 @@ function isStoryCityWall(building: Rect): boolean {
     building.id.startsWith("story-passage-wall-") ||
     building.id.startsWith("story-gate-wall-")
   );
+}
+
+function isStoryModeBuilding(building: Rect): boolean {
+  return building.id.startsWith("res-") || building.id.startsWith("ent-") || isStoryCityWall(building);
 }
 
 export function isFakeMazeWall(building: Rect): boolean {

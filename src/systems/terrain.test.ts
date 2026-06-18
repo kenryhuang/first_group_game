@@ -94,7 +94,7 @@ describe("terrain", () => {
     expect(BUILDINGS.length).toBeGreaterThanOrEqual(14);
   });
 
-  it("lays out a dense residential district with four major civic buildings", () => {
+  it("lays out a dense residential district with explorable civic compounds", () => {
     const residentialBounds = {
       left: 24650,
       right: 36350,
@@ -102,26 +102,37 @@ describe("terrain", () => {
       bottom: 14150,
     };
     const residentialBuildings = BUILDINGS.filter((building) => building.id.startsWith("res-"));
-    const majorIds = ["res-police-hq", "res-hospital", "res-fire-station", "res-courier-station"];
+    const compoundIds = ["res-police-hq", "res-hospital", "res-fire-station", "res-courier-station"];
 
     expect(residentialBuildings.length).toBeGreaterThanOrEqual(150);
-    expect(majorIds.every((id) => residentialBuildings.some((building) => building.id === id))).toBe(true);
+    expect(compoundIds.every((id) => residentialBuildings.every((building) => building.id !== id))).toBe(true);
     for (const building of residentialBuildings) {
       expect(building.x - building.width / 2).toBeGreaterThanOrEqual(residentialBounds.left);
       expect(building.x + building.width / 2).toBeLessThanOrEqual(residentialBounds.right);
       expect(building.y - building.height / 2).toBeGreaterThanOrEqual(residentialBounds.top);
       expect(building.y + building.height / 2).toBeLessThanOrEqual(residentialBounds.bottom);
     }
-    for (const id of majorIds) {
-      const building = residentialBuildings.find((candidate) => candidate.id === id);
-      expect(building).toBeDefined();
-      expect((building?.width ?? 0) * (building?.height ?? 0)).toBeGreaterThanOrEqual(750000);
+    for (const id of compoundIds) {
+      const walls = residentialBuildings.filter((building) => building.id.startsWith(`${id}-compound-wall-`));
+      const innerBuildings = residentialBuildings.filter((building) => building.id.startsWith(`${id}-compound-building-`));
+      const entry = residentialBuildings.find((building) => building.id === `${id}-compound-entry-marker`);
+      const center = residentialBuildings.find((building) => building.id === `${id}-compound-center-marker`);
+
+      expect(walls.length).toBeGreaterThanOrEqual(6);
+      expect(walls.every((building) => !isBlockingBuilding(building))).toBe(true);
+      expect(innerBuildings.length).toBeGreaterThanOrEqual(5);
+      expect(innerBuildings.every((building) => !isBlockingBuilding(building))).toBe(true);
+      expect(entry).toBeDefined();
+      expect(center).toBeDefined();
+      expect(canStandAt({ x: entry!.x, y: entry!.y })).toBe(true);
+      expect(canStandAt({ x: center!.x, y: center!.y })).toBe(true);
+      expect(canStandAt({ x: walls[0].x, y: walls[0].y })).toBe(true);
     }
     expect(BUILDING_LABELS).toMatchObject({
-      "res-police-hq": "警局",
-      "res-hospital": "医院",
-      "res-fire-station": "消防局",
-      "res-courier-station": "快递站",
+      "res-police-hq-compound-building-main": "警局",
+      "res-hospital-compound-building-main": "医院",
+      "res-fire-station-compound-building-main": "消防局",
+      "res-courier-station-compound-building-main": "快递站",
     });
   });
 
@@ -330,7 +341,16 @@ describe("terrain", () => {
     expect(bossRushBuildings.some((building) => building.id.startsWith("story-region-wall-"))).toBe(false);
     expect(bossRushBuildings.some((building) => building.id.startsWith("story-passage-wall-"))).toBe(false);
     expect(bossRushBuildings.some((building) => building.id.startsWith("story-gate-wall-"))).toBe(false);
+    expect(bossRushBuildings.some((building) => building.id.includes("-compound-wall-"))).toBe(false);
     expect(getBuildingsForMode("story").some((building) => building.id.startsWith("story-region-wall-"))).toBe(true);
+  });
+
+  it("keeps legacy rectangle buildings out of the story city terrain", () => {
+    const storyBuildings = getBuildingsForMode("story");
+    const legacyIds = ["police-annex", "hospital-wing", "courier-depot", "central-station"];
+
+    expect(legacyIds.every((id) => storyBuildings.every((building) => building.id !== id))).toBe(true);
+    expect(storyBuildings.some((building) => building.id === "res-police-hq-compound-building-main")).toBe(true);
   });
 
   it("detects circle collision with building footprints", () => {

@@ -104,6 +104,8 @@ describe("game store phases", () => {
       story2_5dVolumePropCount: 8,
       story2_5dDepthSortedPropCount: 8,
       story2_5dBuildingVisualCount: 535,
+      storyTexturedCompoundVisualCount: 37,
+      storyCompoundVolumeBoxCount: 0,
       storyLegacyOverlayCount: 0,
       story2_5dProjectedUnderlayEnabled: true,
       story2_5dProjectedRoadUnderlayAlpha: 0.08,
@@ -130,6 +132,8 @@ describe("game store phases", () => {
     expect(store.story2_5dVolumePropCount).toBe(8);
     expect(store.story2_5dDepthSortedPropCount).toBe(8);
     expect(store.story2_5dBuildingVisualCount).toBe(535);
+    expect(store.storyTexturedCompoundVisualCount).toBe(37);
+    expect(store.storyCompoundVolumeBoxCount).toBe(0);
     expect(store.storyLegacyOverlayCount).toBe(0);
     expect(store.story2_5dProjectedUnderlayEnabled).toBe(true);
     expect(store.story2_5dProjectedRoadUnderlayAlpha).toBe(0.08);
