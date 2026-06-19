@@ -248,8 +248,8 @@ import {
 } from "../visual/storyActorVisuals";
 import {
   PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
+  PLAYER_WEAPON_MUZZLE_FLASH_GEOMETRY,
   PLAYER_WEAPON_MUZZLE_DISTANCE,
-  PLAYER_WEAPON_VISUAL_GEOMETRY,
   getPlayerWeaponDepthOffset,
   getPlayerWeaponVisualAimAngle,
   getStoryPlayerWeaponHoldPose,
@@ -549,7 +549,6 @@ interface StoryDeathVisual {
 
 interface WeaponVisual {
   container: Container;
-  barrel: Graphics;
   muzzleFlash: Graphics;
 }
 
@@ -2035,85 +2034,32 @@ export class PixiWastelandGame {
       this.isStoryMode() ? STORY_2_5D_CONFIG.weaponYOffset : 0,
     );
     container.zIndex = this.getStoryVisualDepth(start, PLAYER_WEAPON_FRONT_DEPTH_OFFSET);
-    const geometry = PLAYER_WEAPON_VISUAL_GEOMETRY;
-
-    const barrel = new Graphics();
-    barrel
-      .roundRect(
-        geometry.barrel.x,
-        geometry.barrel.y,
-        geometry.barrel.width,
-        geometry.barrel.height,
-        geometry.barrel.radius,
-      )
-      .fill(0x15202b)
-      .stroke({ color: 0x8ee7ff, alpha: 0.78, width: 1.5 });
-    barrel
-      .rect(
-        geometry.energyCore.x,
-        geometry.energyCore.y,
-        geometry.energyCore.width,
-        geometry.energyCore.height,
-      )
-      .fill({ color: 0x68e1fd, alpha: 0.9 });
-    barrel
-      .rect(
-        geometry.sideVents.x,
-        geometry.sideVents.upperY,
-        geometry.sideVents.width,
-        geometry.sideVents.height,
-      )
-      .fill(0x283a4d);
-    barrel
-      .rect(
-        geometry.sideVents.x,
-        geometry.sideVents.lowerY,
-        geometry.sideVents.width,
-        geometry.sideVents.height,
-      )
-      .fill(0x283a4d);
-    barrel
-      .rect(
-        geometry.muzzleTips.x,
-        geometry.muzzleTips.upperY,
-        geometry.muzzleTips.width,
-        geometry.muzzleTips.height,
-      )
-      .fill(0xd9f7ff);
-    barrel
-      .rect(
-        geometry.muzzleTips.x,
-        geometry.muzzleTips.lowerY,
-        geometry.muzzleTips.width,
-        geometry.muzzleTips.height,
-      )
-      .fill(0xd9f7ff);
-    container.addChild(barrel);
+    const geometry = PLAYER_WEAPON_MUZZLE_FLASH_GEOMETRY;
 
     const muzzleFlash = new Graphics();
     muzzleFlash
       .poly([
-        geometry.muzzleFlash.baseX,
+        geometry.baseX,
         0,
-        geometry.muzzleFlash.tipX,
-        geometry.muzzleFlash.upperY,
-        geometry.muzzleFlash.innerX,
+        geometry.tipX,
+        geometry.upperY,
+        geometry.innerX,
         0,
-        geometry.muzzleFlash.tipX,
-        geometry.muzzleFlash.lowerY,
+        geometry.tipX,
+        geometry.lowerY,
       ])
       .fill({ color: 0xfff3b0, alpha: 0.9 })
       .circle(
-        geometry.muzzleFlash.circleX,
+        geometry.circleX,
         0,
-        geometry.muzzleFlash.circleRadius,
+        geometry.circleRadius,
       )
       .stroke({ color: 0x68e1fd, alpha: 0.8, width: 2 });
     muzzleFlash.visible = false;
     container.addChild(muzzleFlash);
 
     this.world.addChild(container);
-    return { container, barrel, muzzleFlash };
+    return { container, muzzleFlash };
   }
 
   private drawPlayerMech(view: Graphics, energyColor = this.getMechEnergyColor()): void {
@@ -4827,7 +4773,6 @@ export class PixiWastelandGame {
       this.playerWeapon.container.rotation = shouldAimWeapon
         ? getPlayerWeaponVisualAimAngle(weaponAnchor, this.projectEffectPoint(aimTarget))
         : pose.rotation;
-      this.playerWeapon.barrel.scale.y = pose.barrelScaleY;
     } else {
       this.setViewPosition(this.playerWeapon.container, this.player.x, this.player.y);
       this.playerWeapon.container.zIndex = this.getStoryVisualDepth(
@@ -4835,7 +4780,6 @@ export class PixiWastelandGame {
         getPlayerWeaponDepthOffset(angle),
       );
       this.playerWeapon.container.rotation = angle;
-      this.playerWeapon.barrel.scale.y = 1;
     }
     this.player.view.rotation = this.playerStoryVisual ? 0 : angle + Math.PI / 2;
   }
@@ -4868,9 +4812,7 @@ export class PixiWastelandGame {
 
   private animateGunshot(): void {
     if (!this.player || !this.playerWeapon) return;
-    const { barrel, muzzleFlash } = this.playerWeapon;
-    barrel.x = -BASIC_GUN.recoilDistance;
-    gsap.to(barrel, { x: 0, duration: 0.075, ease: "power2.out" });
+    const { muzzleFlash } = this.playerWeapon;
 
     muzzleFlash.visible = true;
     muzzleFlash.alpha = 1;

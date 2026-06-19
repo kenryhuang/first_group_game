@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   PLAYER_WEAPON_BACK_DEPTH_OFFSET,
   PLAYER_WEAPON_FRONT_DEPTH_OFFSET,
+  PLAYER_WEAPON_MUZZLE_FLASH_GEOMETRY,
   PLAYER_WEAPON_MUZZLE_DISTANCE,
-  PLAYER_WEAPON_VISUAL_GEOMETRY,
   getPlayerWeaponDepthOffset,
   getPlayerWeaponVisualAimAngle,
   getStoryPlayerWeaponHoldPose,
@@ -11,16 +11,14 @@ import {
 } from "./playerWeaponVisuals";
 
 describe("player weapon visuals", () => {
-  it("keeps the weapon compact enough to reveal the redrawn story character", () => {
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.x).toBeLessThanOrEqual(2);
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.width).toBeLessThanOrEqual(30);
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.barrel.height).toBeLessThanOrEqual(9);
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.tipX).toBeLessThanOrEqual(50);
-    expect(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.circleRadius).toBeLessThanOrEqual(4.4);
+  it("keeps only muzzle flash geometry because the story player sprite already carries the gun", () => {
+    expect(PLAYER_WEAPON_MUZZLE_FLASH_GEOMETRY.tipX).toBeLessThanOrEqual(50);
+    expect(PLAYER_WEAPON_MUZZLE_FLASH_GEOMETRY.circleRadius).toBeLessThanOrEqual(4.4);
+    expect("barrel" in PLAYER_WEAPON_MUZZLE_FLASH_GEOMETRY).toBe(false);
   });
 
   it("exposes the muzzle distance used by bullets and muzzle sparks", () => {
-    expect(PLAYER_WEAPON_MUZZLE_DISTANCE).toBe(PLAYER_WEAPON_VISUAL_GEOMETRY.muzzleFlash.tipX);
+    expect(PLAYER_WEAPON_MUZZLE_DISTANCE).toBe(PLAYER_WEAPON_MUZZLE_FLASH_GEOMETRY.tipX);
   });
 
   it("puts the weapon behind the story actor when aiming upward", () => {
