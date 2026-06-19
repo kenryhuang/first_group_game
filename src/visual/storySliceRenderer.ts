@@ -38,6 +38,14 @@ export interface StorySliceRendererOptions {
   projectPoint?: (point: StoryPoint) => StoryPoint;
   // Pass null to disable the default A2 map and use legacy projected ground.
   isoMap?: StoryIsoMapDefinition | null;
+  visibleWorldBounds?: StoryWorldBounds;
+}
+
+export interface StoryWorldBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 type StoryVolumePropRole = StoryIsoPropRole;
@@ -102,6 +110,7 @@ export interface StoryGroundTileDebug {
 export interface StorySliceRenderer {
   root: Container;
   layers: Record<StorySliceLayerName, Container>;
+  updateVisibleWorldBounds(bounds: StoryWorldBounds): void;
   setLighthouseCharging(): void;
   setLighthouseLit(lit: boolean): void;
   getLighthouseVisualState(): StoryLighthouseVisualState;
@@ -134,6 +143,17 @@ interface GroundDecalDefinition {
   y: number;
   scale: number;
   rotation: number;
+}
+
+interface ActiveGroundTile {
+  view: Container | Graphics | Sprite;
+  debug: StoryGroundTileDebug;
+}
+
+interface StoryGroundLayerController {
+  debugGroundTiles(): StoryGroundTileDebug[];
+  updateVisibleWorldBounds(bounds: StoryWorldBounds): void;
+  destroy(): void;
 }
 
 function countDescendants(container: Container): number {
@@ -357,6 +377,10 @@ function getIsoMapTileScale(isoMap: StoryIsoMapDefinition): number {
   return isoMap.tileSize / STORY_2_5D_CONFIG.isoLogicalTileSize;
 }
 
+function getLocalIsoTileKey(tile: StoryIsoTileCoord): string {
+  return `${tile.x}:${tile.y}`;
+}
+
 function getIsoTileWorldPoint(
   tile: StoryIsoTileCoord,
   center: StoryPoint,
@@ -428,32 +452,154 @@ function makeA2GroundTile(
   };
 }
 
+function getVisibleTileBoundsKey(
+  bounds: StoryWorldBounds,
+  center: StoryPoint,
+  isoMap: StoryIsoMapDefinition,
+  paddingTiles = 2,
+): string {
+  const minX = Math.floor((bounds.x - center.x) / isoMap.tileSize) - paddingTiles;
+  const maxX =
+    Math.ceil((bounds.x + bounds.width - center.x) / isoMap.tileSize) +
+    paddingTiles;
+  const minY = Math.floor((bounds.y - center.y) / isoMap.tileSize) - paddingTiles;
+  const maxY =
+    Math.ceil((bounds.y + bounds.height - center.y) / isoMap.tileSize) +
+    paddingTiles;
+
+  return `${minX}:${maxX}:${minY}:${maxY}`;
+}
+
+function parseVisibleTileBoundsKey(key: string): {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+} {
+  const [minX, maxX, minY, maxY] = key.split(":").map(Number);
+  return { minX, maxX, minY, maxY };
+}
+
+function createIsoGroundLayerController(
+  layer: Container,
+  center: StoryPoint,
+  options: Pick<StorySliceRendererOptions, "projectPoint" | "visibleWorldBounds">,
+  isoMap: StoryIsoMapDefinition,
+): StoryGroundLayerController {
+  layer.sortableChildren = true;
+  const tileByKey = new Map(
+    isoMap.tiles.map((tile) => [getLocalIsoTileKey(tile), tile] as const),
+  );
+  const activeTiles = new Map<string, ActiveGroundTile>();
+  let lastVisibleTileBoundsKey: string | undefined;
+
+  const syncVisibleBounds = (bounds: StoryWorldBounds | undefined): void => {
+    if (!bounds) {
+      if (lastVisibleTileBoundsKey === "all") return;
+      lastVisibleTileBoundsKey = "all";
+      const targetKeys = new Set(isoMap.tiles.map(getLocalIsoTileKey));
+      for (const [key, activeTile] of activeTiles) {
+        if (!targetKeys.has(key)) {
+          layer.removeChild(activeTile.view);
+          activeTile.view.destroy({ children: true });
+          activeTiles.delete(key);
+        }
+      }
+      isoMap.tiles.forEach((tile, tileIndex) => {
+        const key = getLocalIsoTileKey(tile);
+        if (activeTiles.has(key)) return;
+        const groundTile = makeA2GroundTile(
+          tile,
+          center,
+          isoMap,
+          tileIndex,
+          options,
+        );
+        activeTiles.set(key, groundTile);
+        layer.addChild(groundTile.view);
+      });
+      layer.sortChildren();
+      return;
+    }
+
+    const boundsKey = getVisibleTileBoundsKey(bounds, center, isoMap);
+    if (boundsKey === lastVisibleTileBoundsKey) return;
+    lastVisibleTileBoundsKey = boundsKey;
+    const { minX, maxX, minY, maxY } = parseVisibleTileBoundsKey(boundsKey);
+    const targetKeys = new Set<string>();
+
+    for (let x = minX; x <= maxX; x += 1) {
+      for (let y = minY; y <= maxY; y += 1) {
+        const key = `${x}:${y}`;
+        const tile = tileByKey.get(key);
+        if (!tile) continue;
+        targetKeys.add(key);
+        if (activeTiles.has(key)) continue;
+
+        const tileIndex = isoMap.tiles.indexOf(tile);
+        const groundTile = makeA2GroundTile(
+          tile,
+          center,
+          isoMap,
+          tileIndex,
+          options,
+        );
+        activeTiles.set(key, groundTile);
+        layer.addChild(groundTile.view);
+      }
+    }
+
+    for (const [key, activeTile] of activeTiles) {
+      if (targetKeys.has(key)) continue;
+      layer.removeChild(activeTile.view);
+      activeTile.view.destroy({ children: true });
+      activeTiles.delete(key);
+    }
+
+    layer.sortChildren();
+  };
+
+  syncVisibleBounds(options.visibleWorldBounds);
+
+  return {
+    debugGroundTiles(): StoryGroundTileDebug[] {
+      return [...activeTiles.values()].map((tile) => tile.debug);
+    },
+    updateVisibleWorldBounds(bounds: StoryWorldBounds): void {
+      syncVisibleBounds(bounds);
+    },
+    destroy(): void {
+      for (const activeTile of activeTiles.values()) {
+        if (!activeTile.view.destroyed) {
+          activeTile.view.destroy({ children: true });
+        }
+      }
+      activeTiles.clear();
+    },
+  };
+}
+
 function addGround(
   layers: Record<StorySliceLayerName, Container>,
   center: StoryPoint,
-  options: Pick<StorySliceRendererOptions, "projectPoint">,
+  options: Pick<
+    StorySliceRendererOptions,
+    "projectPoint" | "visibleWorldBounds"
+  >,
   isoMap: StoryIsoMapDefinition | undefined,
-): StoryGroundTileDebug[] {
+): StoryGroundLayerController {
   if (options.projectPoint && isoMap) {
-    layers.ground.sortableChildren = true;
-    const debugTiles = isoMap.tiles.map((tile, tileIndex) => {
-      const groundTile = makeA2GroundTile(
-        tile,
-        center,
-        isoMap,
-        tileIndex,
-        options,
-      );
-      layers.ground.addChild(groundTile.view);
-      return groundTile.debug;
-    });
-    layers.ground.sortChildren();
-    return debugTiles;
+    return createIsoGroundLayerController(
+      layers.ground,
+      center,
+      options,
+      isoMap,
+    );
   }
 
   const tileSize = STORY_2_5D_CONFIG.isoLogicalTileSize;
   const [road, cracked, concrete, grass] = STORY_SLICE_ASSETS.map.groundTiles;
-  const debugTiles: StoryGroundTileDebug[] = [];
+  const activeTiles: ActiveGroundTile[] = [];
   let tileIndex = 0;
 
   for (let ix = -4; ix <= 4; ix += 1) {
@@ -474,18 +620,39 @@ function addGround(
       if (options.projectPoint) {
         const tile = makeIsoGroundTile(asset, worldPoint, tileIndex, options);
         layers.ground.addChild(tile.view);
-        debugTiles.push(tile.debug);
+        activeTiles.push(tile);
       } else {
-        layers.ground.addChild(
-          makeSprite(asset, worldPoint.x, worldPoint.y, 1, options, 1),
-        );
+        const sprite = makeSprite(asset, worldPoint.x, worldPoint.y, 1, options, 1);
+        layers.ground.addChild(sprite);
+        activeTiles.push({
+          view: sprite,
+          debug: {
+            label: sprite.label ?? `story-ground-sprite-${tileIndex}`,
+            worldPoint,
+            projectedPoint: worldPoint,
+            diamondWidth: STORY_2_5D_CONFIG.isoTileWidth,
+            diamondHeight: STORY_2_5D_CONFIG.isoTileHeight,
+            kind: getGroundKind(asset),
+            texturePath: asset,
+          },
+        });
       }
 
       tileIndex += 1;
     }
   }
 
-  return debugTiles;
+  return {
+    debugGroundTiles(): StoryGroundTileDebug[] {
+      return activeTiles.map((tile) => tile.debug);
+    },
+    updateVisibleWorldBounds(): void {
+      // Legacy fixed-size ground has no streaming behavior.
+    },
+    destroy(): void {
+      activeTiles.length = 0;
+    },
+  };
 }
 
 function getVolumePropDefinitions(
@@ -868,7 +1035,7 @@ export function createStorySliceRenderer(
   options.world.addChild(root);
 
   const layers = createLayers(root);
-  const groundTiles = addGround(layers, options.center, options, activeIsoMap);
+  const groundLayer = addGround(layers, options.center, options, activeIsoMap);
   const groundDecals = addGroundDecals(
     layers,
     options.center,
@@ -939,11 +1106,14 @@ export function createStorySliceRenderer(
   return {
     root,
     layers,
+    updateVisibleWorldBounds(bounds: StoryWorldBounds): void {
+      groundLayer.updateVisibleWorldBounds(bounds);
+    },
     setLighthouseCharging: () => setState("charging"),
     setLighthouseLit: (lit: boolean) => setState(lit ? "on" : "off"),
     getLighthouseVisualState: () => lighthouseState,
     debugGroundTiles(): StoryGroundTileDebug[] {
-      return groundTiles.map((tile) => ({
+      return groundLayer.debugGroundTiles().map((tile) => ({
         ...tile,
         worldPoint: { ...tile.worldPoint },
         projectedPoint: { ...tile.projectedPoint },
@@ -1017,6 +1187,7 @@ export function createStorySliceRenderer(
       return countDescendants(root);
     },
     destroy(): void {
+      groundLayer.destroy();
       for (const activePulse of [...activePulses]) {
         destroyPulse(activePulse);
       }

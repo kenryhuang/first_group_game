@@ -41,6 +41,10 @@ export interface GameMetrics {
   story2_5dPlayerScreenY?: number;
   story2_5dVolumePropCount?: number;
   story2_5dDepthSortedPropCount?: number;
+  story2_5dBuildingVisualCount?: number;
+  storyTexturedCompoundVisualCount?: number;
+  storyCompoundVolumeBoxCount?: number;
+  storyLegacyOverlayCount?: number;
   story2_5dProjectedUnderlayEnabled?: boolean;
   story2_5dProjectedRoadUnderlayAlpha?: number;
   story2_5dProjectedDistrictUnderlayAlpha?: number;
@@ -98,6 +102,10 @@ function createInitialMetrics(): GameMetrics {
     story2_5dPlayerScreenY: undefined,
     story2_5dVolumePropCount: undefined,
     story2_5dDepthSortedPropCount: undefined,
+    story2_5dBuildingVisualCount: undefined,
+    storyTexturedCompoundVisualCount: undefined,
+    storyCompoundVolumeBoxCount: undefined,
+    storyLegacyOverlayCount: undefined,
     story2_5dProjectedUnderlayEnabled: false,
     story2_5dProjectedRoadUnderlayAlpha: undefined,
     story2_5dProjectedDistrictUnderlayAlpha: undefined,
@@ -247,6 +255,10 @@ export const useGameStore = defineStore("game", {
       this.story2_5dPlayerScreenY = metrics.story2_5dPlayerScreenY;
       this.story2_5dVolumePropCount = metrics.story2_5dVolumePropCount;
       this.story2_5dDepthSortedPropCount = metrics.story2_5dDepthSortedPropCount;
+      this.story2_5dBuildingVisualCount = metrics.story2_5dBuildingVisualCount;
+      this.storyTexturedCompoundVisualCount = metrics.storyTexturedCompoundVisualCount;
+      this.storyCompoundVolumeBoxCount = metrics.storyCompoundVolumeBoxCount;
+      this.storyLegacyOverlayCount = metrics.storyLegacyOverlayCount;
       this.story2_5dProjectedUnderlayEnabled = metrics.story2_5dProjectedUnderlayEnabled;
       this.story2_5dProjectedRoadUnderlayAlpha = metrics.story2_5dProjectedRoadUnderlayAlpha;
       this.story2_5dProjectedDistrictUnderlayAlpha = metrics.story2_5dProjectedDistrictUnderlayAlpha;

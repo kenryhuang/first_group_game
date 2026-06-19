@@ -1,5 +1,10 @@
 import { STORY_SLICE_ASSETS } from "./storyAssetManifest";
 import {
+  STORY_CENTER_LIGHTHOUSE,
+  STORY_MAP_HEIGHT,
+  STORY_MAP_WIDTH,
+} from "../systems/storyRegions";
+import {
   STORY_2_5D_CONFIG,
   type StoryPoint,
 } from "./story2_5dProjection";
@@ -126,6 +131,31 @@ const STORY_A2_LIGHTHOUSE_FOUNDATION = {
   height: 2,
 } as const;
 
+const STORY_A2_FULL_MAP_MARGIN_TILES = 1;
+
+const STORY_A2_FULL_MAP_TILE_BOUNDS = {
+  minX:
+    Math.floor(
+      -STORY_CENTER_LIGHTHOUSE.position.x /
+        STORY_2_5D_CONFIG.isoLogicalTileSize,
+    ) - STORY_A2_FULL_MAP_MARGIN_TILES,
+  maxX:
+    Math.ceil(
+      (STORY_MAP_WIDTH - STORY_CENTER_LIGHTHOUSE.position.x) /
+        STORY_2_5D_CONFIG.isoLogicalTileSize,
+    ) + STORY_A2_FULL_MAP_MARGIN_TILES,
+  minY:
+    Math.floor(
+      -STORY_CENTER_LIGHTHOUSE.position.y /
+        STORY_2_5D_CONFIG.isoLogicalTileSize,
+    ) - STORY_A2_FULL_MAP_MARGIN_TILES,
+  maxY:
+    Math.ceil(
+      (STORY_MAP_HEIGHT - STORY_CENTER_LIGHTHOUSE.position.y) /
+        STORY_2_5D_CONFIG.isoLogicalTileSize,
+    ) + STORY_A2_FULL_MAP_MARGIN_TILES,
+} as const;
+
 function isWithinFootprint(
   x: number,
   y: number,
@@ -175,14 +205,26 @@ function getPreviewRoadAxis(
   x: number,
   y: number,
 ): StoryIsoRoadAxis | undefined {
+  if (isPreviewFoundationTile(x, y)) return undefined;
+
   const isMainStreet = y === 1 && x >= -6 && x <= 6;
   const isCrossStreet = x === 1 && y >= -5 && y <= 5;
   const isFrontageStreet = y === -2 && x >= -3 && x <= 1;
   const isSideAlleyVertical = x === -4 && y >= 1 && y <= 3;
   const isSideAlleyHorizontal = y === 3 && x >= -4 && x <= -2;
+  const isPreviewCore = x >= -6 && x <= 6 && y >= -5 && y <= 5;
+  const isCityVerticalAvenue = !isPreviewCore && x % 8 === 0;
+  const isCityHorizontalAvenue = !isPreviewCore && y % 8 === 0;
 
-  if (isCrossStreet || isSideAlleyVertical) return "y";
-  if (isMainStreet || isFrontageStreet || isSideAlleyHorizontal) return "x";
+  if (isCrossStreet || isSideAlleyVertical || isCityVerticalAvenue) return "y";
+  if (
+    isMainStreet ||
+    isFrontageStreet ||
+    isSideAlleyHorizontal ||
+    isCityHorizontalAvenue
+  ) {
+    return "x";
+  }
   return undefined;
 }
 
@@ -193,17 +235,20 @@ function getPreviewRoadKind(x: number, y: number): StoryIsoTileKind {
 function getPreviewTileKind(x: number, y: number): StoryIsoTileKind {
   if (isPreviewFoundationTile(x, y)) return "foundation";
 
-  const isCurb =
-    Math.abs(x - y) === 1 ||
-    Math.abs(x + y) === 1 ||
-    (Math.abs(x) <= 2 && Math.abs(y) <= 2);
+  const isCurb = [
+    { x: x - 1, y },
+    { x: x + 1, y },
+    { x, y: y - 1 },
+    { x, y: y + 1 },
+  ].some((neighbor) => Boolean(getPreviewRoadAxis(neighbor.x, neighbor.y)));
   if (isCurb) return "curb";
 
   if (
     (x === -5 && y === 3) ||
     (x === -4 && y === 4) ||
     (x === 4 && y === 2) ||
-    (x === 5 && y === 3)
+    (x === 5 && y === 3) ||
+    Math.abs(x * 31 + y * 17) % 97 === 0
   ) {
     return "rubble";
   }
@@ -211,7 +256,8 @@ function getPreviewTileKind(x: number, y: number): StoryIsoTileKind {
   if (
     (x === -2 && y === 5) ||
     (x === 3 && y === -4) ||
-    (x === 6 && y === -2)
+    (x === 6 && y === -2) ||
+    Math.abs(x * 13 - y * 29) % 113 === 0
   ) {
     return "stain";
   }
@@ -234,8 +280,16 @@ function createStoryIsoPreviewTile(
 function createStoryIsoPreviewTiles(): StoryIsoTileDefinition[] {
   const tiles: StoryIsoTileDefinition[] = [];
 
-  for (let x = -6; x <= 6; x += 1) {
-    for (let y = -5; y <= 5; y += 1) {
+  for (
+    let x = STORY_A2_FULL_MAP_TILE_BOUNDS.minX;
+    x <= STORY_A2_FULL_MAP_TILE_BOUNDS.maxX;
+    x += 1
+  ) {
+    for (
+      let y = STORY_A2_FULL_MAP_TILE_BOUNDS.minY;
+      y <= STORY_A2_FULL_MAP_TILE_BOUNDS.maxY;
+      y += 1
+    ) {
       tiles.push(createStoryIsoPreviewTile(x, y));
     }
   }
